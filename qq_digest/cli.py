@@ -1,15 +1,20 @@
 from __future__ import annotations
 
 import os
+from datetime import datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import typer
 import uvicorn
 
+from .ai.client import AIClient
 from .archive import Archive
 from .candidates import CandidateService
+from .collector.fixture import FixtureCollector
 from .config import load_config
 from .knowledge import KnowledgeWriter
+from .pipeline import DailyPipeline
 from .web.app import create_app
 from .web.auth import PasswordHasher
 
@@ -52,6 +57,35 @@ def serve(config_path: Path = typer.Option(Path("config/config.yaml"))) -> None:
     if not web_app.state.cookie.secret:
         raise typer.Exit("QQ_DIGEST_SESSION_SECRET 未设置")
     uvicorn.run(web_app, host=config.web.host, port=config.web.port)
+
+
+@app.command("run-daily")
+def run_daily(
+    config_path: Path = typer.Option(Path("config/config.yaml")),
+) -> None:
+    """执行一次同步、摘要、报告和候选流水线。"""
+    config = load_config(config_path)
+    archive = Archive.open(config.archive_path)
+    archive.upsert_groups(config.groups)
+    pipeline = DailyPipeline(
+        archive=archive,
+        collector=FixtureCollector(),
+        ai_client=AIClient(
+            base_url=config.ai.base_url,
+            api_key=config.resolve_api_key(),
+            model=config.ai.model,
+            timeout_seconds=config.ai.timeout_seconds,
+        ),
+        report_dir=config.report_dir,
+        max_context_chars=config.ai.max_context_chars,
+        timezone_name=config.summary.timezone,
+        window_mode=config.summary.window_mode,
+    )
+    result = pipeline.run_daily(datetime.now(ZoneInfo(config.summary.timezone)))
+    typer.echo(
+        f"处理 {result.groups_processed} 个群，新增 {result.messages_inserted} 条消息，"
+        f"生成 {len(result.report_paths)} 份报告，候选 {len(result.candidate_ids)} 条。"
+    )
 
 
 def main() -> None:
