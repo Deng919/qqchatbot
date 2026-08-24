@@ -313,6 +313,7 @@ class GroupConfig(BaseModel):
     name: str
     enabled: bool = True
     daily_summary: bool = True
+    category: Literal["tech", "resource", "project", "study", "general"] = "general"
     template: Literal["concise", "detailed"] = "concise"
     keywords: list[str] = Field(default_factory=list)
     important_candidates: bool = True
@@ -475,6 +476,30 @@ ai:
   max_context_chars: 60000
 
 groups: []
+# 群分类配置示例：
+# groups:
+#   - group_id: 123456789
+#     name: "Python 开发交流"
+#     category: tech
+#     daily_summary: true
+#     template: concise
+#   - group_id: 987654321
+#     name: "前端资源汇总"
+#     category: resource
+#     daily_summary: true
+#     template: detailed
+#   - group_id: 555555555
+#     name: "XX 项目协作群"
+#     category: project
+#     daily_summary: true
+#   - group_id: 111222333
+#     name: "考研互助"
+#     category: study
+#     daily_summary: false
+#   - group_id: 777888999
+#     name: "摸鱼群"
+#     category: general
+# 未配置 category 默认为 general
 ```
 
 - [ ] **Step 4: 运行配置和模型测试**
@@ -1481,6 +1506,9 @@ def build_context(messages: list[NormalizedMessage], max_chars: int) -> str:
 
 
 class Summarizer:
+    # Prompt 内容以 docs/ai/prompt-template.md 为基准。
+    # 各分类策略见 docs/ai/summary-guidelines.md，候选标准见 docs/ai/candidate-criteria.md。
+    # 当前 MVP 硬编码 prompt，后续改为按 category + template 动态组装。
     prompt = """你是可靠的QQ群消息摘要助手。请只输出JSON，不输出Markdown代码块。
 JSON结构：
 {
