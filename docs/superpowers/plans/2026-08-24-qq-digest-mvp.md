@@ -136,9 +136,6 @@ import yaml
 from qq_digest.config import Config, ConfigError, load_config
 
 
-Config  # 让测试文件保留显式导入；当前断言由 load_config 返回值覆盖。
-
-
 def write_config(tmp_path: Path, data: dict) -> Path:
     path = tmp_path / "config.yaml"
     path.write_text(yaml.safe_dump(data), encoding="utf-8")
@@ -174,6 +171,7 @@ def test_load_config_resolves_paths_and_defaults(tmp_path):
     path = write_config(tmp_path, raw)
     config = load_config(path)
 
+    assert isinstance(config, Config)
     assert config.data_dir == tmp_path
     assert config.archive_path == tmp_path / "archive" / "archive.sqlite"
     assert config.report_dir == tmp_path / "reports"
@@ -212,6 +210,25 @@ def test_load_config_accepts_extra_fields(tmp_path):
     path = write_config(tmp_path, raw)
 
     assert load_config(path).data_dir == tmp_path
+
+
+def test_load_config_rejects_invalid_summary_settings(tmp_path):
+    raw = base_config(tmp_path)
+    raw["summary"] = {"hour": 24, "window_mode": "invalid", "timezone": "Invalid/Zone"}
+    path = write_config(tmp_path, raw)
+
+    with pytest.raises(ConfigError, match="summary.hour"):
+        load_config(path)
+
+    raw["summary"]["hour"] = 22
+    path = write_config(tmp_path, raw)
+    with pytest.raises(ConfigError, match="window_mode"):
+        load_config(path)
+
+    raw["summary"]["window_mode"] = "today"
+    path = write_config(tmp_path, raw)
+    with pytest.raises(ConfigError, match="timezone"):
+        load_config(path)
 ```
 
 - [ ] **Step 2: 运行测试确认失败**
@@ -324,7 +341,8 @@ import os
 from pathlib import Path
 
 import yaml
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field
+from zoneinfo import ZoneInfo
 
 from .models import GroupConfig
 
@@ -414,6 +432,14 @@ def load_config(path: Path) -> Config:
 
     if config.summary.window_mode not in {"today", "previous_day"}:
         raise ConfigError("summary.window_mode 只支持 today 或 previous_day")
+    if not 0 <= config.summary.hour <= 23:
+        raise ConfigError("summary.hour 必须在 0 到 23 之间")
+    if not 0 <= config.summary.minute <= 59:
+        raise ConfigError("summary.minute 必须在 0 到 59 之间")
+    try:
+        ZoneInfo(config.summary.timezone)
+    except Exception as exc:
+        raise ConfigError(f"summary.timezone 无效: {exc}") from exc
 
     config.archive_path.parent.mkdir(parents=True, exist_ok=True)
     config.report_dir.mkdir(parents=True, exist_ok=True)
@@ -454,7 +480,7 @@ groups: []
 
 Run: `D:\CodexTools\python\Scripts\python.exe -m pytest tests/test_config.py -v`
 
-Expected: 4 passed。不要创建空的 `tests/test_models.py`；跨模块数据结构已由配置、归档、摘要和集成测试约束，避免无意义测试占位。
+Expected: 5 passed。不要创建 `tests/test_models.py`；跨模块数据结构已由配置、归档、摘要和集成测试约束，避免无意义测试占位。
 
 - [ ] **Step 5: Commit**
 
@@ -478,22 +504,11 @@ git commit -m "feat: add project configuration foundation"
 
 ```python
 # tests/test_archive.py
-from datetime import datetime
+from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 
 from qq_digest.archive import Archive
-from qq_digest.models import NormalizedMessage
 from tests.factories import make_message
-
-
-def make_message(msg_id="m1", timestamp=datetime(2026, 8, 24, 10, 0)):
-    return NormalizedMessage(
-        msg_id=msg_id,
-        group_id=123,
-        sender_qq=10001,
-        timestamp=timestamp,
-        text="消息",
-        collected_at=datetime(2026, 8, 24, 11, 0),
-    )
 
 
 def test_ingest_is_idempotent(tmp_path):
@@ -508,7 +523,7 @@ def test_ingest_is_idempotent(tmp_path):
 
 def test_ingest_accepts_out_of_order_messages(tmp_path):
     archive = Archive.open(tmp_path / "archive.sqlite")
-    base = datetime(2026, 8, 24, 10, 0)
+    base = datetime(2026, 8, 24, 10, 0, tzinfo=ZoneInfo("Asia/Shanghai"))
     messages = [make_message("later", base + timedelta(hours=1)), make_message("earlier", base)]
     result = archive.ingest(messages)
 
@@ -529,6 +544,44 @@ def test_ingest_rejects_duplicate_msg_id_in_same_batch(tmp_path):
         raised = True
     assert raised
     assert archive.count_messages(group_id=123) == 0
+
+
+def test_archive_records_knowledge_item_idempotently(tmp_path):
+    archive = Archive.open(tmp_path / "archive.sqlite")
+    archive.connection.execute(
+        """
+        INSERT INTO candidates(
+            group_id, message_ids, created_date, candidate_type, title,
+            link, content, reason, excerpt, status, created_at, updated_at
+        ) VALUES (
+            123, '["m1"]', '2026-08-24', 'resource', '站点',
+            'https://example.com', '', '高质量', '摘录', 'pending',
+            '2026-08-24T14:00:00+00:00', '2026-08-24T14:00:00+00:00'
+        )
+        """
+    )
+    archive.connection.commit()
+    candidate_id = int(
+        archive.connection.execute("SELECT candidate_id FROM candidates").fetchone()[
+            "candidate_id"
+        ]
+    )
+
+    archive.record_knowledge_item(
+        item_id="k1",
+        candidate_id=candidate_id,
+        markdown_path="knowledge/resources.md",
+    )
+    archive.record_knowledge_item(
+        item_id="k1",
+        candidate_id=candidate_id,
+        markdown_path="knowledge/resources.md",
+    )
+
+    count = archive.connection.execute(
+        "SELECT COUNT(*) AS total FROM knowledge_items"
+    ).fetchone()["total"]
+    assert count == 1
 ```
 
 创建 `tests/factories.py`：
@@ -536,18 +589,22 @@ def test_ingest_rejects_duplicate_msg_id_in_same_batch(tmp_path):
 ```python
 # tests/factories.py
 from datetime import datetime
+from zoneinfo import ZoneInfo
 
 from qq_digest.models import NormalizedMessage
 
 
-def make_message(msg_id="m1", timestamp=datetime(2026, 8, 24, 10, 0)):
+def make_message(
+    msg_id="m1",
+    timestamp=datetime(2026, 8, 24, 10, 0, tzinfo=ZoneInfo("Asia/Shanghai")),
+):
     return NormalizedMessage(
         msg_id=msg_id,
         group_id=123,
         sender_qq=10001,
         timestamp=timestamp,
         text="消息",
-        collected_at=datetime(2026, 8, 24, 11, 0),
+        collected_at=datetime(2026, 8, 24, 11, 0, tzinfo=ZoneInfo("Asia/Shanghai")),
     )
 ```
 
@@ -584,7 +641,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
-from .models import NormalizedMessage
+from .models import GroupConfig, NormalizedMessage
 
 
 @dataclass(frozen=True)
@@ -603,7 +660,7 @@ class Archive:
     @classmethod
     def open(cls, path: Path) -> "Archive":
         path.parent.mkdir(parents=True, exist_ok=True)
-        connection = sqlite3.connect(path)
+        connection = sqlite3.connect(path, timeout=30, check_same_thread=False)
         return cls(connection)
 
     @contextmanager
@@ -658,6 +715,7 @@ class Archive:
                     report_date TEXT NOT NULL,
                     markdown_path TEXT NOT NULL,
                     json_path TEXT NOT NULL,
+                    candidate_ids TEXT NOT NULL DEFAULT '[]',
                     created_at TEXT NOT NULL,
                     UNIQUE(group_id, report_date)
                 );
@@ -832,7 +890,7 @@ class Archive:
                 (item_id,),
             ).fetchone()
         if row is None or int(row["candidate_id"]) != candidate_id or row["markdown_path"] != markdown_path:
-        raise ValueError(f"知识条目 {item_id} 已绑定其他候选或路径")
+            raise ValueError(f"知识条目 {item_id} 已绑定其他候选或路径")
 
 
     def enabled_groups(self, *, daily_summary: bool = False) -> list[GroupConfig]:
@@ -879,6 +937,9 @@ class Archive:
             (group_id, report_date),
         ).fetchone()
 
+    def candidates_for_report(self, candidate_ids_json: str) -> list[int]:
+        return json.loads(candidate_ids_json)
+
     def record_report(
         self,
         *,
@@ -886,19 +947,29 @@ class Archive:
         report_date: str,
         markdown_path: Path,
         json_path: Path,
+        candidate_ids: list[int],
     ) -> int:
         now = datetime.now(timezone.utc).isoformat()
         with self.transaction():
             cursor = self.connection.execute(
                 """
                 INSERT INTO reports(
-                    group_id, report_date, markdown_path, json_path, created_at
-                ) VALUES (?, ?, ?, ?, ?)
+                    group_id, report_date, markdown_path, json_path,
+                    candidate_ids, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?)
                 ON CONFLICT(group_id, report_date) DO UPDATE SET
                     markdown_path=excluded.markdown_path,
-                    json_path=excluded.json_path
+                    json_path=excluded.json_path,
+                    candidate_ids=excluded.candidate_ids
                 """,
-                (group_id, report_date, str(markdown_path), str(json_path), now),
+                (
+                    group_id,
+                    report_date,
+                    str(markdown_path),
+                    str(json_path),
+                    json.dumps(candidate_ids, ensure_ascii=False),
+                    now,
+                ),
             )
             row = self.connection.execute(
                 "SELECT report_id FROM reports WHERE group_id=? AND report_date=?",
@@ -938,7 +1009,7 @@ class Archive:
 
 Run: `D:\CodexTools\python\Scripts\python.exe -m pytest tests/test_archive.py -v`
 
-Expected: 3 passed
+Expected: 4 passed
 
 - [ ] **Step 5: Commit**
 
@@ -1210,6 +1281,7 @@ git commit -m "feat: add openai-compatible client"
 ```python
 # tests/test_summary.py
 from datetime import datetime
+from zoneinfo import ZoneInfo
 
 import pytest
 
@@ -1224,7 +1296,7 @@ def message(msg_id, timestamp, text):
         sender_qq=10001,
         timestamp=timestamp,
         text=text,
-        collected_at=datetime(2026, 8, 24, 12, 0),
+        collected_at=datetime(2026, 8, 24, 12, 0, tzinfo=ZoneInfo("Asia/Shanghai")),
     )
 
 
@@ -1288,9 +1360,16 @@ def test_summarizer_returns_validated_result():
     result = summarizer.summarize(
         group_id=123,
         group_name="测试群",
-        window_start=datetime(2026, 8, 24, 0),
-        window_end=datetime(2026, 8, 24, 22),
-        messages=[message("m1", datetime(2026, 8, 24, 9), "https://example.com")],
+        window_start=datetime(2026, 8, 24, 0, tzinfo=ZoneInfo("Asia/Shanghai")),
+        window_end=datetime(2026, 8, 24, 22, tzinfo=ZoneInfo("Asia/Shanghai")),
+        messages=[
+            message(
+                "m1",
+                datetime(2026, 8, 24, 9, tzinfo=ZoneInfo("Asia/Shanghai")),
+                "https://example.com",
+            )
+        ],
+        timezone=ZoneInfo("Asia/Shanghai"),
     )
 
     assert isinstance(result, SummaryResult)
@@ -1306,9 +1385,10 @@ def test_summarizer_rejects_wrong_group():
         summarizer.summarize(
             group_id=123,
             group_name="测试群",
-            window_start=datetime(2026, 8, 24, 0),
-            window_end=datetime(2026, 8, 24, 22),
+            window_start=datetime(2026, 8, 24, 0, tzinfo=ZoneInfo("Asia/Shanghai")),
+            window_end=datetime(2026, 8, 24, 22, tzinfo=ZoneInfo("Asia/Shanghai")),
             messages=[],
+            timezone=ZoneInfo("Asia/Shanghai"),
         )
 ```
 
@@ -1327,6 +1407,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from pydantic import BaseModel, Field, ValidationError, field_validator
 
@@ -1429,8 +1510,15 @@ JSON结构：
         window_start: datetime,
         window_end: datetime,
         messages: list[NormalizedMessage],
+        timezone: ZoneInfo,
     ) -> SummaryResult:
-        context = build_context(messages, self.max_context_chars)
+        if any(message.timestamp.tzinfo is None for message in messages):
+            raise ValueError("消息时间必须带时区")
+        local_messages = [
+            message.model_copy(update={"timestamp": message.timestamp.astimezone(timezone)})
+            for message in messages
+        ]
+        context = build_context(local_messages, self.max_context_chars)
         cleaned = self.preprocessor.process([message.text for message in messages])
         deterministic = {
             "links": cleaned.links,
@@ -1537,40 +1625,32 @@ def test_report_writer_creates_markdown_and_json(tmp_path):
 # tests/test_candidates.py
 from qq_digest.archive import Archive
 from qq_digest.candidates import CandidateService
+from qq_digest.models import GroupConfig
+
+
+def make_service(tmp_path) -> CandidateService:
+    archive = Archive.open(tmp_path / "archive.sqlite")
+    archive.upsert_groups([GroupConfig(group_id=123, name="测试群")])
+    return CandidateService(archive)
+
+
+def candidate_kwargs() -> dict:
+    return {
+        "group_id": 123,
+        "created_date": "2026-08-24",
+        "candidate_type": "resource",
+        "title": "站点",
+        "link": "https://example.com",
+        "content": "",
+        "reason": "高质量教程",
+        "excerpt": "看这个站点",
+        "message_ids": ["m1"],
+    }
 
 
 def test_candidate_lifecycle(tmp_path):
-    archive = Archive.open(tmp_path / "archive.sqlite")
-    archive.upsert_groups(
-        [
-            type(
-                "Group",
-                (),
-                {
-                    "group_id": 123,
-                    "name": "测试群",
-                    "enabled": True,
-                    "daily_summary": True,
-                    "template": "concise",
-                    "keywords": [],
-                    "important_candidates": True,
-                    "collection_window_days": 30,
-                },
-            )()
-        ]
-    )
-    service = CandidateService(archive)
-    candidate_id = service.create(
-        group_id=123,
-        created_date="2026-08-24",
-        candidate_type="resource",
-        title="站点",
-        link="https://example.com",
-        content="",
-        reason="高质量教程",
-        excerpt="看这个站点",
-        message_ids=["m1"],
-    )
+    service = make_service(tmp_path)
+    candidate_id = service.create(**candidate_kwargs())
 
     assert service.pending(group_id=123)[0].candidate_id == candidate_id
     service.confirm(candidate_id)
@@ -1578,6 +1658,19 @@ def test_candidate_lifecycle(tmp_path):
     service.update_status(candidate_id, "pending", ignore_reason="")
     service.ignore(candidate_id, "重复")
     assert service.get(candidate_id).ignore_reason == "重复"
+
+
+def test_candidate_create_is_idempotent(tmp_path):
+    service = make_service(tmp_path)
+
+    first = service.create(**candidate_kwargs())
+    second = service.create(**candidate_kwargs())
+
+    assert first == second
+    count = service.archive.connection.execute(
+        "SELECT COUNT(*) AS total FROM candidates"
+    ).fetchone()["total"]
+    assert count == 1
 ```
 
 - [ ] **Step 2: 运行测试确认失败**
@@ -2024,6 +2117,12 @@ def test_login_and_confirm_candidate(web_client):
     markdown = (knowledge_dir / "resources.md").read_text(encoding="utf-8")
     assert "站点" in markdown
     assert f"条目 ID：{candidate_id}" in markdown
+    candidate = client.app.state.candidates.get(candidate_id)
+    assert candidate.status == "confirmed"
+    knowledge_count = client.app.state.archive.connection.execute(
+        "SELECT COUNT(*) AS total FROM knowledge_items"
+    ).fetchone()["total"]
+    assert knowledge_count == 1
 ```
 
 - [ ] **Step 2: 运行测试确认失败**
@@ -2136,6 +2235,9 @@ def create_app(
     app.state.knowledge = knowledge
     app.state.password_hash = password_hash
     app.state.cookie = cookie
+    group_names = {
+        group.group_id: group.name for group in archive.enabled_groups()
+    }
 
     @app.get("/login")
     async def login_page(request: Request):
@@ -2170,7 +2272,7 @@ def create_app(
                 item_id=str(candidate_id),
                 date=candidate.created_date,
                 category="资源" if candidate.candidate_type == "resource" else "经验",
-                source_group=str(candidate.group_id),
+                source_group=group_names.get(candidate.group_id, str(candidate.group_id)),
                 title=candidate.title,
                 link=candidate.link,
                 value=candidate.reason,
@@ -2206,7 +2308,7 @@ def create_app(
 <!-- qq_digest/web/templates/login.html -->
 <!doctype html>
 <html lang="zh-CN">
-<head><meta charset="utf-8"><title>登录 - QQ Digest</title></head>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>登录 - QQ Digest</title></head>
 <body>
   <h1>QQ Digest</h1>
   {% if error %}<p>{{ error }}</p>{% endif %}
@@ -2222,7 +2324,7 @@ def create_app(
 <!-- qq_digest/web/templates/candidates.html -->
 <!doctype html>
 <html lang="zh-CN">
-<head><meta charset="utf-8"><title>待审核 - QQ Digest</title></head>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>待审核 - QQ Digest</title></head>
 <body>
   <h1>待审核重点信息</h1>
   {% for candidate in candidates %}
@@ -2563,6 +2665,7 @@ def make_pipeline(tmp_path: Path, now: datetime) -> tuple[DailyPipeline, Archive
             report_dir=tmp_path / "reports",
             max_context_chars=1000,
             timezone_name="Asia/Shanghai",
+            window_mode="today",
         ),
         archive,
     )
@@ -2577,7 +2680,8 @@ def test_run_daily_creates_report_and_candidate(tmp_path):
     assert result.groups_processed == 1
     assert result.report_paths[0].markdown.exists()
     assert result.candidate_ids == [1]
-    assert len(archive.pending()) == 1
+    assert result.messages_inserted == 1
+    assert len(pipeline.candidates.pending()) == 1
     job = archive.connection.execute("SELECT * FROM jobs").fetchone()
     assert job["status"] == "success"
 
@@ -2590,7 +2694,7 @@ def test_run_daily_is_idempotent(tmp_path):
     second = pipeline.run_daily(now)
 
     assert second.candidate_ids == first.candidate_ids
-    assert len(archive.pending()) == 1
+    assert len(pipeline.candidates.pending()) == 1
     reports = archive.connection.execute("SELECT * FROM reports").fetchall()
     assert len(reports) == 1
 ```
@@ -2628,6 +2732,7 @@ from .collector.base import Collector
 from .reports import ReportPaths, ReportWriter, render_markdown
 from .scheduler import summary_window
 from .summary import Summarizer
+from .models import GroupConfig
 
 
 @dataclass(frozen=True)
@@ -2649,6 +2754,7 @@ class DailyPipeline:
         report_dir: Path,
         max_context_chars: int,
         timezone_name: str,
+        window_mode: str = "today",
     ) -> None:
         self.archive = archive
         self.collector = collector
@@ -2659,6 +2765,7 @@ class DailyPipeline:
             max_context_chars=max_context_chars,
         )
         self.timezone = ZoneInfo(timezone_name)
+        self.window_mode = window_mode
 
     def run_daily(self, now: datetime) -> DailyRunResult:
         job_id = self.archive.start_job("daily_digest")
@@ -2672,8 +2779,11 @@ class DailyPipeline:
 
     def _run_without_job_tracking(self, now: datetime) -> DailyRunResult:
         local_now = now.astimezone(self.timezone)
-        report_date = local_now.date().isoformat()
-        start, end = summary_window(now, "today", self.timezone)
+        start, end = summary_window(now, self.window_mode, self.timezone)
+        if self.window_mode == "today":
+            report_date = local_now.date().isoformat()
+        else:
+            report_date = start.date().isoformat()
         result = DailyRunResult(
             report_date=report_date,
             groups_processed=0,
@@ -2689,6 +2799,9 @@ class DailyPipeline:
 
             existing_report = self.archive.report_for(group.group_id, report_date)
             if existing_report is not None:
+                result.candidate_ids.extend(
+                    self.archive.candidates_for_report(existing_report["candidate_ids"])
+                )
                 result.groups_processed += 1
                 continue
 
@@ -2699,11 +2812,14 @@ class DailyPipeline:
                 window_start=start,
                 window_end=end,
                 messages=messages,
+                timezone=self.timezone,
             )
+            display_start = start.isoformat()
+            display_end = end.isoformat()
             markdown = render_markdown(
                 group_name=group.name,
                 report_date=report_date,
-                window=f"{start.isoformat()} 到 {end.isoformat()}",
+                window=f"{display_start} 到 {display_end}",
                 topics=[item.topic for item in summary.response.main_topics],
                 conclusions=summary.response.conclusions,
                 resources=[
@@ -2714,7 +2830,7 @@ class DailyPipeline:
                 open_questions=summary.response.open_questions,
                 deterministic=summary.deterministic,
                 quality_note=(
-                    f"上下文截断后保留 {summary.context_chars} 字符。"
+                    f"上下文截断后保留 {summary.context_chars} 字符，已按完整行保留最近消息。"
                     if summary.context_chars >= self.summarizer.max_context_chars
                     else ""
                 ),
@@ -2726,14 +2842,9 @@ class DailyPipeline:
                 markdown=markdown,
                 payload=summary.response.model_dump(),
             )
-            self.archive.record_report(
-                group_id=group.group_id,
-                report_date=report_date,
-                markdown_path=paths.markdown,
-                json_path=paths.json,
-            )
             result.report_paths.append(paths)
 
+            group_candidate_ids: list[int] = []
             if group.important_candidates:
                 for candidate in summary.response.candidates:
                     candidate_id = self.candidates.create(
@@ -2755,6 +2866,14 @@ class DailyPipeline:
                         message_ids=candidate.message_ids,
                     )
                     result.candidate_ids.append(candidate_id)
+                    group_candidate_ids.append(candidate_id)
+            self.archive.record_report(
+                group_id=group.group_id,
+                report_date=report_date,
+                markdown_path=paths.markdown,
+                json_path=paths.json,
+                candidate_ids=group_candidate_ids,
+            )
             result.groups_processed += 1
 
         return result
@@ -2791,6 +2910,7 @@ def run_daily(
         report_dir=config.report_dir,
         max_context_chars=config.ai.max_context_chars,
         timezone_name=config.summary.timezone,
+        window_mode=config.summary.window_mode,
     )
     result = pipeline.run_daily(datetime.now(ZoneInfo(config.summary.timezone)))
     typer.echo(
@@ -2832,6 +2952,7 @@ git commit -m "feat: add daily digest pipeline"
 ```python
 # tests/test_integration.py
 from datetime import datetime
+from zoneinfo import ZoneInfo
 
 from qq_digest.archive import Archive
 from qq_digest.candidates import CandidateService
@@ -2866,14 +2987,17 @@ def test_collect_summary_report_candidate(tmp_path):
     archive = Archive.open(tmp_path / "archive.sqlite")
     group = GroupConfig(group_id=123, name="测试群")
     archive.upsert_groups([group])
-    result = archive.ingest(FixtureCollector().collect(123, datetime(2026, 8, 24, 0), datetime(2026, 8, 24, 22)))
-    messages = archive.messages_between(123, datetime(2026, 8, 24, 0), datetime(2026, 8, 24, 22))
+    start = datetime(2026, 8, 24, 0, tzinfo=ZoneInfo("Asia/Shanghai"))
+    end = datetime(2026, 8, 24, 22, tzinfo=ZoneInfo("Asia/Shanghai"))
+    result = archive.ingest(FixtureCollector().collect(123, start, end))
+    messages = archive.messages_between(123, start, end)
     summary = Summarizer(ai=FakeAI(), max_context_chars=1000).summarize(
         group_id=123,
         group_name="测试群",
-        window_start=datetime(2026, 8, 24, 0),
-        window_end=datetime(2026, 8, 24, 22),
+        window_start=start,
+        window_end=end,
         messages=messages,
+        timezone=ZoneInfo("Asia/Shanghai"),
     )
     candidates = CandidateService(archive)
     candidate_id = candidates.create(
