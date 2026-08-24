@@ -331,6 +331,7 @@ class SummaryCandidate(BaseModel):
     reason: str
     excerpt: str = ""
     status: CandidateStatus = "pending"
+    ignore_reason: str = ""
 ```
 
 ```python
@@ -1839,6 +1840,7 @@ class CandidateService:
             reason=row["reason"],
             excerpt=row["excerpt"],
             status=row["status"],
+            ignore_reason=row["ignore_reason"],
         )
 
     def pending(self, group_id: int | None = None) -> list[SummaryCandidate]:
@@ -2149,6 +2151,7 @@ def _pbkdf2(password: str, salt: str, iterations: int) -> str:
     return hashlib.pbkdf2_hmac(
         "sha256", password.encode("utf-8"), salt.encode("utf-8"), iterations
     ).hex()
+
 class PasswordHasher:
     algorithm = "pbkdf2_sha256"
     iterations = 120_000
