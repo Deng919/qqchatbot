@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>待审核 - QQ Digest</title></head>
+<body>
+  <h1>待审核重点信息</h1>
+  {% for candidate in candidates %}
+  <article>
+    <h2>{{ candidate.title }}</h2>
+    <p>{{ candidate.reason }}</p>
+    {% if candidate.link %}<p><a href="{{ candidate.link }}">{{ candidate.link }}</a></p>{% endif %}
+    <form method="post" action="/candidates/{{ candidate.candidate_id }}/confirm"><button>入库</button></form>
+    <form method="post" action="/candidates/{{ candidate.candidate_id }}/ignore"><input name="reason" placeholder="忽略原因"><button>忽略</button></form>
+    <form method="post" action="/candidates/{{ candidate.candidate_id }}/later"><button>稍后</button></form>
+  </article>
+  {% else %}
+  <p>暂无待审核候选</p>
+  {% endfor %}
+</body>
+</html>
