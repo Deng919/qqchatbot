@@ -120,7 +120,6 @@ qq_digest/
 - Create: `config/config.example.yaml`
 - Test: `tests/conftest.py`
 - Test: `tests/test_config.py`
-- Test: `tests/test_models.py`
 
 - [ ] **Step 1: 写配置失败测试**
 
@@ -441,7 +440,7 @@ groups: []
 
 Run: `D:\CodexTools\python\Scripts\python.exe -m pytest tests/test_config.py tests/test_models.py -v`
 
-Expected: 3 passed（`test_models.py` 本任务可为空占位）
+Expected: 4 passed。不要创建空的 `tests/test_models.py`；跨模块数据结构已由配置、归档、摘要和集成测试约束，避免无意义测试占位。
 
 - [ ] **Step 5: Commit**
 
@@ -596,7 +595,7 @@ class Archive:
                 );
                 CREATE TABLE IF NOT EXISTS messages (
                     msg_id TEXT NOT NULL,
-                    group_id INTEGER NOT NULL REFERENCES groups(group_id),
+                    group_id INTEGER NOT NULL,
                     sender_qq INTEGER,
                     timestamp TEXT NOT NULL,
                     message_type TEXT NOT NULL,
@@ -611,7 +610,7 @@ class Archive:
                 CREATE INDEX IF NOT EXISTS idx_messages_group_time
                     ON messages(group_id, timestamp);
                 CREATE TABLE IF NOT EXISTS sync_state (
-                    group_id INTEGER PRIMARY KEY REFERENCES groups(group_id),
+                    group_id INTEGER PRIMARY KEY,
                     last_timestamp TEXT,
                     backfill_completed_at TEXT,
                     status TEXT NOT NULL DEFAULT 'active',
@@ -619,7 +618,7 @@ class Archive:
                 );
                 CREATE TABLE IF NOT EXISTS reports (
                     report_id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    group_id INTEGER NOT NULL REFERENCES groups(group_id),
+                    group_id INTEGER NOT NULL,
                     report_date TEXT NOT NULL,
                     markdown_path TEXT NOT NULL,
                     json_path TEXT NOT NULL,
@@ -628,7 +627,7 @@ class Archive:
                 );
                 CREATE TABLE IF NOT EXISTS candidates (
                     candidate_id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    group_id INTEGER NOT NULL REFERENCES groups(group_id),
+                    group_id INTEGER NOT NULL,
                     message_ids TEXT NOT NULL,
                     created_date TEXT NOT NULL,
                     candidate_type TEXT NOT NULL,
@@ -1760,6 +1759,7 @@ from fastapi.testclient import TestClient
 
 from qq_digest.archive import Archive
 from qq_digest.candidates import CandidateService
+from qq_digest.knowledge import KnowledgeWriter
 from qq_digest.web.app import create_app
 from qq_digest.web.auth import PasswordHasher
 
@@ -1799,15 +1799,16 @@ def web_client(tmp_path):
     app = create_app(
         archive=archive,
         candidates=candidates,
+        knowledge=KnowledgeWriter(tmp_path / "knowledge"),
         password_hash=PasswordHasher.hash("password123"),
         session_secret="test-secret",
     )
     client = TestClient(app)
-    return client, candidate_id
+    return client, candidate_id, tmp_path / "knowledge"
 
 
 def test_candidates_requires_login(web_client):
-    client, _ = web_client
+    client, _, _ = web_client
     response = client.get("/candidates", follow_redirects=False)
 
     assert response.status_code == 303
@@ -1815,12 +1816,15 @@ def test_candidates_requires_login(web_client):
 
 
 def test_login_and_confirm_candidate(web_client):
-    client, candidate_id = web_client
+    client, candidate_id, knowledge_dir = web_client
     client.post("/login", data={"password": "password123"}, follow_redirects=False)
     response = client.post(f"/candidates/{candidate_id}/confirm", follow_redirects=False)
 
     assert response.status_code == 303
     assert client.get("/candidates").status_code == 200
+    markdown = (knowledge_dir / "resources.md").read_text(encoding="utf-8")
+    assert "站点" in markdown
+    assert f"条目 ID：{candidate_id}" in markdown
 ```
 
 - [ ] **Step 2: 运行测试确认失败**
@@ -1837,6 +1841,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import secrets
 import time
 
 
@@ -1845,7 +1850,7 @@ class PasswordHasher:
 
     @classmethod
     def hash(cls, password: str, salt: str | None = None) -> str:
-        salt = salt or hashlib.sha256(str(time.time_ns())).hexdigest()[:16]
+        salt = salt or secrets.token_hex(8)
         digest = hashlib.sha256((salt + password).encode("utf-8")).hexdigest()
         return f"{cls.algorithm}${salt}${digest}"
 
@@ -1891,6 +1896,7 @@ from fastapi.templating import Jinja2Templates
 
 from ..archive import Archive
 from ..candidates import CandidateService
+from ..knowledge import KnowledgeItem, KnowledgeWriter
 from .auth import PasswordHasher, SessionCookie
 
 
@@ -1907,6 +1913,7 @@ def create_app(
     *,
     archive: Archive,
     candidates: CandidateService,
+    knowledge: KnowledgeWriter,
     password_hash: str,
     session_secret: str,
     session_hours: int = 12,
@@ -1917,6 +1924,7 @@ def create_app(
     cookie = SessionCookie(session_secret, session_hours * 3600)
     app.state.archive = archive
     app.state.candidates = candidates
+    app.state.knowledge = knowledge
     app.state.password_hash = password_hash
     app.state.cookie = cookie
 
@@ -1947,6 +1955,20 @@ def create_app(
     @app.post("/candidates/{candidate_id}/confirm")
     async def confirm(request: Request, candidate_id: int):
         require_login(request)
+        candidate = candidates.get(candidate_id)
+        knowledge.write(
+            KnowledgeItem(
+                item_id=str(candidate_id),
+                date=candidate.created_date,
+                category="资源" if candidate.candidate_type == "resource" else "经验",
+                source_group=str(candidate.group_id),
+                title=candidate.title,
+                link=candidate.link,
+                value=candidate.reason,
+                excerpt=candidate.excerpt,
+            ),
+            candidate.candidate_type,
+        )
         candidates.confirm(candidate_id)
         return RedirectResponse("/candidates", status_code=303)
 
@@ -2080,7 +2102,7 @@ def test_summary_window_previous_day():
     start, end = summary_window(now, "previous_day")
 
     assert start == datetime(2026, 8, 23, 0, 0)
-    assert end == datetime(2026, 8, 23, 23, 59, 59)
+    assert end == datetime(2026, 8, 23, 23, 59, 59, 999999)
 ```
 
 - [ ] **Step 2: 运行测试确认失败**
@@ -2176,10 +2198,8 @@ def summary_window(now: datetime, mode: str) -> tuple[datetime, datetime]:
         start = now.replace(hour=0, minute=0, second=0, microsecond=0)
         return start, now
     if mode == "previous_day":
-        previous = now.date() - timedelta(days=1)
-        return datetime.combine(previous, datetime.min.time()), datetime.combine(
-            previous, datetime.max.time()
-        )
+        next_day = datetime.combine(now.date(), datetime.min.time())
+        return next_day - timedelta(days=1), next_day - timedelta(microseconds=1)
     raise ValueError("mode 只支持 today 或 previous_day")
 ```
 
@@ -2196,8 +2216,14 @@ from __future__ import annotations
 from pathlib import Path
 
 import typer
+import os
+import uvicorn
 
 from .config import load_config
+from .archive import Archive
+from .candidates import CandidateService
+from .knowledge import KnowledgeWriter
+from .web.app import create_app
 from .web.auth import PasswordHasher
 
 
@@ -2226,8 +2252,19 @@ def doctor(config_path: Path = typer.Option(Path("config/config.yaml"))) -> None
 def serve(config_path: Path = typer.Option(Path("config/config.yaml"))) -> None:
     """启动 Web 审核界面。"""
     config = load_config(config_path)
-    typer.echo("Web 服务将在官方 QQ Bot 计划完成后作为常驻服务启动")
-    typer.echo(f"归档文件: {config.archive_path}")
+    archive = Archive.open(config.archive_path)
+    archive.upsert_groups(config.groups)
+    app = create_app(
+        archive=archive,
+        candidates=CandidateService(archive),
+        knowledge=KnowledgeWriter(config.knowledge_dir),
+        password_hash=config.security.web_password_hash,
+        session_secret=os.environ.get(config.security.session_secret_env, ""),
+        session_hours=config.security.session_hours,
+    )
+    if not app.state.cookie.secret:
+        raise typer.Exit("QQ_DIGEST_SESSION_SECRET 未设置")
+    uvicorn.run(app, host="0.0.0.0", port=8765)
 ```
 
 - [ ] **Step 4: 运行 CLI 和调度测试**
