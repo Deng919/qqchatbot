@@ -24,6 +24,17 @@ def base_config(tmp_path: Path) -> dict:
     }
 
 
+def test_example_uses_direct_deepseek_v41_flash():
+    path = Path(__file__).resolve().parents[1] / "config" / "config.example.yaml"
+    example = yaml.safe_load(path.read_text(encoding="utf-8"))
+
+    assert example["ai"]["provider_priority"] == ["compatible"]
+    assert example["ai"]["base_url"] == "https://api.deepseek.com"
+    assert example["ai"]["model"] == "deepseek-flash"
+    assert example["ai"]["json_mode"] is True
+    assert example["ai"]["api_key_env"] == "DEEPSEEK_API_KEY"
+
+
 def test_load_config_resolves_paths_and_defaults(tmp_path):
     raw = base_config(tmp_path)
     raw["groups"] = [

@@ -6,7 +6,7 @@
 
 - 从本机 QQ NT 的解密数据库发现群聊并读取消息。
 - 首次回填最近 30 天，之后默认每 10 分钟自动刷新并增量采集。
-- 按群分类生成自适应摘要：内容少时简洁，讨论丰富时自动扩展话题覆盖；默认使用 OpenCode Go 的 OpenAI-compatible API。
+- 按群分类生成自适应摘要：内容少时简洁，讨论丰富时自动扩展话题覆盖；默认使用 DeepSeek V4.1 Flash 的 OpenAI-compatible API。
 - 将 Markdown 和 JSON 摘要写入 `reports/`。
 - 将资源与经验先放入候选审核，确认后写入 `knowledge/resources.md` 或 `knowledge/experiences.md`。
 - Web UI 提供运行总览、群组配置、手动采集、摘要查看和候选审核。
@@ -39,14 +39,18 @@ $env:QQ_DIGEST_SESSION_SECRET="一段随机长字符串"
 
 也可以把至少 32 个字符、无空白的随机密钥保存到项目外文件，并配置 `security.session_secret_file`。环境变量的优先级更高。
 
-默认直接调用 OpenCode Go 的 OpenAI-compatible 接口，精确配置如下。API key 优先从 `ai.api_key_env` 指定的环境变量读取，其次读取 `ai.api_key_file`；密钥不会写入日志或项目文件。
+默认直接调用 DeepSeek V4.1 Flash 的 OpenAI-compatible 接口。该模型在 DeepSeek API 中的模型 ID 为 `deepseek-flash`。JSON 输出模式用于降低摘要响应格式错误的概率。API key 优先从 `ai.api_key_env` 指定的环境变量读取，其次读取 `ai.api_key_file`；密钥不会写入日志或项目文件。
 
 ```yaml
 ai:
   provider_priority: [compatible]
-  base_url: https://opencode.ai/zen/go/v1
-  model: deepseek-v4.1-flash
+  base_url: https://api.deepseek.com
+  model: deepseek-flash
+  json_mode: true
+  api_key_env: DEEPSEEK_API_KEY
 ```
+
+若密钥保存在项目外的单行文本文件，可另设 `ai.api_key_file` 为该文件的绝对路径；不要把密钥写进配置或提交到 Git。
 
 如需使用本机 `codexID` ChatGPT bridge，可在确认包装器和账号池可用后，将 `chatgpt_bridge` 显式加入 `provider_priority`。
 
@@ -102,8 +106,9 @@ summary:
   retry_interval_minutes: 15
 ai:
   provider_priority: [compatible]
-  base_url: https://opencode.ai/zen/go/v1
-  model: deepseek-v4.1-flash
+  base_url: https://api.deepseek.com
+  model: deepseek-flash
+  json_mode: true
   max_retries: 3
   retry_base_seconds: 2
 qq_bot:

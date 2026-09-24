@@ -19,6 +19,7 @@ class AIClient:
         base_url: str,
         api_key: str,
         model: str,
+        json_mode: bool = False,
         timeout_seconds: float = 120,
         transport: httpx.BaseTransport | None = None,
         max_retries: int = 3,
@@ -28,6 +29,7 @@ class AIClient:
     ) -> None:
         self.base_url = base_url.rstrip("/")
         self.model = model
+        self.json_mode = json_mode
         self.max_retries = max(1, max_retries)
         self.retry_base_seconds = max(0.0, retry_base_seconds)
         self._sleep = sleep_fn
@@ -50,6 +52,8 @@ class AIClient:
             "temperature": 0.2,
             "max_tokens": 8192,
         }
+        if self.json_mode:
+            payload["response_format"] = {"type": "json_object"}
         for attempt in range(self.max_retries):
             try:
                 response = self._client.post("/chat/completions", json=payload)

@@ -28,6 +28,7 @@ class AIConfig(BaseModel):
     model: str
     api_key_env: str
     api_key_file: str = ""
+    json_mode: bool = False
     provider_priority: list[str] = Field(
         default_factory=lambda: ["chatgpt_bridge", "compatible"]
     )

@@ -22,6 +22,7 @@ def _build_provider(config: Config, name: str) -> ChatProvider:
             base_url=config.resolve_base_url(),
             api_key=config.resolve_api_key(),
             model=config.ai.model,
+            json_mode=config.ai.json_mode,
             timeout_seconds=config.ai.timeout_seconds,
             max_retries=config.ai.max_retries,
             retry_base_seconds=config.ai.retry_base_seconds,

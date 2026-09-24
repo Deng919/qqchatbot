@@ -1,6 +1,7 @@
 import json
 import subprocess
 from pathlib import Path
+from types import SimpleNamespace
 from uuid import UUID
 
 import httpx
@@ -32,6 +33,47 @@ def test_chat_sends_openai_compatible_request(respx_mock):
     assert response == {"ok": True}
     request = respx_mock.calls[0].request
     assert request.headers["authorization"] == "Bearer secret"
+
+
+def test_chat_requests_json_output_when_enabled(respx_mock):
+    respx_mock.post("https://api.deepseek.com/chat/completions").mock(
+        return_value=httpx.Response(
+            200,
+            json={"choices": [{"message": {"content": '{"ok": true}'}}]},
+        )
+    )
+    client = AIClient(
+        base_url="https://api.deepseek.com",
+        api_key="synthetic-key",
+        model="deepseek-flash",
+        json_mode=True,
+        transport=httpx.MockTransport(respx_mock.handler),
+        max_retries=1,
+    )
+
+    assert client.chat([{"role": "system", "content": "Return JSON"}]) == {"ok": True}
+    payload = json.loads(respx_mock.calls[0].request.content)
+    assert payload["response_format"] == {"type": "json_object"}
+
+
+def test_factory_passes_json_mode_to_compatible_client():
+    config = SimpleNamespace(
+        ai=SimpleNamespace(
+            provider_priority=["compatible"],
+            model="deepseek-flash",
+            json_mode=True,
+            timeout_seconds=5,
+            max_retries=1,
+            retry_base_seconds=0,
+        ),
+        resolve_base_url=lambda: "https://api.deepseek.com",
+        resolve_api_key=lambda: "synthetic-key",
+    )
+
+    client = build_ai_client(config)
+
+    assert client.json_mode is True
+    client.close()
 
 
 def test_chat_sends_stable_opencode_session_headers(respx_mock):

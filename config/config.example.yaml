@@ -28,7 +28,7 @@ knowledge:
   experience_path: knowledge/experiences.md
 
 ai:
-  # 默认直接使用 OpenCode Go 的 OpenAI-compatible 接口。
+  # 默认直接使用 DeepSeek V4.1 Flash 的 OpenAI-compatible 接口。
   # 如需使用本机 codexID ChatGPT bridge，可显式加入 chatgpt_bridge。
   provider_priority:
     - compatible
@@ -37,9 +37,10 @@ ai:
   bridge_model: ""
   bridge_timeout_seconds: 180
   bridge_queue_timeout_seconds: 60
-  base_url: https://opencode.ai/zen/go/v1
-  model: deepseek-v4.1-flash
-  api_key_env: QQ_DIGEST_AI_API_KEY
+  base_url: https://api.deepseek.com
+  model: deepseek-flash
+  json_mode: true
+  api_key_env: DEEPSEEK_API_KEY
   # 环境变量未设置时，从该文件读取。
   api_key_file: ""
   timeout_seconds: 120
