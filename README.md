@@ -39,7 +39,7 @@ $env:QQ_DIGEST_SESSION_SECRET="一段随机长字符串"
 
 也可以把至少 32 个字符、无空白的随机密钥保存到项目外文件，并配置 `security.session_secret_file`。环境变量的优先级更高。
 
-默认直接调用 DeepSeek V4.1 Flash 的 OpenAI-compatible 接口。该模型在 DeepSeek API 中的模型 ID 为 `deepseek-flash`。JSON 输出模式用于降低摘要响应格式错误的概率。API key 优先从 `ai.api_key_env` 指定的环境变量读取，其次读取 `ai.api_key_file`；密钥不会写入日志或项目文件。
+默认直接调用 DeepSeek V4.1 Flash 的 OpenAI-compatible 接口。该模型在 DeepSeek API 中的模型 ID 为 `deepseek-flash`。JSON 输出模式用于降低摘要响应格式错误的概率。网页保存的 API Key 优先使用；若尚未通过网页保存，则沿用环境变量、`ai.api_key_file` 等原有来源。密钥不会写入日志或项目文件。
 
 ```yaml
 ai:
@@ -48,9 +48,12 @@ ai:
   model: deepseek-flash
   json_mode: true
   api_key_env: DEEPSEEK_API_KEY
+  ui_api_key_file: "D:/Dev/QQDigest/secrets/deepseek-api-key.txt"
 ```
 
 若密钥保存在项目外的单行文本文件，可另设 `ai.api_key_file` 为该文件的绝对路径；不要把密钥写进配置或提交到 Git。
+
+登录网页后在“AI 设置”输入并保存 DeepSeek Key，再按“测试连接”验证。保存本身不会发起网络请求；Key 写入上方的本机项目外路径，旧 Key 不会在网页回显。报告详情中的“问 DeepSeek”可针对该报告提问和追问：系统只取同群、同日期范围的已归档原始消息；上下文过长时按问题筛选消息及邻近记录。选中的聊天片段会发送到 DeepSeek，答案所列来源 ID 由后端核验。问答只在当前页面内存中保留，关闭对话框或刷新页面即清空；不会写入报告或数据库。
 
 如需使用本机 `codexID` ChatGPT bridge，可在确认包装器和账号池可用后，将 `chatgpt_bridge` 显式加入 `provider_priority`。
 

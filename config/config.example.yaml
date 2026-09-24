@@ -41,6 +41,8 @@ ai:
   model: deepseek-flash
   json_mode: true
   api_key_env: DEEPSEEK_API_KEY
+  # 网页“AI 设置”保存的 Key 优先于下方旧来源；实际部署使用项目外绝对路径。
+  ui_api_key_file: "D:/Dev/QQDigest/secrets/deepseek-api-key.txt"
   # 环境变量未设置时，从该文件读取。
   api_key_file: ""
   timeout_seconds: 120

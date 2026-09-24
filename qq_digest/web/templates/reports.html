@@ -17,7 +17,7 @@
     </div>
   </section>
   <section class="card report-detail" id="report-detail" hidden>
-    <div class="card-header">报告详情 <button class="btn btn-sm" aria-label="关闭报告详情" type="button" onclick="closeReport()">关闭</button></div>
+    <div class="card-header">报告详情 <span><button class="btn btn-sm" id="report-qa-open" type="button" onclick="openReportQA()">问 DeepSeek</button> <button class="btn btn-sm" aria-label="关闭报告详情" type="button" onclick="closeReport()">关闭</button></span></div>
     <div id="report-content" class="report-content"></div>
   </section>
 </div>
@@ -42,6 +42,15 @@
     </fieldset>
     <div class="range-panel-footer"><button class="btn" type="button" onclick="closeRangeSummary()">取消</button><button class="btn btn-primary" id="range-submit-btn" type="submit">开始生成</button></div>
   </form>
+</aside>
+
+<div id="report-qa-backdrop" class="range-summary-backdrop" hidden onclick="closeReportQA()"></div>
+<aside id="report-qa-dialog" class="report-qa-dialog" hidden role="dialog" aria-modal="true" aria-labelledby="report-qa-title">
+  <div class="range-panel-header"><div><h2 id="report-qa-title">询问这份报告</h2><p id="report-qa-scope"></p></div><button class="btn btn-sm" type="button" onclick="closeReportQA()" aria-label="关闭问答">关闭</button></div>
+  <p class="report-qa-privacy">为回答问题，会把本报告范围内选中的聊天片段发送到 DeepSeek。关闭后本次问答会清空，不保存对话。</p>
+  <div id="report-qa-messages" class="report-qa-messages" aria-live="polite"></div>
+  <div id="report-qa-sources" class="report-qa-sources"></div>
+  <form id="report-qa-form" onsubmit="askReport(event)"><label for="report-qa-question">你的问题</label><textarea class="input" id="report-qa-question" maxlength="2000" rows="3" required placeholder="例如：这次 503 错误后来解决了吗？"></textarea><button class="btn btn-primary" id="report-qa-submit" type="submit">发送问题</button></form>
 </aside>
 
 <style>
@@ -69,12 +78,24 @@
   .range-selection-summary { margin-top: 12px; padding: 9px 11px; background: var(--surface-subtle); border: 1px solid #e3e7e2; border-radius: var(--radius); color: var(--text-soft); font-size: 12px; }
   .range-result { margin-top: 10px; padding: 10px 11px; background: var(--primary-soft); border-radius: var(--radius); color: var(--primary-dark); font-size: 12px; white-space: pre-wrap; }
   .range-panel-footer { position: sticky; bottom: -18px; margin: 18px -18px -18px; padding: 12px 18px; display: flex; justify-content: flex-end; gap: 8px; background: var(--surface); border-top: 1px solid var(--border); }
+  .report-qa-dialog { position: fixed; z-index: 41; right: 18px; top: 70px; bottom: 18px; width: min(560px, calc(100vw - 36px)); display: flex; flex-direction: column; gap: 12px; padding: 18px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: 0 24px 64px rgb(18 25 21 / .24); }
+  .report-qa-dialog[hidden] { display: none; }
+  .report-qa-privacy { margin: 0; padding: 10px; border-radius: var(--radius); background: var(--surface-subtle); color: var(--text-soft); font-size: 12px; line-height: 1.5; }
+  .report-qa-messages { flex: 1; min-height: 100px; overflow-y: auto; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 13px; line-height: 1.65; }
+  .report-qa-entry { padding: 10px 0; border-bottom: 1px solid var(--border); }
+  .report-qa-entry strong { display: block; margin-bottom: 3px; }
+  .report-qa-sources { max-height: 150px; overflow-y: auto; color: var(--text-soft); font-size: 12px; overflow-wrap: anywhere; }
+  .report-qa-sources details { margin: 5px 0; }
+  #report-qa-form { display: grid; gap: 8px; }
+  #report-qa-question { width: 100%; resize: vertical; min-height: 76px; }
+  #report-qa-submit { justify-self: end; }
   @media (max-width: 1040px) { .report-layout.has-detail { grid-template-columns: 1fr; } }
-  @media (max-width: 700px) { .report-table { min-width: 0; } .range-summary-panel { inset: 104px 10px 10px; width: auto; padding: 15px; } .range-panel-footer { bottom: -15px; margin: 16px -15px -15px; padding: 11px 15px; } }
+  @media (max-width: 700px) { .report-table { min-width: 0; } .range-summary-panel, .report-qa-dialog { inset: 104px 10px 10px; width: auto; padding: 15px; } .range-panel-footer { bottom: -15px; margin: 16px -15px -15px; padding: 11px 15px; } }
   @media (max-width: 430px) { .range-date-grid { grid-template-columns: 1fr; } }
 </style>
 <script>
   var rangeGroups = [], rangeBusy = false, rangeOpener = null;
+  var qaReport = null, qaHistory = [], qaOpener = null, qaRequestToken = 0, qaBusy = false;
   function loadReports() {
     api('GET', '/api/reports').then(function(d) {
       var el = document.getElementById('report-list');
@@ -92,11 +113,62 @@
   }
   function viewReport(kind, reportId) {
     if ((kind !== 'daily' && kind !== 'range') || !Number.isInteger(Number(reportId))) return;
+    closeReportQA(); qaReport = null;
     api('GET', '/api/reports/' + kind + '/' + Number(reportId)).then(function(d) {
+      qaReport = {kind: kind, id: Number(reportId), start: d.window_start_date, end: d.window_end_date};
       document.getElementById('report-detail').hidden = false; document.getElementById('report-layout').classList.add('has-detail'); document.getElementById('report-content').textContent = d.markdown;
     }).catch(function(e) { toast('加载失败: ' + e.message, 'error'); });
   }
-  function closeReport() { document.getElementById('report-detail').hidden = true; document.getElementById('report-layout').classList.remove('has-detail'); }
+  function closeReport() { closeReportQA(); qaReport = null; document.getElementById('report-detail').hidden = true; document.getElementById('report-layout').classList.remove('has-detail'); }
+  function openReportQA() {
+    if (!qaReport) return;
+    qaOpener = document.activeElement; qaHistory = [];
+    document.getElementById('report-qa-messages').textContent = '';
+    document.getElementById('report-qa-sources').textContent = '';
+    document.getElementById('report-qa-question').value = '';
+    document.getElementById('report-qa-scope').textContent = qaReport.start + (qaReport.start === qaReport.end ? '' : ' 至 ' + qaReport.end);
+    document.getElementById('report-qa-dialog').hidden = false;
+    document.getElementById('report-qa-backdrop').hidden = false;
+    document.getElementById('report-qa-question').focus();
+  }
+  function closeReportQA() {
+    qaRequestToken += 1; qaHistory = []; qaBusy = false;
+    document.getElementById('report-qa-dialog').hidden = true;
+    document.getElementById('report-qa-backdrop').hidden = true;
+    document.getElementById('report-qa-messages').textContent = '';
+    document.getElementById('report-qa-sources').textContent = '';
+    document.getElementById('report-qa-question').value = '';
+    document.getElementById('report-qa-submit').disabled = false;
+    if (qaOpener && typeof qaOpener.focus === 'function') qaOpener.focus();
+    qaOpener = null;
+  }
+  function appendQAMessage(label, content) {
+    var entry = document.createElement('div'), heading = document.createElement('strong'), body = document.createElement('div');
+    entry.className = 'report-qa-entry'; heading.textContent = label; body.textContent = content;
+    entry.appendChild(heading); entry.appendChild(body);
+    var list = document.getElementById('report-qa-messages'); list.appendChild(entry); list.scrollTop = list.scrollHeight;
+  }
+  function renderQASources(data) {
+    var container = document.getElementById('report-qa-sources'); container.textContent = '';
+    var note = document.createElement('div'); note.textContent = '本次参考 ' + data.context_message_count + ' 条原始消息' + (data.context_truncated ? '（已按问题筛选）' : '') + '。'; container.appendChild(note);
+    (data.sources || []).forEach(function(source) {
+      var details = document.createElement('details'), summary = document.createElement('summary'), excerpt = document.createElement('div');
+      summary.textContent = source.timestamp + ' · ' + (source.sender_qq || '未知发送者') + ' · ' + source.msg_id;
+      excerpt.textContent = source.excerpt; details.appendChild(summary); details.appendChild(excerpt); container.appendChild(details);
+    });
+  }
+  function askReport(event) {
+    event.preventDefault(); if (!qaReport || qaBusy) return;
+    var input = document.getElementById('report-qa-question'), question = input.value.trim(); if (!question) return;
+    var report = qaReport, requestToken = ++qaRequestToken, history = qaHistory.slice(-6);
+    qaBusy = true; document.getElementById('report-qa-submit').disabled = true;
+    api('POST', '/api/reports/' + report.kind + '/' + report.id + '/ask', {question: question, history: history}).then(function(data) {
+      if (requestToken !== qaRequestToken) return;
+      appendQAMessage('你', question); appendQAMessage('DeepSeek', data.answer);
+      renderQASources(data); qaHistory.push({role: 'user', content: question}, {role: 'assistant', content: data.answer}); qaHistory = qaHistory.slice(-6); input.value = '';
+    }).catch(function(error) { if (requestToken === qaRequestToken) toast('问答失败: ' + error.message, 'error'); })
+      .finally(function() { if (requestToken === qaRequestToken) { qaBusy = false; document.getElementById('report-qa-submit').disabled = false; input.focus(); } });
+  }
   function localDateValue(value) { return value.getFullYear() + '-' + String(value.getMonth() + 1).padStart(2, '0') + '-' + String(value.getDate()).padStart(2, '0'); }
   function openRangeSummary() {
     rangeOpener = document.activeElement; var today = localDateValue(new Date());
@@ -152,7 +224,7 @@
     api('POST', '/api/run-daily').then(function(d) { toast(dailyResultMessage(d), d.status === 'partial_success' ? 'error' : 'success'); loadReports(); })
       .catch(function(e) { toast('执行失败: ' + e.message, 'error'); }).finally(function() { button.disabled = false; button.textContent = '生成今日日报'; });
   }
-  document.addEventListener('keydown', function(event) { if (event.key === 'Escape' && !document.getElementById('range-summary-panel').hidden) closeRangeSummary(); });
+  document.addEventListener('keydown', function(event) { if (event.key === 'Escape' && !document.getElementById('report-qa-dialog').hidden) closeReportQA(); else if (event.key === 'Escape' && !document.getElementById('range-summary-panel').hidden) closeRangeSummary(); });
   loadReports();
 </script>
 {% endblock %}
