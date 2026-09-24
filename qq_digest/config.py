@@ -28,6 +28,7 @@ class AIConfig(BaseModel):
     model: str
     api_key_env: str
     api_key_file: str = ""
+    ui_api_key_file: str = ""
     json_mode: bool = False
     provider_priority: list[str] = Field(
         default_factory=lambda: ["chatgpt_bridge", "compatible"]
@@ -121,6 +122,15 @@ class Config(BaseModel):
         }
 
     def resolve_api_key(self) -> str:
+        if self.ai.ui_api_key_file:
+            from .ai.key_store import read_ui_api_key
+
+            try:
+                ui_key = read_ui_api_key(Path(self.ai.ui_api_key_file).expanduser())
+            except (OSError, UnicodeError, ValueError) as exc:
+                raise ConfigError("无法读取本地 DeepSeek API 密钥") from exc
+            if ui_key:
+                return ui_key
         value = os.environ.get(self.ai.api_key_env, "")
         if value:
             return value
@@ -252,6 +262,8 @@ def load_config(path: Path) -> Config:
         )
     if len(config.ai.provider_priority) != len(set(config.ai.provider_priority)):
         raise ConfigError("ai.provider_priority 存在重复")
+    if config.ai.ui_api_key_file and not Path(config.ai.ui_api_key_file).is_absolute():
+        raise ConfigError("ai.ui_api_key_file 必须是绝对路径")
     if not Path(config.ai.bridge_wrapper_path).is_absolute():
         raise ConfigError("ai.bridge_wrapper_path 必须是绝对路径")
     if not Path(config.ai.bridge_account_directory).is_absolute():

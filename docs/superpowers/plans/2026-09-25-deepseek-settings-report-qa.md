@@ -25,7 +25,7 @@
 
 **Files:** Create `qq_digest/ai/key_store.py`, `tests/test_ai_settings.py`; modify `qq_digest/config.py`.
 
-- [ ] **Step 1: Write failing tests.** Assert a UI Key saved to a temporary path is returned by `Config.resolve_api_key()` ahead of an environment Key; old env/file fallback works if UI file is absent; empty/whitespace/multiline inputs fail; replacement never returns the old Key. Example:
+- [x] **Step 1: Write failing tests.** Assert a UI Key saved to a temporary path is returned by `Config.resolve_api_key()` ahead of an environment Key; old env/file fallback works if UI file is absent; empty/whitespace/multiline inputs fail; replacement never returns the old Key. Example:
 
 ```python
 def test_ui_key_takes_precedence(tmp_path, monkeypatch, config):
@@ -35,9 +35,9 @@ def test_ui_key_takes_precedence(tmp_path, monkeypatch, config):
     assert config.resolve_api_key() == "ui-key"
 ```
 
-- [ ] **Step 2: Run red test.** `D:\CodexTools\python\Scripts\python.exe -m pytest tests/test_ai_settings.py -q`; expected failure: `save_ui_api_key`/`ui_api_key_file` not defined.
-- [ ] **Step 3: Implement the store.** Define `save_ui_api_key(path: Path, value: str) -> None`, `ui_api_key_exists(path: Path) -> bool`, and `read_ui_api_key(path: Path) -> str | None`. Strip one trailing newline only; reject blank, embedded whitespace/newline, and oversized values. Create a dedicated secrets directory; on Windows restrict its DACL to current user, SYSTEM and Administrators before writing. Write a same-directory temporary file, flush/fsync, restrict its ACL, then `os.replace`; on failure remove only that temp file and leave the previous Key. Never include value in exceptions/logs. Add `AIConfig.ui_api_key_file` defaulting to `D:\Dev\QQDigest\secrets\deepseek-api-key.txt` for this Windows deployment; `resolve_api_key()` checks valid UI file first, then unchanged legacy order.
-- [ ] **Step 4: Run green and regression tests.** `D:\CodexTools\python\Scripts\python.exe -m pytest tests/test_ai_settings.py tests/test_config.py -q`; expected all pass.
+- [x] **Step 2: Run red test.** `D:\CodexTools\python\Scripts\python.exe -m pytest tests/test_ai_settings.py -q`; expected failure: `save_ui_api_key`/`ui_api_key_file` not defined.
+- [x] **Step 3: Implement the store.** Define `save_ui_api_key(path: Path, value: str) -> None`, `ui_api_key_exists(path: Path) -> bool`, and `read_ui_api_key(path: Path) -> str | None`. Strip one trailing newline only; reject blank, embedded whitespace/newline, and oversized values. Create a dedicated secrets directory; on Windows restrict its DACL to current user, SYSTEM and Administrators before writing. Write a same-directory temporary file, flush/fsync, restrict its ACL, then `os.replace`; on failure remove only that temp file and leave the previous Key. Never include value in exceptions/logs. Add `AIConfig.ui_api_key_file` as an optional absolute path; the current deployment will configure `D:\Dev\QQDigest\secrets\deepseek-api-key.txt`, while test configurations use temporary paths. `resolve_api_key()` checks a valid UI file first, then unchanged legacy order.
+- [x] **Step 4: Run green and regression tests.** `D:\CodexTools\python\Scripts\python.exe -m pytest tests/test_ai_settings.py tests/test_config.py -q`; expected all pass.
 - [ ] **Step 5: Commit.** Stage only the named files; commit `feat: add local DeepSeek key store`.
 
 ## Task 2: Authenticated Settings Page and APIs

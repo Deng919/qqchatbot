@@ -109,6 +109,14 @@ def test_load_config_rejects_relative_bridge_paths(tmp_path):
         load_config(write_config(tmp_path, raw))
 
 
+def test_load_config_rejects_relative_ui_api_key_path(tmp_path):
+    raw = base_config(tmp_path)
+    raw["ai"]["ui_api_key_file"] = "secrets/deepseek-api-key.txt"
+
+    with pytest.raises(ConfigError, match="ui_api_key_file"):
+        load_config(write_config(tmp_path, raw))
+
+
 def test_load_config_rejects_missing_ai_model(tmp_path):
     raw = base_config(tmp_path)
     raw["ai"].pop("model")
