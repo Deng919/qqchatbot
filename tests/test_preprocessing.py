@@ -27,3 +27,32 @@ def test_extracts_todo_statements():
     result = processor.process(["明天我整理一下链接", "TODO: 修复配置"])
 
     assert result.todos == ["明天我整理一下链接", "TODO: 修复配置"]
+
+
+def test_normalizes_urls_and_keeps_source_indexes():
+    result = Preprocessor().process(
+        ["忽略", "  文档 https://EXAMPLE.com/a?x=1&amp;y=2。  "]
+    )
+
+    assert result.cleaned_lines == [
+        "忽略",
+        "文档 https://EXAMPLE.com/a?x=1&y=2。",
+    ]
+    assert result.kept_indexes == [0, 1]
+    assert result.links == ["https://example.com/a?x=1&y=2"]
+
+
+def test_excludes_internal_qq_urls_without_dropping_user_text():
+    result = Preprocessor().process(
+        [
+            "https://tianquan.gtimg.cn/nudgeaction/item/10/expression.jpg",
+            "这个入口打不开 https://zb.vip.qq.com/v2/pages/nudgeMall?_wv=2",
+        ]
+    )
+
+    assert result.links == []
+    assert result.cleaned_lines == [
+        "这个入口打不开 https://zb.vip.qq.com/v2/pages/nudgeMall?_wv=2"
+    ]
+    assert result.kept_indexes == [1]
+    assert result.discarded_count == 1

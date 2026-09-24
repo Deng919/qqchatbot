@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+{% block title %}消息采集 - QQ Digest{% endblock %}
+{% block page_title %}消息采集{% endblock %}
+{% block content %}
+<section class="filter-toolbar collect-toolbar" aria-label="采集条件">
+  <div class="field group-field"><label for="collect-group">群聊</label><select id="collect-group" class="input"><option value="">选择群...</option></select></div>
+  <div class="field"><label for="collect-start">开始日期</label><input type="date" id="collect-start" class="input"></div>
+  <div class="field"><label for="collect-end">结束日期</label><input type="date" id="collect-end" class="input"></div>
+  <button class="btn btn-primary toolbar-action" onclick="collectMessages()">采集消息</button>
+  <button class="btn toolbar-action" id="btn-refresh" onclick="refreshDatabase()">刷新数据库</button>
+</section>
+<section class="card">
+  <div class="card-header">采集结果 <span id="collect-count" class="header-meta"></span></div>
+  <div class="msg-list" id="collect-results">
+    <div class="empty" id="collect-empty">选择群和日期范围后点击采集</div>
+  </div>
+</section>
+<script>
+  function loadGroupOptions() {
+    return api('GET', '/api/groups').then(function(d) {
+      var sel = document.getElementById('collect-group');
+      if (!d.groups.length) {
+        sel.innerHTML = '<option value="">暂无已配置群组，请先到「群组管理」添加</option>';
+        sel.disabled = true;
+        document.getElementById('collect-empty').textContent = '请先到「群组管理」扫描并添加群组';
+        return;
+      }
+      sel.innerHTML = '<option value="">选择群...</option>';
+      d.groups.forEach(function(g) {
+        var o = document.createElement('option');
+        o.value = g.group_id;
+        o.textContent = g.name + ' (' + g.group_id + ')';
+        sel.appendChild(o);
+      });
+    }).catch(function(e) {
+      var sel = document.getElementById('collect-group');
+      sel.innerHTML = '<option value="">加载失败</option>';
+      document.getElementById('collect-empty').textContent = '加载群列表失败: ' + e.message;
+    });
+  }
+  function collectMessages() {
+    var gid = document.getElementById('collect-group').value;
+    var start = document.getElementById('collect-start').value;
+    var end = document.getElementById('collect-end').value;
+    if (!gid) { toast('请选择群', 'error'); return; }
+    if (!start || !end) { toast('请选择日期范围', 'error'); return; }
+    toast('采集中...', '');
+    api('POST', '/api/collect', {group_id: parseInt(gid), start: start, end: end}).then(function(d) {
+      var el = document.getElementById('collect-results');
+      document.getElementById('collect-count').textContent = '采集 ' + formatNumber(d.total) + ' 条 · 新增 ' + formatNumber(d.inserted) + ' 条' + (d.preview_truncated ? ' · 显示最近 500 条' : '');
+      if (!d.messages.length) { el.innerHTML = '<div class="empty">该时间段无消息</div>'; return; }
+      el.innerHTML = d.messages.map(function(m) {
+        var t = m.timestamp.slice(11,16);
+        var d2 = m.timestamp.slice(5,10);
+        var typeBadge = m.message_type === 'text' ? 'badge-blue' : m.message_type === 'file' ? 'badge-orange' : 'badge-dim';
+        return '<div class="msg-item"><span class="msg-time">' + escapeHtml(d2) + ' ' + escapeHtml(t) + '</span><span class="msg-sender">' + escapeHtml(m.sender_qq) + '</span><span class="badge ' + typeBadge + '">' + escapeHtml(m.message_type) + '</span><span class="msg-text">' + escapeHtml(m.text) + '</span></div>';
+      }).join('');
+      toast('采集到 ' + formatNumber(d.total) + ' 条消息', 'success');
+    }).catch(function(e) { toast('采集失败: ' + e.message, 'error'); });
+  }
+  function refreshDatabase() {
+    var btn = document.getElementById('btn-refresh');
+    btn.disabled = true;
+    btn.textContent = '刷新中...';
+    toast('正在刷新数据库（需扫描 QQ 进程内存，可能需要 1-3 分钟）', '');
+    api('POST', '/api/refresh', {}).then(function(d) {
+      btn.disabled = false;
+      btn.textContent = '刷新数据库';
+      toast(d.message, d.success ? 'success' : 'error');
+    }).catch(function(e) {
+      btn.disabled = false;
+      btn.textContent = '刷新数据库';
+      toast('刷新失败: ' + e.message, 'error');
+    });
+  }
+  var today = new Date().toISOString().slice(0,10);
+  var weekAgo = new Date(Date.now() - 7*86400000).toISOString().slice(0,10);
+  document.getElementById('collect-start').value = weekAgo;
+  document.getElementById('collect-end').value = today;
+  loadGroupOptions();
+</script>
+{% endblock %}

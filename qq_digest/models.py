@@ -29,6 +29,8 @@ class GroupConfig(BaseModel):
     enabled: bool = True
     daily_summary: bool = True
     category: Literal["tech", "resource", "project", "study", "general"] = "general"
+    # Deprecated compatibility field for existing YAML and SQLite rows. Summary
+    # generation deliberately ignores it and always uses the adaptive contract.
     template: Literal["concise", "detailed"] = "concise"
     keywords: list[str] = Field(default_factory=list)
     important_candidates: bool = True
@@ -48,3 +50,5 @@ class SummaryCandidate(BaseModel):
     excerpt: str = ""
     status: CandidateStatus = "pending"
     ignore_reason: str = ""
+    created_at: str = ""
+    updated_at: str = ""

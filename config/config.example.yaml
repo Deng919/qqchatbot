@@ -3,36 +3,89 @@ summary:
   minute: 0
   window_mode: today
   timezone: Asia/Shanghai
+  max_attempts: 3
+  retry_interval_minutes: 15
 
 security:
   web_password_hash: "请用 qq-digest hash-password 生成"
   session_secret_env: QQ_DIGEST_SESSION_SECRET
+  # 环境变量未设置时，从该文件读取；生产环境建议使用绝对路径。
+  session_secret_file: ""
   session_hours: 12
 
 web:
-  host: 0.0.0.0
+  host: 127.0.0.1
   port: 8765
 
+collection:
+  enabled: true
+  interval_minutes: 10
+  overlap_minutes: 60
+  startup_delay_seconds: 15
+
+knowledge:
+  resource_path: knowledge/resources.md
+  experience_path: knowledge/experiences.md
+
 ai:
-  base_url: https://api.example.com/v1
-  model: your-model
+  # 默认直接使用 OpenCode Go 的 OpenAI-compatible 接口。
+  # 如需使用本机 codexID ChatGPT bridge，可显式加入 chatgpt_bridge。
+  provider_priority:
+    - compatible
+  bridge_wrapper_path: "D:/CodexTools/gpttoimage-session/chat-current-account.ps1"
+  bridge_account_directory: "D:/CodexTools/codexID"
+  bridge_model: ""
+  bridge_timeout_seconds: 180
+  bridge_queue_timeout_seconds: 60
+  base_url: https://opencode.ai/zen/go/v1
+  model: deepseek-v4.1-flash
   api_key_env: QQ_DIGEST_AI_API_KEY
+  # 环境变量未设置时，从该文件读取。
+  api_key_file: ""
   timeout_seconds: 120
   max_context_chars: 60000
+  max_retries: 3
+  retry_base_seconds: 2
 
 groups: []
+
+ntqq:
+  enabled: false
+  qq_number: 0
+  db_dir: ""
+  timezone: Asia/Shanghai
+
+# QQ Bot：启用后可通过 QQ Bot 接收私信指令并推送每日摘要
+qq_bot:
+  enabled: false
+  app_id: ""
+  app_secret_env: QQ_BOT_APP_SECRET
+  allowed_openids: []
+  max_retries: 3
+  retry_base_seconds: 60
+# qq_bot:
+#   enabled: true
+#   app_id: "your-app-id"
+#   app_secret_env: QQ_BOT_APP_SECRET
+#   allowed_openids:
+#     - "your-qq-openid"
+
+# 启用后从本地解密的 NTQQ 数据库读取真实群消息：
+# ntqq:
+#   enabled: true
+#   qq_number: 1001234567
+#   db_dir: "D:/Cache/output/1001234567"
+#   timezone: Asia/Shanghai
 # 群分类配置示例：
 # groups:
 #   - group_id: 123456789
 #     name: "Python 开发交流"
 #     category: tech
 #     daily_summary: true
-#     template: concise
 #   - group_id: 987654321
 #     name: "前端资源汇总"
 #     category: resource
 #     daily_summary: true
-#     template: detailed
 #   - group_id: 555555555
 #     name: "XX 项目协作群"
 #     category: project

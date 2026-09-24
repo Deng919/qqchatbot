@@ -5,6 +5,14 @@ from datetime import datetime
 from ..models import NormalizedMessage
 
 
+class CollectorError(RuntimeError):
+    """Base error for collector failures that must be visible to callers."""
+
+
+class CollectionIncompleteError(CollectorError):
+    """Raised when a source read cannot prove that the result is complete."""
+
+
 class Collector(ABC):
     @abstractmethod
     def discover_groups(self) -> list[dict]:

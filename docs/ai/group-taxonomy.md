@@ -92,7 +92,7 @@
  **摘要侧重：**
  - 只提取有信息量的讨论片段，不强行总结闲聊
  - 如果当天没有有效讨论，摘要可以为空，不要编造话题
- - 单条消息不超过一句话概括
+ - 篇幅按有效信息密度自适应，不用闲聊凑数
 
  **候选侧重：**
  - 标准从严：只有能脱离群上下文独立理解的内容才入选
@@ -108,17 +108,14 @@
      name: "Python 开发交流"
      category: tech
      daily_summary: true
-     template: concise
    - group_id: 987654321
      name: "前端资源汇总"
      category: resource
      daily_summary: true
-     template: detailed
    - group_id: 555555555
      name: "XX 项目协作群"
      category: project
      daily_summary: true
-     template: concise
    - group_id: 111222333
      name: "考研互助"
      category: study
@@ -131,14 +128,12 @@
 
  未配置 `category` 的群默认为 `general`。
 
- ## 分类与模板的关系
+ ## 分类与自适应摘要
 
- `category` 决定 AI 用什么标准去理解和筛选内容，`template` 决定输出格式细节：
+ `category` 决定 AI 理解和筛选内容时采用的业务重点，输出长度和主题数量则由当次聊天的信息密度自动决定。无需再为群配置精简或详细模板。
 
- | 维度 | `category` | `template` |
- |------|-----------|-----------|
- | 控制对象 | 摘要策略、候选标准 | 输出长度、格式粒度 |
- | 取值 | tech/resource/project/study/general | concise/detailed |
- | 影响范围 | prompt 中的规则段落 | prompt 中的输出格式段落 |
-
- 两者独立配置，组合生效。例如 `tech + detailed` 表示技术群、详细摘要格式；`general + concise` 表示通用群、精简摘要格式。
+ | 维度 | 规则 |
+ |------|------|
+ | 摘要策略 | 按 `category` 使用 tech/resource/project/study/general 对应规则 |
+ | 输出长度 | 根据信息密度自适应；内容少则简短，内容多则展开 |
+ | 主题数量 | 通常 3–8 个；实际有效主题不足时不凑数 |

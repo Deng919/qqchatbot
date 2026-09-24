@@ -1,0 +1,112 @@
+{% extends "base.html" %}
+{% block title %}总览 - 群聊简报{% endblock %}
+{% block page_title %}运行总览{% endblock %}
+{% block actions %}<button class="btn btn-primary" id="run-daily-btn" onclick="runDaily()">立即生成摘要</button>{% endblock %}
+{% block content %}
+<section class="metrics" aria-label="归档统计">
+  <div class="metric"><div class="stat" id="stat-groups">--</div><div class="stat-label">已启用群组</div></div>
+  <div class="metric"><div class="stat" id="stat-messages">--</div><div class="stat-label">归档消息</div></div>
+  <div class="metric"><div class="stat" id="stat-pending">--</div><div class="stat-label">待审核重点</div></div>
+  <div class="metric"><div class="stat" id="stat-reports">--</div><div class="stat-label">已生成摘要</div></div>
+</section>
+
+<div class="dashboard-grid">
+  <section class="card">
+    <div class="card-header"><span>自动任务</span><span class="header-meta" id="scheduler-info">读取中...</span></div>
+    <div class="status-line"><span>聊天记录自动导入</span><strong id="collection-info">读取中...</strong></div>
+    <div class="table-wrap">
+      <table class="table responsive-table job-table">
+        <thead><tr><th>任务</th><th>状态</th><th>开始</th><th>结束</th><th>错误</th></tr></thead>
+        <tbody id="job-list"><tr><td colspan="5" class="empty">加载中...</td></tr></tbody>
+      </table>
+    </div>
+    <div class="mobile-job-note">手机端仅显示最近 5 条任务</div>
+  </section>
+
+  <section class="card">
+    <div class="card-header"><span>群组归档量</span><a class="header-meta" href="/groups">管理群组</a></div>
+    <div class="table-wrap">
+      <table class="table responsive-table group-stats-table">
+        <thead><tr><th>群名</th><th>消息</th><th>最近同步</th></tr></thead>
+        <tbody id="group-stats"><tr><td colspan="3" class="empty">加载中...</td></tr></tbody>
+      </table>
+    </div>
+  </section>
+</div>
+
+<script>
+  var jobLabels = {daily_digest: '每日摘要', message_sync: '消息导入', backfill: '历史回填'};
+  var statusLabels = {success: '成功', partial_success: '部分成功', failed: '失败', running: '运行中'};
+
+  function loadStats() {
+    api('GET', '/api/stats').then(function(data) {
+      document.getElementById('stat-groups').textContent = formatNumber(data.enabled_groups);
+      document.getElementById('stat-messages').textContent = formatNumber(data.total_messages);
+      document.getElementById('stat-pending').textContent = formatNumber(data.pending_candidates);
+      document.getElementById('stat-reports').textContent = formatNumber(data.total_reports);
+    }).catch(function(error) { toast('统计加载失败：' + error.message, 'error'); });
+  }
+  function loadJobs() {
+    api('GET', '/api/jobs').then(function(data) {
+      var node = document.getElementById('job-list');
+      if (!data.jobs.length) { node.innerHTML = '<tr><td colspan="5" class="empty">尚未执行摘要任务</td></tr>'; return; }
+      node.innerHTML = data.jobs.map(function(job) {
+        var badge = job.status === 'success' ? 'badge-green' : job.status === 'failed' ? 'badge-red' : 'badge-orange';
+        return '<tr><td data-label="任务">' + escapeHtml(jobLabels[job.job_type] || job.job_type) + '</td>'
+          + '<td data-label="状态"><span class="badge ' + badge + '">' + escapeHtml(statusLabels[job.status] || job.status) + '</span></td>'
+          + '<td data-label="开始">' + escapeHtml(job.started_at || '—') + '</td><td data-label="结束">' + escapeHtml(job.finished_at || '—') + '</td>'
+          + '<td data-label="错误"><span class="job-error" title="' + escapeHtml(job.error || '') + '">' + escapeHtml(job.error ? job.error.slice(0, 48) : '—') + '</span></td></tr>';
+      }).join('');
+    }).catch(function(error) { toast('任务记录加载失败：' + error.message, 'error'); });
+  }
+  function loadGroupStats() {
+    api('GET', '/api/groups/stats').then(function(data) {
+      var node = document.getElementById('group-stats');
+      if (!data.groups.length) { node.innerHTML = '<tr><td colspan="3" class="empty">尚未配置真实群组</td></tr>'; return; }
+      data.groups.sort(function(a, b) { return (b.message_count || 0) - (a.message_count || 0); });
+      node.innerHTML = data.groups.map(function(group) {
+        return '<tr><td data-label="群名">' + escapeHtml(group.name) + '</td>'
+          + '<td data-label="消息" class="number">' + formatNumber(group.message_count) + '</td>'
+          + '<td data-label="最近同步">' + escapeHtml(group.last_sync || '未同步') + '</td></tr>';
+      }).join('');
+    }).catch(function(error) { toast('群组统计加载失败：' + error.message, 'error'); });
+  }
+  function loadScheduler() {
+    api('GET', '/api/scheduler').then(function(data) {
+      var node = document.getElementById('scheduler-info');
+      var button = document.getElementById('run-daily-btn');
+      button.disabled = data.running;
+      button.textContent = data.running ? '摘要生成中...' : '立即生成摘要';
+      if (data.running) node.textContent = '正在运行';
+      else if (data.last_result && data.last_result.status === 'partial_success') node.textContent = '上次部分完成 · 将自动重试';
+      else if (data.last_result && !data.last_result.success) node.textContent = '上次执行失败 · 可手动重试';
+      else if (data.last_run_date) node.textContent = '每日 ' + data.schedule + ' · 今日已运行';
+      else node.textContent = '每日 ' + data.schedule + ' 自动运行';
+      var collectionNode = document.getElementById('collection-info');
+      if (!data.collection.enabled) collectionNode.textContent = '未启用';
+      else if (data.collection.running) collectionNode.textContent = '正在导入...';
+      else if (data.collection.last_result && !data.collection.last_result.success) collectionNode.textContent = '上次失败';
+      else if (data.collection.last_run_at) collectionNode.textContent = data.collection.last_run_at + ' · 每 ' + data.collection.interval_minutes + ' 分钟';
+      else collectionNode.textContent = '每 ' + data.collection.interval_minutes + ' 分钟';
+    }).catch(function(error) { document.getElementById('scheduler-info').textContent = '状态读取失败'; });
+  }
+  function runDaily() {
+    var button = document.getElementById('run-daily-btn');
+    button.disabled = true;
+    button.textContent = '摘要生成中...';
+    toast('正在刷新消息并生成摘要', '');
+    api('POST', '/api/run-daily').then(function(data) {
+      toast(
+        dailyResultMessage(data),
+        data.status === 'partial_success' ? 'error' : 'success'
+      );
+      loadStats(); loadJobs(); loadGroupStats(); loadScheduler();
+    }).catch(function(error) {
+      toast('摘要任务失败：' + error.message, 'error');
+      button.disabled = false; button.textContent = '立即生成摘要';
+    });
+  }
+  loadStats(); loadJobs(); loadGroupStats(); loadScheduler();
+  setInterval(function() { loadStats(); loadJobs(); loadGroupStats(); loadScheduler(); }, 30000);
+</script>
+{% endblock %}

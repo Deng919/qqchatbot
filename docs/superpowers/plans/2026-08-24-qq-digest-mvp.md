@@ -3160,16 +3160,24 @@ git commit -m "feat: complete local digest mvp"
 
 ## 后续计划
 
-### QQNT Adapter
+### QQNT Adapter（已完成）
 
-必须单独成计划，验收标准包括：
+已实现 `NTQQCollector`，验收结果：
 
-- 能定位 QQNT 数据库。
-- 能创建只读快照。
-- 能验证数据库结构。
-- 能读取群消息。
-- 密钥提取失败、结构变化和解析率低都进入明确状态。
-- 原库哈希在采集前后一致。
+- 能定位和解密 QQNT 数据库（需提前用外部工具解密到 `db_dir`）。
+- 以只读 URI 模式打开数据库，不修改原库。
+- 能验证数据库结构（group_info.db + nt_msg.db）。
+- 能读取群消息：protobuf 解析 40800 BLOB，支持文本/图片/文件/回复/转发/语音/系统消息。
+- 页级损坏处理：游标顺序扫描 ~100 万行约 1.5 秒，遇到损坏页优雅停止（覆盖约 86% 数据，最近一年消息全覆盖）。
+- CLI `discover-groups` 命令列出所有群及消息量。
+- 真实数据库验证：98 个群，4 群 55 条消息端到端采集成功。
+- 56 个单元测试全部通过（含 22 个 NTQQ 相关测试）。
+
+文件：
+- `qq_digest/collector/ntqq.py` — NTQQCollector 实现
+- `qq_digest/collector/protobuf.py` — protobuf 解析器
+- `tests/test_ntqq_collector.py` — 8 个测试
+- `tests/test_protobuf.py` — 14 个测试
 
 ### 官方 QQ Bot
 

@@ -1,0 +1,132 @@
+{% extends "base.html" %}
+{% block title %}群组 - 群聊简报{% endblock %}
+{% block page_title %}采集群组{% endblock %}
+{% block actions %}
+  <input id="group-search" class="input search" type="search" placeholder="搜索群名或群号" aria-label="搜索群组" oninput="renderConfiguredGroups()">
+  <button class="btn btn-primary" id="discover-btn" onclick="discoverGroups()">扫描本地群聊</button>
+{% endblock %}
+{% block content %}
+<section class="card" id="discover-card" hidden>
+  <div class="card-header">
+    <span>近 30 天活跃群聊</span>
+    <button class="btn btn-sm" onclick="document.getElementById('discover-card').hidden=true">收起</button>
+  </div>
+  <div class="table-wrap">
+    <table class="table">
+      <thead><tr><th>群号</th><th>群名</th><th>近 30 天消息</th><th>最近消息</th><th>操作</th></tr></thead>
+      <tbody id="discover-list"><tr><td colspan="5" class="empty">等待扫描</td></tr></tbody>
+    </table>
+  </div>
+</section>
+
+<section class="card">
+  <div class="card-header"><span>已配置群组</span><span class="header-meta" id="configured-count"></span></div>
+  <div class="table-wrap">
+    <table class="table group-config-table">
+      <thead><tr><th>群聊</th><th>归档消息</th><th>最近消息</th><th>最近同步</th><th>分类</th><th>关键词</th><th>首次采集</th><th>摘要</th><th>重点审核</th><th>采集</th><th>操作</th></tr></thead>
+      <tbody id="group-list"><tr><td colspan="11" class="empty">加载中...</td></tr></tbody>
+    </table>
+  </div>
+</section>
+
+<script>
+  var configuredGroups = [];
+  var categoryLabels = {tech: '技术', resource: '资源', project: '项目', study: '学习', general: '综合'};
+  var toggleLabels = {daily_summary: '每日摘要', important_candidates: '重点审核', enabled: '采集启用'};
+
+  function toggleControl(groupId, field, checked) {
+    return '<label class="toggle"><input aria-label="' + escapeHtml(toggleLabels[field] || field) + '" type="checkbox" ' + (checked ? 'checked' : '')
+      + ' onchange="updateGroup(' + groupId + ',{\'' + field + '\':this.checked})"><span class="slider"></span></label>';
+  }
+  function renderConfiguredGroups() {
+    var query = document.getElementById('group-search').value.trim().toLowerCase();
+    var groups = configuredGroups.filter(function(group) {
+      return !query || String(group.group_id).includes(query) || String(group.name).toLowerCase().includes(query);
+    }).sort(function(a, b) { return (b.message_count || 0) - (a.message_count || 0); });
+    document.getElementById('configured-count').textContent = '显示 ' + groups.length + ' / ' + configuredGroups.length + ' 个';
+    var node = document.getElementById('group-list');
+    if (!groups.length) {
+      node.innerHTML = '<tr><td colspan="11" class="empty">' + (configuredGroups.length ? '没有匹配的群组' : '尚未添加群组，请先扫描本地群聊') + '</td></tr>';
+      return;
+    }
+    node.innerHTML = groups.map(function(group) {
+      var categoryOptions = Object.keys(categoryLabels).map(function(value) {
+        return '<option value="' + value + '"' + (group.category === value ? ' selected' : '') + '>' + categoryLabels[value] + '</option>';
+      }).join('');
+      return '<tr><td><strong>' + escapeHtml(group.name) + '</strong><br><span class="header-meta number">' + escapeHtml(group.group_id) + '</span></td>'
+        + '<td class="number">' + formatNumber(group.message_count) + '</td>'
+        + '<td>' + escapeHtml(group.latest_message_at || '无') + '</td>'
+        + '<td>' + escapeHtml(group.last_sync || '未同步') + '</td>'
+        + '<td><select aria-label="群分类" onchange="updateGroup(' + group.group_id + ',{category:this.value})">' + categoryOptions + '</select></td>'
+        + '<td><input class="input group-keywords keyword-field" aria-label="重点关键词" value="' + escapeHtml((group.keywords || []).join('，')) + '" placeholder="网站，经验" onchange="updateKeywords(' + group.group_id + ',this.value)"></td>'
+        + '<td><span class="days-control"><input class="input collection-window number days-field" type="number" min="1" max="365" aria-label="首次采集天数" value="' + escapeHtml(group.collection_window_days || 30) + '" onchange="updateCollectionWindow(' + group.group_id + ',this.value)"><span>天</span></span></td>'
+        + '<td>' + toggleControl(group.group_id, 'daily_summary', group.daily_summary) + '</td>'
+        + '<td>' + toggleControl(group.group_id, 'important_candidates', group.important_candidates) + '</td>'
+        + '<td>' + toggleControl(group.group_id, 'enabled', group.enabled) + '</td>'
+        + '<td><button class="btn btn-danger btn-sm" onclick="deleteGroup(' + group.group_id + ')">删除</button></td></tr>';
+    }).join('');
+  }
+  function loadGroups() {
+    api('GET', '/api/groups').then(function(data) {
+      configuredGroups = data.groups;
+      renderConfiguredGroups();
+    }).catch(function(error) { toast('群组加载失败：' + error.message, 'error'); });
+  }
+  function updateGroup(groupId, patch) {
+    api('PATCH', '/api/groups/' + groupId, patch).then(function() {
+      var group = configuredGroups.find(function(item) { return item.group_id === groupId; });
+      if (group) Object.assign(group, patch);
+      toast('群组设置已保存', 'success');
+    }).catch(function(error) { toast('设置保存失败：' + error.message, 'error'); loadGroups(); });
+  }
+  function updateKeywords(groupId, value) {
+    var keywords = value.split(/[,，]/).map(function(item) { return item.trim(); }).filter(Boolean);
+    updateGroup(groupId, {keywords: Array.from(new Set(keywords))});
+  }
+  function updateCollectionWindow(groupId, value) {
+    var days = parseInt(value, 10);
+    if (!Number.isInteger(days) || days < 1 || days > 365) {
+      toast('首次采集天数必须在 1 到 365 之间', 'error'); loadGroups(); return;
+    }
+    updateGroup(groupId, {collection_window_days: days});
+  }
+  function discoverGroups() {
+    var button = document.getElementById('discover-btn');
+    button.disabled = true; button.textContent = '扫描中...';
+    toast('正在读取本地 QQ 数据库', '');
+    api('GET', '/api/discover-groups').then(function(data) {
+      var configuredIds = new Set(configuredGroups.map(function(group) { return group.group_id; }));
+      var groups = data.groups.slice().sort(function(a, b) { return (b.message_count_30d || 0) - (a.message_count_30d || 0); });
+      var node = document.getElementById('discover-list');
+      document.getElementById('discover-card').hidden = false;
+      if (!groups.length) { node.innerHTML = '<tr><td colspan="5" class="empty">近 30 天未发现群消息</td></tr>'; }
+      else node.innerHTML = groups.map(function(group) {
+        var exists = configuredIds.has(group.group_id);
+        return '<tr><td class="number">' + escapeHtml(group.group_id) + '</td><td>' + escapeHtml(group.name) + '</td>'
+          + '<td class="number">' + formatNumber(group.message_count_30d) + '</td>'
+          + '<td>' + escapeHtml(group.latest_message_at ? group.latest_message_at.slice(0, 16).replace('T', ' ') : '无') + '</td>'
+          + '<td><button class="btn ' + (exists ? '' : 'btn-primary') + ' btn-sm add-group-btn" data-gid="' + escapeHtml(group.group_id) + '" data-name="' + escapeHtml(group.name) + '" ' + (exists ? 'disabled' : '') + '>' + (exists ? '已添加' : '添加') + '</button></td></tr>';
+      }).join('');
+      toast('扫描完成，共发现 ' + formatNumber(groups.length) + ' 个群', 'success');
+    }).catch(function(error) { toast('扫描失败：' + error.message, 'error'); })
+      .finally(function() { button.disabled = false; button.textContent = '扫描本地群聊'; });
+  }
+  document.getElementById('discover-list').addEventListener('click', function(event) {
+    var button = event.target.closest('.add-group-btn');
+    if (!button || button.disabled) return;
+    button.disabled = true;
+    api('POST', '/api/groups', {group_id: parseInt(button.dataset.gid, 10), name: button.dataset.name}).then(function() {
+      button.textContent = '已添加'; toast('群组已添加', 'success'); loadGroups();
+    }).catch(function(error) { button.disabled = false; toast('添加失败：' + error.message, 'error'); });
+  });
+  function deleteGroup(groupId) {
+    var group = configuredGroups.find(function(item) { return item.group_id === groupId; });
+    var name = group ? group.name : String(groupId);
+    if (!confirm('确认彻底删除“' + name + '”？归档消息、摘要和候选重点会同时删除。')) return;
+    api('DELETE', '/api/groups/' + groupId).then(function(data) {
+      toast('已删除群组及 ' + formatNumber(data.deleted.messages || 0) + ' 条归档消息', 'success'); loadGroups();
+    }).catch(function(error) { toast('删除失败：' + error.message, 'error'); });
+  }
+  loadGroups();
+</script>
+{% endblock %}

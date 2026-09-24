@@ -1,0 +1,157 @@
+{% extends "base.html" %}
+{% block title %}摘要报告 - QQ Digest{% endblock %}
+{% block page_title %}摘要报告{% endblock %}
+{% block actions %}
+  <button class="btn" id="range-open-btn" type="button" onclick="openRangeSummary()">生成范围摘要</button>
+  <button class="btn btn-primary" id="report-run-btn" type="button" onclick="runDaily()">生成今日日报</button>
+{% endblock %}
+{% block content %}
+<div class="report-layout" id="report-layout">
+  <section class="card">
+    <div class="card-header">报告列表</div>
+    <div class="table-wrap">
+      <table class="table responsive-table report-table">
+        <thead><tr><th>类型</th><th>日期范围</th><th>群名</th><th>候选数</th><th>更新时间</th><th>操作</th></tr></thead>
+        <tbody id="report-list"><tr><td colspan="6" class="empty">加载中...</td></tr></tbody>
+      </table>
+    </div>
+  </section>
+  <section class="card report-detail" id="report-detail" hidden>
+    <div class="card-header">报告详情 <button class="btn btn-sm" aria-label="关闭报告详情" type="button" onclick="closeReport()">关闭</button></div>
+    <div id="report-content" class="report-content"></div>
+  </section>
+</div>
+
+<div id="range-summary-backdrop" class="range-summary-backdrop" hidden onclick="closeRangeSummary()"></div>
+<aside id="range-summary-panel" class="range-summary-panel" hidden aria-labelledby="range-summary-title" aria-modal="true" role="dialog">
+  <div class="range-panel-header">
+    <div><h2 id="range-summary-title">生成范围摘要</h2><p>只读取已经归档到本地的消息，每个群独立生成报告。</p></div>
+    <button class="btn btn-sm" type="button" aria-label="关闭范围摘要面板" onclick="closeRangeSummary()">关闭</button>
+  </div>
+  <form id="range-summary-form" onsubmit="submitRangeSummary(event)">
+    <fieldset id="range-summary-fields">
+      <div class="field"><label for="range-group-search">群组</label><input class="input" id="range-group-search" type="search" placeholder="搜索已启用群组" oninput="filterRangeGroups()"></div>
+      <div class="range-group-actions"><button class="btn btn-sm" type="button" onclick="selectVisibleRangeGroups(true)">选择可见群</button><button class="btn btn-sm" type="button" onclick="selectVisibleRangeGroups(false)">清除可见群</button></div>
+      <div id="range-group-list" class="range-group-list" aria-label="选择群组"><div class="empty">加载群组...</div></div>
+      <div class="range-date-grid">
+        <div class="field"><label for="range-start-date">开始日期</label><input class="input" id="range-start-date" type="date" required onchange="updateRangeSelectionSummary()"></div>
+        <div class="field"><label for="range-end-date">结束日期</label><input class="input" id="range-end-date" type="date" required onchange="updateRangeSelectionSummary()"></div>
+      </div>
+      <div id="range-selection-summary" class="range-selection-summary">已选择 0 个群，共 1 天</div>
+      <div id="range-result" class="range-result" hidden></div>
+    </fieldset>
+    <div class="range-panel-footer"><button class="btn" type="button" onclick="closeRangeSummary()">取消</button><button class="btn btn-primary" id="range-submit-btn" type="submit">开始生成</button></div>
+  </form>
+</aside>
+
+<style>
+  .report-layout { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; }
+  .report-layout.has-detail { grid-template-columns: minmax(560px, .95fr) minmax(420px, 1.05fr); }
+  .report-table { min-width: 720px; }
+  .report-layout.has-detail .report-table { min-width: 0; }
+  .report-detail { min-width: 0; }
+  .report-content { max-height: 660px; overflow-y: auto; white-space: pre-wrap; overflow-wrap: anywhere; font-family: var(--mono); font-size: 12px; line-height: 1.7; }
+  .range-summary-backdrop { position: fixed; inset: 0; z-index: 39; background: rgb(21 27 23 / .32); backdrop-filter: blur(1px); }
+  .range-summary-panel { position: fixed; right: 18px; top: 70px; bottom: 18px; z-index: 40; width: min(520px, calc(100vw - 36px)); padding: 18px; overflow-y: auto; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: 0 24px 64px rgb(18 25 21 / .24); }
+  .range-panel-header { margin-bottom: 16px; display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; }
+  .range-panel-header h2 { margin: 0; font-size: 18px; }
+  .range-panel-header p { margin: 5px 0 0; color: var(--text-dim); font-size: 12px; }
+  .range-summary-panel fieldset { min-width: 0; margin: 0; padding: 0; border: 0; }
+  .range-group-actions { margin: 8px 0; display: flex; gap: 8px; }
+  .range-group-list { max-height: 230px; margin-bottom: 15px; overflow-y: auto; border: 1px solid var(--border); border-radius: var(--radius); }
+  .range-group-option { min-height: 42px; padding: 8px 10px; display: flex; align-items: center; gap: 9px; border-bottom: 1px solid #e7eae6; cursor: pointer; }
+  .range-group-option:last-child { border-bottom: 0; }
+  .range-group-option:hover { background: var(--surface-subtle); }
+  .range-group-option input { width: 17px; height: 17px; accent-color: var(--primary); }
+  .range-group-name { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .range-group-id { color: var(--text-dim); font-family: var(--mono); font-size: 11px; }
+  .range-date-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 12px; }
+  .range-selection-summary { margin-top: 12px; padding: 9px 11px; background: var(--surface-subtle); border: 1px solid #e3e7e2; border-radius: var(--radius); color: var(--text-soft); font-size: 12px; }
+  .range-result { margin-top: 10px; padding: 10px 11px; background: var(--primary-soft); border-radius: var(--radius); color: var(--primary-dark); font-size: 12px; white-space: pre-wrap; }
+  .range-panel-footer { position: sticky; bottom: -18px; margin: 18px -18px -18px; padding: 12px 18px; display: flex; justify-content: flex-end; gap: 8px; background: var(--surface); border-top: 1px solid var(--border); }
+  @media (max-width: 1040px) { .report-layout.has-detail { grid-template-columns: 1fr; } }
+  @media (max-width: 700px) { .report-table { min-width: 0; } .range-summary-panel { inset: 104px 10px 10px; width: auto; padding: 15px; } .range-panel-footer { bottom: -15px; margin: 16px -15px -15px; padding: 11px 15px; } }
+  @media (max-width: 430px) { .range-date-grid { grid-template-columns: 1fr; } }
+</style>
+<script>
+  var rangeGroups = [], rangeBusy = false, rangeOpener = null;
+  function loadReports() {
+    api('GET', '/api/reports').then(function(d) {
+      var el = document.getElementById('report-list');
+      if (!d.reports.length) { el.innerHTML = '<tr><td colspan="6" class="empty">暂无报告</td></tr>'; return; }
+      el.innerHTML = d.reports.map(function(r) {
+        var kind = r.report_kind === 'range' ? 'range' : 'daily', reportId = Number(r.report_id);
+        var windowLabel = r.window_start_date === r.window_end_date ? r.window_start_date : r.window_start_date + ' 至 ' + r.window_end_date;
+        return '<tr><td data-label="类型"><span class="badge ' + (kind === 'range' ? 'badge-blue' : 'badge-dim') + '">' + (kind === 'range' ? '范围' : '日报') + '</span></td>'
+          + '<td data-label="日期范围">' + escapeHtml(windowLabel) + '</td><td data-label="群名">' + escapeHtml(r.group_name) + '</td>'
+          + '<td data-label="候选数" class="number">' + formatNumber(r.candidate_count) + '</td><td data-label="更新时间">' + escapeHtml((r.created_at || '').slice(0, 19)) + '</td>'
+          + '<td data-label="操作"><button class="btn btn-sm" type="button" onclick="viewReport(\'' + kind + '\',' + reportId + ')">查看</button></td></tr>';
+      }).join('');
+    }).catch(function(e) { toast('加载报告失败: ' + e.message, 'error'); });
+  }
+  function viewReport(kind, reportId) {
+    if ((kind !== 'daily' && kind !== 'range') || !Number.isInteger(Number(reportId))) return;
+    api('GET', '/api/reports/' + kind + '/' + Number(reportId)).then(function(d) {
+      document.getElementById('report-detail').hidden = false; document.getElementById('report-layout').classList.add('has-detail'); document.getElementById('report-content').textContent = d.markdown;
+    }).catch(function(e) { toast('加载失败: ' + e.message, 'error'); });
+  }
+  function closeReport() { document.getElementById('report-detail').hidden = true; document.getElementById('report-layout').classList.remove('has-detail'); }
+  function localDateValue(value) { return value.getFullYear() + '-' + String(value.getMonth() + 1).padStart(2, '0') + '-' + String(value.getDate()).padStart(2, '0'); }
+  function openRangeSummary() {
+    rangeOpener = document.activeElement; var today = localDateValue(new Date());
+    if (!document.getElementById('range-start-date').value) document.getElementById('range-start-date').value = today;
+    if (!document.getElementById('range-end-date').value) document.getElementById('range-end-date').value = today;
+    document.getElementById('range-summary-panel').hidden = false; document.getElementById('range-summary-backdrop').hidden = false; document.getElementById('range-result').hidden = true;
+    if (!rangeGroups.length) loadRangeGroups(); updateRangeSelectionSummary(); document.getElementById('range-group-search').focus();
+  }
+  function closeRangeSummary() {
+    if (rangeBusy) return;
+    document.getElementById('range-summary-panel').hidden = true; document.getElementById('range-summary-backdrop').hidden = true;
+    if (rangeOpener && typeof rangeOpener.focus === 'function') rangeOpener.focus();
+  }
+  function loadRangeGroups() {
+    api('GET', '/api/groups').then(function(d) { rangeGroups = d.groups.filter(function(group) { return group.enabled; }); renderRangeGroups(); })
+      .catch(function(e) { document.getElementById('range-group-list').innerHTML = '<div class="empty">群组加载失败</div>'; toast('加载群组失败: ' + e.message, 'error'); });
+  }
+  function renderRangeGroups() {
+    var list = document.getElementById('range-group-list'); list.textContent = '';
+    if (!rangeGroups.length) { var empty = document.createElement('div'); empty.className = 'empty'; empty.textContent = '没有已启用群组'; list.appendChild(empty); return; }
+    rangeGroups.forEach(function(group) {
+      var label = document.createElement('label'); label.className = 'range-group-option'; label.dataset.search = (group.name + ' ' + group.group_id).toLowerCase();
+      var checkbox = document.createElement('input'); checkbox.type = 'checkbox'; checkbox.className = 'range-group-checkbox'; checkbox.value = String(group.group_id); checkbox.addEventListener('change', updateRangeSelectionSummary);
+      var name = document.createElement('span'); name.className = 'range-group-name'; name.textContent = group.name;
+      var id = document.createElement('span'); id.className = 'range-group-id'; id.textContent = String(group.group_id);
+      label.appendChild(checkbox); label.appendChild(name); label.appendChild(id); list.appendChild(label);
+    });
+  }
+  function filterRangeGroups() { var query = document.getElementById('range-group-search').value.trim().toLowerCase(); document.querySelectorAll('.range-group-option').forEach(function(item) { item.hidden = Boolean(query && item.dataset.search.indexOf(query) === -1); }); }
+  function selectVisibleRangeGroups(selected) { document.querySelectorAll('.range-group-option:not([hidden]) .range-group-checkbox').forEach(function(input) { input.checked = selected; }); updateRangeSelectionSummary(); }
+  function selectedRangeGroupIds() { return Array.from(document.querySelectorAll('.range-group-checkbox:checked')).map(function(input) { return Number(input.value); }); }
+  function rangeDayCount() {
+    var start = document.getElementById('range-start-date').value, end = document.getElementById('range-end-date').value;
+    if (!start || !end) return 0;
+    return Math.floor((Date.parse(end + 'T00:00:00Z') - Date.parse(start + 'T00:00:00Z')) / 86400000) + 1;
+  }
+  function updateRangeSelectionSummary() { var count = selectedRangeGroupIds().length, days = rangeDayCount(); document.getElementById('range-selection-summary').textContent = '已选择 ' + count + ' 个群，共 ' + Math.max(days, 0) + ' 天'; }
+  function setRangeBusy(busy) { rangeBusy = busy; document.getElementById('range-summary-fields').disabled = busy; var button = document.getElementById('range-submit-btn'); button.disabled = busy; button.textContent = busy ? '摘要生成中...' : '开始生成'; }
+  function rangeResultMessage(data) { return '生成 ' + formatNumber(data.created_reports.length) + ' 份，复用 ' + formatNumber(data.reused_reports.length) + ' 份，跳过 ' + formatNumber(data.skipped_groups.length) + ' 个群，失败 ' + formatNumber(data.failed_groups.length) + ' 个群'; }
+  function submitRangeSummary(event) {
+    event.preventDefault(); var groupIds = selectedRangeGroupIds(), start = document.getElementById('range-start-date').value, end = document.getElementById('range-end-date').value, days = rangeDayCount();
+    if (!groupIds.length) { toast('请至少选择一个群', 'error'); return; }
+    if (!start || !end || days < 1) { toast('开始日期不得晚于结束日期', 'error'); return; }
+    if (days > 7) { toast('单次最多选择 7 个自然日', 'error'); return; }
+    setRangeBusy(true); document.getElementById('range-result').hidden = true;
+    api('POST', '/api/reports/range', {group_ids: groupIds, start_date: start, end_date: end}).then(function(data) {
+      var message = rangeResultMessage(data), failures = data.failed_groups.map(function(item) { return item.group_name + '：' + item.error; }), result = document.getElementById('range-result');
+      result.textContent = message + (failures.length ? '\n' + failures.join('\n') : ''); result.hidden = false; toast(message, data.status === 'partial_success' ? 'error' : 'success'); loadReports();
+    }).catch(function(e) { toast('执行失败: ' + e.message, 'error'); }).finally(function() { setRangeBusy(false); });
+  }
+  function runDaily() {
+    var button = document.getElementById('report-run-btn'); button.disabled = true; button.textContent = '摘要生成中...'; toast('正在生成今日日报...', '');
+    api('POST', '/api/run-daily').then(function(d) { toast(dailyResultMessage(d), d.status === 'partial_success' ? 'error' : 'success'); loadReports(); })
+      .catch(function(e) { toast('执行失败: ' + e.message, 'error'); }).finally(function() { button.disabled = false; button.textContent = '生成今日日报'; });
+  }
+  document.addEventListener('keydown', function(event) { if (event.key === 'Escape' && !document.getElementById('range-summary-panel').hidden) closeRangeSummary(); });
+  loadReports();
+</script>
+{% endblock %}

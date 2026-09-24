@@ -9,3 +9,7 @@ knowledge/
 work/
 logs/
 .env
+.superpowers/
+.playwright-cli/
+.workbuddy/
+output/
