@@ -13,7 +13,8 @@ from zoneinfo import ZoneInfo
 from fastapi import FastAPI, Form, HTTPException, Request
 from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, field_validator
+from typing import Literal
 
 from ..archive import Archive
 from ..ai.client import AIClient, AIError
@@ -23,6 +24,9 @@ from ..collector.ntqq import NTQQCollector
 from ..config import Config, ConfigError, load_config
 from ..knowledge import KnowledgeItem, KnowledgeWriter
 from ..scheduler import daily_retry_state
+from ..report_qa import (
+    NoReportEvidence, ReportNotFound, answer_report_question, load_report_evidence,
+)
 from .auth import PasswordHasher, SessionCookie
 from .operations import OperationBusy, OperationCoordinator
 
@@ -38,6 +42,23 @@ class ManualRangePayload(BaseModel):
 
 class AIKeyPayload(BaseModel):
     api_key: str
+
+
+class QATurn(BaseModel):
+    role: Literal["user", "assistant"]
+    content: str = Field(min_length=1, max_length=4000)
+
+
+class AskReportPayload(BaseModel):
+    question: str = Field(min_length=1, max_length=2000)
+    history: list[QATurn] = Field(default_factory=list, max_length=6)
+
+    @field_validator("question")
+    @classmethod
+    def nonblank_question(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("问题不能为空")
+        return value.strip()
 
 
 def require_login(request: Request):
@@ -1070,6 +1091,53 @@ def create_app(
             "window_start_date": start_date,
             "window_end_date": end_date,
         }
+
+    @app.post("/api/reports/{report_kind}/{report_id}/ask")
+    async def api_ask_report(
+        request: Request, report_kind: str, report_id: int, payload: AskReportPayload
+    ):
+        require_login(request)
+        cfg = _config(request)
+        if cfg is None:
+            raise HTTPException(status_code=503, detail="AI 配置不可用")
+        try:
+            evidence = load_report_evidence(
+                _archive(request), report_kind, report_id, ZoneInfo(cfg.summary.timezone)
+            )
+        except ReportNotFound as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except NoReportEvidence as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+        def ask_in_worker():
+            client = AIClient(
+                base_url=cfg.resolve_base_url(),
+                api_key=cfg.resolve_api_key(),
+                model=cfg.ai.model,
+                json_mode=True,
+                timeout_seconds=cfg.ai.timeout_seconds,
+                max_retries=2,
+            )
+            try:
+                return answer_report_question(
+                    evidence,
+                    payload.question,
+                    [turn.model_dump() for turn in payload.history],
+                    client,
+                    max_chars=min(cfg.ai.max_context_chars, 30000),
+                )
+            finally:
+                client.close()
+
+        try:
+            return await asyncio.to_thread(ask_in_worker)
+        except NoReportEvidence as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        except (AIError, ConfigError, OSError, ValueError) as exc:
+            raise HTTPException(
+                status_code=503,
+                detail="DeepSeek 问答暂不可用，请检查 API Key、接口和网络",
+            ) from exc
 
     @app.get("/api/candidates")
     async def api_candidates(

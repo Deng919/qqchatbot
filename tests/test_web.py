@@ -73,6 +73,79 @@ def test_ai_settings_requires_login(web_client):
     assert client.post("/api/ai-settings/test").status_code == 401
 
 
+def test_ask_report_requires_login_and_validates_input(web_client, tmp_path):
+    client, _, _ = web_client
+    path = tmp_path / "daily.md"
+    path.write_text("测试报告", encoding="utf-8")
+    report_id = client.app.state.archive.record_report(
+        group_id=123, report_date="2026-09-02", markdown_path=path,
+        json_path=tmp_path / "daily.json", candidate_ids=[],
+    )
+    url = f"/api/reports/daily/{report_id}/ask"
+
+    assert client.post(url, json={"question": "为什么？", "history": []}).status_code == 401
+    client.post("/login", data={"password": "password123"})
+    assert client.post(url, json={"question": " ", "history": []}).status_code == 422
+    assert client.post(url, json={"question": "x" * 2001, "history": []}).status_code == 422
+    assert client.post(url, json={"question": "为什么？", "history": []}).status_code == 422
+    assert client.post("/api/reports/daily/999/ask", json={"question": "为什么？", "history": []}).status_code == 404
+
+
+def test_ask_report_returns_checked_sources_without_leaking_key(web_client, tmp_path, monkeypatch):
+    client, _, _ = web_client
+    path = tmp_path / "daily.md"
+    path.write_text("系统错误摘要", encoding="utf-8")
+    report_id = client.app.state.archive.record_report(
+        group_id=123, report_date="2026-09-02", markdown_path=path,
+        json_path=tmp_path / "daily.json", candidate_ids=[],
+    )
+    timestamp = datetime(2026, 9, 2, 12, tzinfo=ZoneInfo("Asia/Shanghai"))
+    client.app.state.archive.ingest([NormalizedMessage(
+        msg_id="evidence-1", group_id=123, sender_qq=1001,
+        timestamp=timestamp, collected_at=timestamp, text="接口返回 503",
+    )])
+    client.app.state.config.ai.ui_api_key_file = str(tmp_path / "deepseek-key.txt")
+    client.app.state.config.ai.base_url = "https://api.deepseek.com"
+    client.post("/login", data={"password": "password123"})
+    client.put("/api/ai-settings/key", json={"api_key": "synthetic-private-key"})
+
+    class FakeAI:
+        def __init__(self, **kwargs):
+            assert kwargs["api_key"] == "synthetic-private-key"
+
+        def chat(self, prompts):
+            assert "接口返回 503" in str(prompts)
+            return {"answer": "只能确认发生 503，原因未说明。", "source_ids": ["evidence-1", "made-up"]}
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr("qq_digest.web.app.AIClient", FakeAI)
+    response = client.post(f"/api/reports/daily/{report_id}/ask", json={
+        "question": "原因是什么？", "history": [{"role": "user", "content": "先看报错"}],
+    })
+
+    assert response.status_code == 200
+    assert response.json()["context_message_count"] == 1
+    assert [item["msg_id"] for item in response.json()["sources"]] == ["evidence-1"]
+    assert "synthetic-private-key" not in response.text
+
+
+def test_report_qa_dialog_has_ephemeral_controls(web_client):
+    client, _, _ = web_client
+    client.post("/login", data={"password": "password123"})
+
+    page = client.get("/reports").text
+
+    assert 'id="report-qa-open"' in page
+    assert 'id="report-qa-dialog"' in page
+    assert 'role="dialog"' in page
+    assert 'id="report-qa-question"' in page
+    assert 'id="report-qa-sources"' in page
+    assert "选中的聊天片段发送到 DeepSeek" in page
+    assert "qaHistory = []" in page
+
+
 def test_ai_settings_page_saves_key_without_echoing_it(web_client, tmp_path):
     client, _, _ = web_client
     key_path = tmp_path / "secrets" / "deepseek-api-key.txt"

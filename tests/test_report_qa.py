@@ -9,6 +9,7 @@ from qq_digest.models import GroupConfig, NormalizedMessage
 from qq_digest.report_qa import (
     NoReportEvidence,
     ReportNotFound,
+    answer_report_question,
     load_report_evidence,
     select_report_context,
 )
@@ -137,3 +138,43 @@ def test_context_prefers_matching_messages_and_neighbors_when_too_long():
     assert "e" not in [item.msg_id for item in selected.messages]
     assert selected.truncated is True
     assert len(selected.text) <= 230
+
+
+def test_answer_uses_report_and_only_checked_source_ids(tmp_path):
+    report = tmp_path / "report.md"
+    report.write_text("接口异常摘要", encoding="utf-8")
+    messages = [message("m1", 1, 2, 10, 0, "接口报错 503")]
+    evidence = type("Evidence", (), {
+        "group_id": 1, "start_date": "2026-09-02", "end_date": "2026-09-02",
+        "markdown_path": report, "messages": messages,
+    })()
+
+    class FakeAI:
+        def chat(self, prompts):
+            assert "接口异常摘要" in str(prompts)
+            assert "m1" in str(prompts)
+            return {"answer": "出现了 503，但群聊没有说明根因。", "source_ids": ["m1", "invented"]}
+
+    result = answer_report_question(evidence, "为什么出错？", [], FakeAI(), max_chars=1000)
+
+    assert result["answer"] == "出现了 503，但群聊没有说明根因。"
+    assert [item["msg_id"] for item in result["sources"]] == ["m1"]
+    assert result["context_message_count"] == 1
+
+
+def test_answer_without_valid_source_states_uncertainty(tmp_path):
+    report = tmp_path / "report.md"
+    report.write_text("摘要", encoding="utf-8")
+    evidence = type("Evidence", (), {
+        "group_id": 1, "start_date": "2026-09-02", "end_date": "2026-09-02",
+        "markdown_path": report, "messages": [message("m1", 1, 2, 10, 0, "没提到原因")],
+    })()
+
+    class FakeAI:
+        def chat(self, prompts):
+            return {"answer": "肯定是网络原因", "source_ids": ["fabricated"]}
+
+    result = answer_report_question(evidence, "原因？", [], FakeAI())
+
+    assert result["sources"] == []
+    assert "无法" in result["answer"] or "不能" in result["answer"]
