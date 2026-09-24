@@ -59,15 +59,53 @@ def valid_response():
     }
 
 
-def test_adaptive_prompt_requests_rich_evidence_bound_topics():
+def test_adaptive_prompt_prioritizes_readability_over_quotas():
     prompt = build_system_prompt("general")
 
     assert "今日概览" in prompt
-    assert "通常 3 至 8 个" in prompt
-    assert "背景、主要观点、结论或当前状态" in prompt
+    assert "通常 1 至 2 句" in prompt
+    assert "不设最低数量" in prompt
+    assert "不设固定字数" in prompt
     assert "两条及以上有信息量的往来" in prompt
     assert "为了凑数" in prompt
+    assert "临时邀约" in prompt
+    assert "短期推广" in prompt
+    assert "重复感叹" in prompt
+    assert "80 至 150 字" not in prompt
+    assert "通常 3 至 8 个" not in prompt
     assert "summary（不超过 30 字）" not in prompt
+
+
+def test_adaptive_prompt_distinguishes_chat_opinions_from_verified_facts():
+    prompt = build_system_prompt("general")
+
+    assert "群友称" in prompt
+    assert "未经核实" in prompt
+    assert "不得写“已确认”" in prompt
+    assert "同一事实不要在概览、话题和结论中重复" in prompt
+    assert "模糊意愿不算任务" in prompt
+
+
+def test_adaptive_prompt_excludes_ephemeral_threads_and_unproven_causality():
+    prompt = build_system_prompt("general")
+
+    assert "不写入 overview 或 main_topics" in prompt
+    assert "“来一把”" in prompt
+    assert "“可以反代一下”" in prompt
+    assert "同一产品的访问故障" in prompt
+    assert "相关不等于因果" in prompt
+    assert "不得直接写成“导致”" in prompt
+    assert "标题和概览都不得把未经证实的先后关系写成因果" in prompt
+    assert "食用后不适的反馈" in prompt
+    assert "不要在 overview 汇报空栏目" in prompt
+
+
+def test_prompt_requires_string_arrays_for_conclusions_and_questions():
+    prompt = build_system_prompt("general")
+
+    assert "conclusions: 字符串数组" in prompt
+    assert "open_questions: 字符串数组" in prompt
+    assert "不能用对象包裹" in prompt
 
 
 def test_specialized_prompts_preserve_important_single_message_exception():
@@ -84,6 +122,25 @@ def test_summary_response_overview_is_backward_compatible():
     assert SummaryResponse.model_validate(payload).overview == ""
     payload["overview"] = "当天围绕模型额度与客户端兼容性展开讨论。"
     assert SummaryResponse.model_validate(payload).overview.startswith("当天")
+
+
+def test_summary_response_accepts_known_wrapped_text_items():
+    payload = valid_response()
+    payload["conclusions"] = [{"description": "群内决定下周复查。"}]
+    payload["open_questions"] = [{"question": "是否需要补充材料？"}]
+
+    result = SummaryResponse.model_validate(payload)
+
+    assert result.conclusions == ["群内决定下周复查。"]
+    assert result.open_questions == ["是否需要补充材料？"]
+
+
+def test_summary_response_rejects_ambiguous_wrapped_text_items():
+    payload = valid_response()
+    payload["conclusions"] = [{"description": "结论", "extra": "未经核实"}]
+
+    with pytest.raises(ValidationError):
+        SummaryResponse.model_validate(payload)
 
 
 def test_summarizer_does_not_send_template_to_model():

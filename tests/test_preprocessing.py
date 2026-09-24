@@ -29,6 +29,19 @@ def test_extracts_todo_statements():
     assert result.todos == ["明天我整理一下链接", "TODO: 修复配置"]
 
 
+def test_todo_extraction_does_not_treat_memories_as_future_actions():
+    result = Preprocessor().process(
+        [
+            "我记得服务器最便宜的能用半年",
+            "记得去年选的就是这个套餐",
+            "记得明天提交报告",
+            "TODO: 修复配置",
+        ]
+    )
+
+    assert result.todos == ["记得明天提交报告", "TODO: 修复配置"]
+
+
 def test_normalizes_urls_and_keeps_source_indexes():
     result = Preprocessor().process(
         ["忽略", "  文档 https://EXAMPLE.com/a?x=1&amp;y=2。  "]

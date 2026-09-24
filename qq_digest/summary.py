@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-from pydantic import AliasChoices, BaseModel, Field, ValidationError, field_validator
+from pydantic import AliasChoices, BaseModel, Field, ValidationError, ValidationInfo, field_validator
 
 from .models import NormalizedMessage
 from .preprocessing import Preprocessor
@@ -65,6 +65,23 @@ class SummaryResponse(BaseModel):
     tasks: list[TaskOutput]
     open_questions: list[str]
     candidates: list[CandidateOutput]
+
+    @field_validator("conclusions", "open_questions", mode="before")
+    @classmethod
+    def normalize_known_wrapped_text(
+        cls, value: object, info: ValidationInfo
+    ) -> object:
+        if not isinstance(value, list):
+            return value
+        key = "description" if info.field_name == "conclusions" else "question"
+        return [
+            item[key]
+            if isinstance(item, dict)
+            and set(item) == {key}
+            and isinstance(item[key], str)
+            else item
+            for item in value
+        ]
 
 
 @dataclass(frozen=True)

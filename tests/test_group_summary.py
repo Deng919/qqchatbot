@@ -1,6 +1,7 @@
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
+import qq_digest.group_summary as group_summary
 from qq_digest.group_summary import GroupSummaryBuilder, summary_input_fingerprint
 from qq_digest.models import GroupConfig, NormalizedMessage
 from qq_digest.summary import SummaryResponse, SummaryResult
@@ -85,8 +86,17 @@ def test_group_summary_builder_builds_range_content_and_candidate_draft():
     assert "## 今日概览\n群内确认了工具回退方案。" in artifact.markdown
     assert "template" not in summarizer.last_kwargs
     assert "- 日期范围：2026-09-01 至 2026-09-07" in artifact.markdown
-    assert "原始 3 条，纳入 2 条，清洗丢弃 1 条" in artifact.markdown
-    assert "上下文达到上限，仅保留最近 100 字符" in artifact.markdown
+    assert "## 数据范围" in artifact.markdown
+    assert "仅总结实际纳入的 2 条消息，部分消息因长度限制未包含" in artifact.markdown
+    assert "- 时间窗：2026-09-01 00:00 至 2026-09-08 00:00" in artifact.markdown
+    assert artifact.payload["diagnostics"] == {
+        "source_messages": 3,
+        "included_messages": 2,
+        "discarded_messages": 1,
+        "context_truncated": True,
+        "context_chars": 100,
+        "extracted": {"links": [], "files": [], "todos": []},
+    }
     assert artifact.candidate_kwargs[0]["created_date"] == "2026-09-07"
     assert artifact.candidate_kwargs[0]["excerpt"] == "站点原文"
     assert artifact.source_message_count == 1
@@ -109,6 +119,7 @@ def test_group_summary_builder_keeps_daily_heading():
 
     assert "# 测试群日报" in artifact.markdown
     assert "- 日期：2026-09-01" in artifact.markdown
+    assert "## 数据范围" in artifact.markdown
 
 
 def test_summary_fingerprint_ignores_legacy_template_value():
@@ -131,3 +142,21 @@ def test_summary_fingerprint_ignores_legacy_template_value():
     )
 
     assert concise == detailed
+
+
+def test_summary_fingerprint_tracks_report_format_version(monkeypatch):
+    kwargs = {
+        "group": GroupConfig(group_id=123, name="测试群"),
+        "report_kind": "daily",
+        "messages": [make_message()],
+        "timezone": ZoneInfo("Asia/Shanghai"),
+        "knowledge_base": "",
+        "max_context_chars": 1000,
+    }
+    original = summary_input_fingerprint(**kwargs)
+
+    monkeypatch.setattr(
+        group_summary, "REPORT_FORMAT_VERSION", group_summary.REPORT_FORMAT_VERSION + 1
+    )
+
+    assert summary_input_fingerprint(**kwargs) != original

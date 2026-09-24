@@ -81,7 +81,7 @@ def render_markdown(
     date_label: str = "日期",
 ) -> str:
     def bullets(items: list[str]) -> list[str]:
-        return [f"- {item}" for item in items] or ["- 无"]
+        return [f"- {item}" for item in items if item.strip()]
 
     def topic_line(item: str | Mapping[str, str]) -> str:
         if isinstance(item, str):
@@ -105,34 +105,25 @@ def render_markdown(
         f"- {date_label}：{report_date}",
         f"- 时间窗：{window}",
     ]
-    if overview.strip():
-        lines.extend(["", "## 今日概览", overview.strip()])
-    lines.extend(
-        [
-            "",
-            "## 主要话题",
-            *bullets([topic_line(item) for item in topics]),
-            "",
-            "## 重要结论",
-            *bullets(conclusions),
-            "",
-            "## 资源与链接",
-            *bullets([resource_line(item) for item in resources]),
-            "",
-            "## 任务或承诺",
-            *bullets(tasks),
-            "",
-            "## 未解决问题或争议",
-            *bullets(open_questions),
-            "",
-            "## 确定性提取",
-            f"- 链接：{', '.join(deterministic.get('links', [])) or '无'}",
-            f"- 文件：{', '.join(deterministic.get('files', [])) or '无'}",
-            f"- 待办：{', '.join(deterministic.get('todos', [])) or '无'}",
-        ]
+    repeated_overview = (
+        len(topics) == 1
+        and overview.strip() in topic_line(topics[0])
     )
-    if quality_note:
-        lines.extend(["", "## 数据质量", quality_note])
+    if overview.strip() and not repeated_overview:
+        lines.extend(["", "## 今日概览", overview.strip()])
+
+    for title, items in (
+        ("主要话题", [topic_line(item) for item in topics]),
+        ("重要结论", conclusions),
+        ("资源与链接", [resource_line(item) for item in resources]),
+        ("任务或承诺", tasks),
+        ("未解决问题或争议", open_questions),
+    ):
+        content = bullets(items)
+        if content:
+            lines.extend(["", f"## {title}", *content])
+    if quality_note.strip():
+        lines.extend(["", "## 数据范围", quality_note.strip()])
     return "\n".join(lines) + "\n"
 
 

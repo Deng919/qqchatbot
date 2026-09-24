@@ -8,7 +8,13 @@ from urllib.parse import urlsplit, urlunsplit
 
 URL_PATTERN = re.compile(r"https?://[^\s<>()\"']+")
 FILE_PATTERN = re.compile(r"\[(?:文件|图片|视频|音频)\]\s*(.++)")
-TODO_PATTERN = re.compile(r"(TODO[:：]|待办|记得|我(来|会|去)?(整理|修复|发|补|确认))", re.IGNORECASE)
+TODO_PATTERN = re.compile(
+    r"(TODO[:：]|待办|(?:^|[，,。；;]\s*)记得\s*"
+    r"(?:(?:明天|后天|下周|今天|今晚)\s*)?(?:去|把)?"
+    r"(?:提交|整理|修复|发送|发|补充|补|确认|更新|检查|联系|处理|完成)"
+    r"|我(来|会|去)?(整理|修复|发|补|确认))",
+    re.IGNORECASE,
+)
 NOISE_PATTERN = re.compile(r"^(有人加入了?本群|.*撤回了一条消息|.*加入了?本群)$")
 TRAILING_URL_PUNCTUATION = ".,!?;:，。！？；：、）)]}》”'"
 INTERNAL_QQ_HOSTS = {"tianquan.gtimg.cn", "zb.vip.qq.com"}

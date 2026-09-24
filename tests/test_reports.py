@@ -28,6 +28,102 @@ def test_render_markdown_contains_required_sections():
     assert "## 数据质量" not in markdown
 
 
+def test_render_markdown_omits_empty_sections_and_internal_diagnostics():
+    markdown = render_markdown(
+        group_name="测试群",
+        report_date="2026-09-24",
+        window="2026-09-24 00:00 至 17:00",
+        overview="今天讨论了客户端兼容性。",
+        topics=[{"topic": "兼容性", "summary": "新版本仍有登录问题。"}],
+        conclusions=[],
+        resources=[],
+        tasks=[],
+        open_questions=[],
+        deterministic={"links": ["https://example.com"], "files": [], "todos": []},
+        quality_note="",
+    )
+
+    assert "## 主要话题" in markdown
+    for heading in ("重要结论", "资源与链接", "任务或承诺", "未解决问题或争议", "确定性提取", "数据质量"):
+        assert f"## {heading}" not in markdown
+    assert "- 无" not in markdown
+    assert "https://example.com" not in markdown
+
+
+def test_render_markdown_shows_truncation_caveat_only_when_present():
+    markdown = render_markdown(
+        group_name="测试群",
+        report_date="2026-09-24",
+        window="2026-09-24 00:00 至 17:00",
+        topics=[],
+        conclusions=[],
+        resources=[],
+        tasks=[],
+        open_questions=[],
+        deterministic={"links": [], "files": [], "todos": []},
+        quality_note="仅总结实际纳入的最近 20 条消息，较早内容未包含。",
+    )
+
+    assert "## 数据范围\n仅总结实际纳入的最近 20 条消息，较早内容未包含。" in markdown
+    assert "## 主要话题" not in markdown
+
+
+def test_render_markdown_skips_redundant_overview_for_single_topic():
+    markdown = render_markdown(
+        group_name="测试群",
+        report_date="2026-09-24",
+        window="2026-09-24 00:00 至 22:00",
+        overview="几位群友不看好出肉装。",
+        topics=[{"topic": "王维出装", "summary": "几位群友不看好出肉装。"}],
+        conclusions=[],
+        resources=[],
+        tasks=[],
+        open_questions=[],
+        deterministic={"links": [], "files": [], "todos": []},
+        quality_note="",
+    )
+
+    assert "## 今日概览" not in markdown
+    assert "## 主要话题\n- **王维出装**：几位群友不看好出肉装。" in markdown
+
+
+def test_render_markdown_preserves_distinct_overview_for_single_topic():
+    markdown = render_markdown(
+        group_name="测试群",
+        report_date="2026-09-24",
+        window="2026-09-24 00:00 至 22:00",
+        overview="今天还宣布了服务器维护。",
+        topics=[{"topic": "王维出装", "summary": "几位群友不看好出肉装。"}],
+        conclusions=[],
+        resources=[],
+        tasks=[],
+        open_questions=[],
+        deterministic={"links": [], "files": [], "todos": []},
+        quality_note="",
+    )
+
+    assert "## 今日概览\n今天还宣布了服务器维护。" in markdown
+
+
+def test_render_markdown_preserves_overview_when_single_topic_is_blank():
+    markdown = render_markdown(
+        group_name="测试群",
+        report_date="2026-09-24",
+        window="2026-09-24 00:00 至 22:00",
+        overview="今天还宣布了服务器维护。",
+        topics=[{"topic": "", "summary": ""}],
+        conclusions=[],
+        resources=[],
+        tasks=[],
+        open_questions=[],
+        deterministic={"links": [], "files": [], "todos": []},
+        quality_note="",
+    )
+
+    assert "## 今日概览\n今天还宣布了服务器维护。" in markdown
+    assert "## 主要话题" not in markdown
+
+
 def test_report_writer_creates_markdown_and_json(tmp_path):
     writer = ReportWriter(tmp_path)
     payload = {"group_id": 123, "group_name": "测试群", "main_topics": []}

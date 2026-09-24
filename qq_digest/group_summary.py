@@ -12,6 +12,10 @@ from .prompt_builder import build_system_prompt
 from .summary import Summarizer
 
 
+# Bump when report rendering changes without a prompt/schema change.
+REPORT_FORMAT_VERSION = 5
+
+
 @dataclass(frozen=True)
 class GroupSummaryArtifact:
     markdown: str
@@ -51,18 +55,25 @@ class GroupSummaryBuilder:
             knowledge_base=knowledge_base,
         )
         quality_note = (
-            f"原始 {summary.source_messages} 条，纳入 {summary.included_messages} 条，"
-            f"清洗丢弃 {summary.discarded_messages} 条。"
-            + (
-                f"上下文达到上限，仅保留最近 {summary.context_chars} 字符。"
-                if summary.context_truncated
-                else ""
-            )
+            f"仅总结实际纳入的 {summary.included_messages} 条消息，部分消息因长度限制未包含。"
+            if summary.context_truncated
+            else ""
         )
+        diagnostics = {
+            "source_messages": summary.source_messages,
+            "included_messages": summary.included_messages,
+            "discarded_messages": summary.discarded_messages,
+            "context_truncated": summary.context_truncated,
+            "context_chars": summary.context_chars,
+            "extracted": summary.deterministic,
+        }
         markdown = render_markdown(
             group_name=group.name,
             report_date=report_date,
-            window=f"{window_start.isoformat()} 到 {window_end.isoformat()}",
+            window=(
+                f"{window_start.astimezone(timezone):%Y-%m-%d %H:%M} 至 "
+                f"{window_end.astimezone(timezone):%Y-%m-%d %H:%M}"
+            ),
             overview=summary.response.overview,
             topics=[item.model_dump() for item in summary.response.main_topics],
             conclusions=summary.response.conclusions,
@@ -105,7 +116,7 @@ class GroupSummaryBuilder:
         )
         return GroupSummaryArtifact(
             markdown=markdown,
-            payload=summary.response.model_dump(),
+            payload={**summary.response.model_dump(), "diagnostics": diagnostics},
             candidate_kwargs=candidate_kwargs,
             source_message_count=len(messages),
         )
@@ -118,7 +129,7 @@ def summary_input_fingerprint(
 ) -> str:
     """Hash every input that can materially change generated report content."""
     value = {
-        "version": 3,
+        "version": REPORT_FORMAT_VERSION,
         "group": group.model_dump(mode="json", exclude={"template"}),
         "report_kind": report_kind,
         "timezone": timezone.key,
