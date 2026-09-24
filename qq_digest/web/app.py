@@ -63,6 +63,21 @@ def _utc(iso_str: str | None) -> str:
         return iso_str
 
 
+def _reference_message_count(json_path: str) -> int | None:
+    """Read how many messages were actually included in the report context."""
+    try:
+        payload = json.loads(Path(json_path).read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError, TypeError, ValueError):
+        return None
+    if not isinstance(payload, dict):
+        return None
+    diagnostics = payload.get("diagnostics")
+    if not isinstance(diagnostics, dict):
+        return None
+    count = diagnostics.get("included_messages")
+    return count if type(count) is int and count >= 0 else None
+
+
 def create_app(
     *,
     archive: Archive,
@@ -872,6 +887,7 @@ def create_app(
                 "window_start_date": row["report_date"],
                 "window_end_date": row["report_date"],
                 "group_name": row["group_name"],
+                "_json_path": row["json_path"],
                 "candidate_count": len(json.loads(row["candidate_ids"])),
                 "created_at": _utc(row["created_at"]),
             }
@@ -886,6 +902,7 @@ def create_app(
                 "window_start_date": row["start_date"],
                 "window_end_date": row["end_date"],
                 "group_name": row["group_name"],
+                "_json_path": row["json_path"],
                 "candidate_count": len(json.loads(row["candidate_ids"])),
                 "created_at": _utc(row["updated_at"]),
             }
@@ -899,7 +916,12 @@ def create_app(
             ),
             reverse=True,
         )
-        return {"reports": reports[:100]}
+        selected_reports = reports[:100]
+        for report in selected_reports:
+            report["reference_message_count"] = _reference_message_count(
+                report.pop("_json_path")
+            )
+        return {"reports": selected_reports}
 
     @app.post("/api/reports/range")
     async def api_create_range_report(

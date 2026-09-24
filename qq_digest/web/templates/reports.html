@@ -11,8 +11,8 @@
     <div class="card-header">报告列表</div>
     <div class="table-wrap">
       <table class="table responsive-table report-table">
-        <thead><tr><th>类型</th><th>日期范围</th><th>群名</th><th>候选数</th><th>更新时间</th><th>操作</th></tr></thead>
-        <tbody id="report-list"><tr><td colspan="6" class="empty">加载中...</td></tr></tbody>
+        <thead><tr><th>类型</th><th>日期范围</th><th>群名</th><th title="实际纳入摘要的消息条数">参考消息数</th><th>候选数</th><th>更新时间</th><th>操作</th></tr></thead>
+        <tbody id="report-list"><tr><td colspan="7" class="empty">加载中...</td></tr></tbody>
       </table>
     </div>
   </section>
@@ -78,12 +78,13 @@
   function loadReports() {
     api('GET', '/api/reports').then(function(d) {
       var el = document.getElementById('report-list');
-      if (!d.reports.length) { el.innerHTML = '<tr><td colspan="6" class="empty">暂无报告</td></tr>'; return; }
+      if (!d.reports.length) { el.innerHTML = '<tr><td colspan="7" class="empty">暂无报告</td></tr>'; return; }
       el.innerHTML = d.reports.map(function(r) {
         var kind = r.report_kind === 'range' ? 'range' : 'daily', reportId = Number(r.report_id);
         var windowLabel = r.window_start_date === r.window_end_date ? r.window_start_date : r.window_start_date + ' 至 ' + r.window_end_date;
         return '<tr><td data-label="类型"><span class="badge ' + (kind === 'range' ? 'badge-blue' : 'badge-dim') + '">' + (kind === 'range' ? '范围' : '日报') + '</span></td>'
           + '<td data-label="日期范围">' + escapeHtml(windowLabel) + '</td><td data-label="群名">' + escapeHtml(r.group_name) + '</td>'
+          + '<td data-label="参考消息数" class="number">' + (Number.isInteger(r.reference_message_count) && r.reference_message_count >= 0 ? formatNumber(r.reference_message_count) : '—') + '</td>'
           + '<td data-label="候选数" class="number">' + formatNumber(r.candidate_count) + '</td><td data-label="更新时间">' + escapeHtml((r.created_at || '').slice(0, 19)) + '</td>'
           + '<td data-label="操作"><button class="btn btn-sm" type="button" onclick="viewReport(\'' + kind + '\',' + reportId + ')">查看</button></td></tr>';
       }).join('');

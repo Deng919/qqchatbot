@@ -407,6 +407,82 @@ def test_daily_report_list_omits_legacy_template_metadata(web_client, tmp_path):
     assert "effective_template" not in daily
 
 
+def test_report_list_shows_messages_actually_used_for_daily_and_range_reports(web_client, tmp_path):
+    client, _, _ = web_client
+    archive = client.app.state.archive
+    daily_json = tmp_path / "daily.json"
+    range_json = tmp_path / "range.json"
+    daily_json.write_text('{"diagnostics": {"included_messages": 7}}', encoding="utf-8")
+    range_json.write_text('{"diagnostics": {"included_messages": 12}}', encoding="utf-8")
+    archive.record_report(
+        group_id=123,
+        report_date="2026-09-01",
+        markdown_path=tmp_path / "daily.md",
+        json_path=daily_json,
+        candidate_ids=[],
+        source_message_count=20,
+    )
+    archive.record_manual_report(
+        group_id=123,
+        start_date="2026-08-30",
+        end_date="2026-09-01",
+        detail_mode="group",
+        effective_template="detailed",
+        markdown_path=tmp_path / "range.md",
+        json_path=range_json,
+        candidate_ids=[],
+        input_fingerprint="range-input",
+        source_message_count=30,
+    )
+    client.post("/login", data={"password": "password123"})
+
+    reports = client.get("/api/reports").json()["reports"]
+
+    assert next(r for r in reports if r["report_kind"] == "daily")["reference_message_count"] == 7
+    assert next(r for r in reports if r["report_kind"] == "range")["reference_message_count"] == 12
+    assert all("_json_path" not in r for r in reports)
+
+
+def test_report_list_uses_unknown_count_for_legacy_or_invalid_report_json(web_client, tmp_path):
+    client, _, _ = web_client
+    archive = client.app.state.archive
+    legacy_json = tmp_path / "legacy.json"
+    legacy_json.write_text('{"overview": "旧报告"}', encoding="utf-8")
+    invalid_json = tmp_path / "invalid.json"
+    invalid_json.write_text("not json", encoding="utf-8")
+    archive.record_report(
+        group_id=123,
+        report_date="2026-09-01",
+        markdown_path=tmp_path / "daily.md",
+        json_path=legacy_json,
+        candidate_ids=[],
+    )
+    archive.record_report(
+        group_id=123,
+        report_date="2026-08-31",
+        markdown_path=tmp_path / "missing.md",
+        json_path=tmp_path / "missing.json",
+        candidate_ids=[],
+    )
+    archive.record_manual_report(
+        group_id=123,
+        start_date="2026-08-30",
+        end_date="2026-09-01",
+        detail_mode="group",
+        effective_template="detailed",
+        markdown_path=tmp_path / "range.md",
+        json_path=invalid_json,
+        candidate_ids=[],
+        input_fingerprint="range-input",
+        source_message_count=30,
+    )
+    client.post("/login", data={"password": "password123"})
+
+    reports = client.get("/api/reports").json()["reports"]
+
+    assert all(r["reference_message_count"] is None for r in reports)
+
+
 def test_manual_range_summary_accepts_legacy_detail_mode(web_client, monkeypatch):
     client, _, _ = web_client
     timestamp = datetime(2026, 9, 1, 10, tzinfo=ZoneInfo("Asia/Shanghai"))
@@ -606,6 +682,9 @@ def test_operational_pages_use_responsive_layout_classes(web_client):
     assert 'class="filter-toolbar collect-toolbar"' in collect.text
     assert 'class="report-layout"' in reports.text
     assert 'class="table responsive-table report-table"' in reports.text
+    assert '<th title="实际纳入摘要的消息条数">参考消息数</th>' in reports.text
+    assert 'data-label="参考消息数"' in reports.text
+    assert 'colspan="7"' in reports.text
     assert 'data-label="操作"' in reports.text
     assert 'style="width:150px"' not in groups.text
 
