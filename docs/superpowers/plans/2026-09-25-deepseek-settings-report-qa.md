@@ -38,13 +38,13 @@ def test_ui_key_takes_precedence(tmp_path, monkeypatch, config):
 - [x] **Step 2: Run red test.** `D:\CodexTools\python\Scripts\python.exe -m pytest tests/test_ai_settings.py -q`; expected failure: `save_ui_api_key`/`ui_api_key_file` not defined.
 - [x] **Step 3: Implement the store.** Define `save_ui_api_key(path: Path, value: str) -> None`, `ui_api_key_exists(path: Path) -> bool`, and `read_ui_api_key(path: Path) -> str | None`. Strip one trailing newline only; reject blank, embedded whitespace/newline, and oversized values. Create a dedicated secrets directory; on Windows restrict its DACL to current user, SYSTEM and Administrators before writing. Write a same-directory temporary file, flush/fsync, restrict its ACL, then `os.replace`; on failure remove only that temp file and leave the previous Key. Never include value in exceptions/logs. Add `AIConfig.ui_api_key_file` as an optional absolute path; the current deployment will configure `D:\Dev\QQDigest\secrets\deepseek-api-key.txt`, while test configurations use temporary paths. `resolve_api_key()` checks a valid UI file first, then unchanged legacy order.
 - [x] **Step 4: Run green and regression tests.** `D:\CodexTools\python\Scripts\python.exe -m pytest tests/test_ai_settings.py tests/test_config.py -q`; expected all pass.
-- [ ] **Step 5: Commit.** Stage only the named files; commit `feat: add local DeepSeek key store`.
+- [x] **Step 5: Commit.** Stage only the named files; commit `feat: add local DeepSeek key store`.
 
 ## Task 2: Authenticated Settings Page and APIs
 
 **Files:** Modify `qq_digest/web/app.py`, `qq_digest/web/templates/base.html`, `tests/test_web.py`; create `qq_digest/web/templates/ai_settings.html`.
 
-- [ ] **Step 1: Write failing route tests.** Unauthenticated GET/PUT/test endpoints must reject. Authenticated GET returns `base_url`, `model`, `key_configured`, never Key. PUT with a valid Key invokes the real temporary key store and returns only status; invalid Key is 422. Test-connection failure returns a sanitized message and does not echo Key.
+- [x] **Step 1: Write failing route tests.** Unauthenticated GET/PUT/test endpoints must reject. Authenticated GET returns `base_url`, `model`, `key_configured`, never Key. PUT with a valid Key invokes the real temporary key store and returns only status; invalid Key is 422. Test-connection failure returns a sanitized message and does not echo Key.
 
 ```python
 assert client.get("/api/ai-settings").status_code == 401
@@ -54,9 +54,9 @@ assert "api_key" not in payload
 assert payload["model"] == "gpt-test"
 ```
 
-- [ ] **Step 2: Run red test.** `D:\CodexTools\python\Scripts\python.exe -m pytest tests/test_web.py -q -k ai_settings`; expected 404/missing template.
-- [ ] **Step 3: Implement endpoints and page.** Add `GET /ai-settings`, `GET /api/ai-settings`, `PUT /api/ai-settings/key`, and `POST /api/ai-settings/test` under `require_login`. PUT calls `save_ui_api_key` in a worker thread; test creates the compatible `AIClient`, sends a minimal JSON request without chat records, closes it, and maps `AIError` to a redacted status. The template uses a password input with no value attribute, `autocomplete="new-password"`, and a visible configured/not-configured state. Add one nav link to the page.
-- [ ] **Step 4: Run green tests.** `D:\CodexTools\python\Scripts\python.exe -m pytest tests/test_web.py -q -k ai_settings`; expected pass.
+- [x] **Step 2: Run red test.** `D:\CodexTools\python\Scripts\python.exe -m pytest tests/test_web.py -q -k ai_settings`; expected 404/missing template.
+- [x] **Step 3: Implement endpoints and page.** Add `GET /ai-settings`, `GET /api/ai-settings`, `PUT /api/ai-settings/key`, and `POST /api/ai-settings/test` under `require_login`. PUT calls `save_ui_api_key` in a worker thread; test creates the compatible `AIClient`, sends a minimal JSON request without chat records, closes it, and maps `AIError` to a redacted status. The template uses a password input with no value attribute, `autocomplete="new-password"`, and a visible configured/not-configured state. Add one nav link to the page.
+- [x] **Step 4: Run green tests.** `D:\CodexTools\python\Scripts\python.exe -m pytest tests/test_web.py -q -k ai_settings`; expected pass.
 - [ ] **Step 5: Commit.** Stage only these app/UI/test files; commit `feat: configure DeepSeek key in UI`.
 
 ## Task 3: Bounded Report Context

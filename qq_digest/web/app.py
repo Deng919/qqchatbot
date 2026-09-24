@@ -16,9 +16,11 @@ from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 
 from ..archive import Archive
+from ..ai.client import AIClient, AIError
+from ..ai.key_store import save_ui_api_key, ui_api_key_exists
 from ..candidates import CandidateService
 from ..collector.ntqq import NTQQCollector
-from ..config import Config, load_config
+from ..config import Config, ConfigError, load_config
 from ..knowledge import KnowledgeItem, KnowledgeWriter
 from ..scheduler import daily_retry_state
 from .auth import PasswordHasher, SessionCookie
@@ -32,6 +34,10 @@ class ManualRangePayload(BaseModel):
     start_date: date
     end_date: date
     detail_mode: str | None = None
+
+
+class AIKeyPayload(BaseModel):
+    api_key: str
 
 
 def require_login(request: Request):
@@ -76,6 +82,28 @@ def _reference_message_count(json_path: str) -> int | None:
         return None
     count = diagnostics.get("included_messages")
     return count if type(count) is int and count >= 0 else None
+
+
+def _test_deepseek_connection(config: Config) -> None:
+    client = AIClient(
+        base_url=config.resolve_base_url(),
+        api_key=config.resolve_api_key(),
+        model=config.ai.model,
+        json_mode=True,
+        timeout_seconds=min(config.ai.timeout_seconds, 30),
+        max_retries=1,
+    )
+    try:
+        response = client.chat(
+            [
+                {"role": "system", "content": "Respond with a JSON object only."},
+                {"role": "user", "content": 'Connection test. Respond with JSON {"ok": true}.'},
+            ]
+        )
+        if not isinstance(response, dict) or response.get("ok") is not True:
+            raise AIError("DeepSeek 连接测试未得到预期响应")
+    finally:
+        client.close()
 
 
 def create_app(
@@ -522,6 +550,57 @@ def create_app(
             "candidates.html",
             {"candidates": candidates.pending()},
         )
+
+    @app.get("/ai-settings")
+    async def ai_settings_page(request: Request):
+        if not cookie.verify(request.cookies.get("qq_digest_session")):
+            return RedirectResponse("/login", status_code=303)
+        return templates.TemplateResponse(request, "ai_settings.html", {})
+
+    # ------------------------------------------------------------------
+    # API: DeepSeek settings
+    # ------------------------------------------------------------------
+    @app.get("/api/ai-settings")
+    async def api_ai_settings(request: Request):
+        require_login(request)
+        cfg = _config(request)
+        return {
+            "base_url": cfg.ai.base_url,
+            "model": cfg.ai.model,
+            "key_configured": bool(
+                cfg.ai.ui_api_key_file
+                and ui_api_key_exists(Path(cfg.ai.ui_api_key_file))
+            ),
+        }
+
+    @app.put("/api/ai-settings/key")
+    async def api_save_ai_key(request: Request, payload: AIKeyPayload):
+        require_login(request)
+        cfg = _config(request)
+        if not cfg.ai.ui_api_key_file:
+            raise HTTPException(status_code=503, detail="本地 API Key 保存路径未配置")
+        try:
+            await asyncio.to_thread(
+                save_ui_api_key, Path(cfg.ai.ui_api_key_file), payload.api_key
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        except OSError as exc:
+            raise HTTPException(status_code=500, detail="保存 API Key 失败") from exc
+        return {"ok": True, "key_configured": True}
+
+    @app.post("/api/ai-settings/test")
+    async def api_test_ai_settings(request: Request):
+        require_login(request)
+        cfg = _config(request)
+        try:
+            await asyncio.to_thread(_test_deepseek_connection, cfg)
+        except (AIError, ConfigError, OSError, ValueError) as exc:
+            raise HTTPException(
+                status_code=503,
+                detail="DeepSeek 连接失败，请检查 API Key、接口配置和网络",
+            ) from exc
+        return {"ok": True}
 
     # ------------------------------------------------------------------
     # API: Stats

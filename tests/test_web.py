@@ -64,6 +64,106 @@ def test_candidates_requires_login(web_client):
     assert response.headers["location"] == "/login"
 
 
+def test_ai_settings_requires_login(web_client):
+    client, _, _ = web_client
+
+    assert client.get("/ai-settings", follow_redirects=False).status_code == 303
+    assert client.get("/api/ai-settings").status_code == 401
+    assert client.put("/api/ai-settings/key", json={"api_key": "example-key"}).status_code == 401
+    assert client.post("/api/ai-settings/test").status_code == 401
+
+
+def test_ai_settings_page_saves_key_without_echoing_it(web_client, tmp_path):
+    client, _, _ = web_client
+    key_path = tmp_path / "secrets" / "deepseek-api-key.txt"
+    client.app.state.config.ai.ui_api_key_file = str(key_path)
+    client.post("/login", data={"password": "password123"})
+
+    page = client.get("/ai-settings")
+    before = client.get("/api/ai-settings").json()
+    saved = client.put("/api/ai-settings/key", json={"api_key": "synthetic-example-key"})
+    after = client.get("/api/ai-settings").json()
+
+    assert page.status_code == 200
+    assert 'id="deepseek-api-key"' in page.text
+    assert 'type="password"' in page.text
+    assert "synthetic-example-key" not in page.text
+    assert before == {
+        "base_url": "https://api.example.com/v1",
+        "model": "gpt-test",
+        "key_configured": False,
+    }
+    assert saved.status_code == 200
+    assert "synthetic-example-key" not in saved.text
+    assert key_path.read_text(encoding="utf-8").strip() == "synthetic-example-key"
+    assert after["key_configured"] is True
+    assert "synthetic-example-key" not in str(after)
+
+
+def test_ai_settings_rejects_invalid_key(web_client, tmp_path):
+    client, _, _ = web_client
+    key_path = tmp_path / "secrets" / "deepseek-api-key.txt"
+    client.app.state.config.ai.ui_api_key_file = str(key_path)
+    client.post("/login", data={"password": "password123"})
+
+    response = client.put("/api/ai-settings/key", json={"api_key": "two words"})
+
+    assert response.status_code == 422
+    assert not key_path.exists()
+
+
+def test_ai_settings_connection_test_requires_positive_json_result(web_client, tmp_path, monkeypatch):
+    client, _, _ = web_client
+    client.app.state.config.ai.ui_api_key_file = str(tmp_path / "deepseek-api-key.txt")
+    client.app.state.config.ai.base_url = "https://api.deepseek.com"
+    client.post("/login", data={"password": "password123"})
+    client.put("/api/ai-settings/key", json={"api_key": "synthetic-example-key"})
+
+    class FakeAI:
+        def __init__(self, **kwargs):
+            self.closed = False
+
+        def chat(self, messages):
+            return {"ok": False}
+
+        def close(self):
+            self.closed = True
+
+    monkeypatch.setattr("qq_digest.web.app.AIClient", FakeAI)
+
+    response = client.post("/api/ai-settings/test")
+
+    assert response.status_code == 503
+    assert "DeepSeek 连接失败" in response.text
+
+
+def test_ai_settings_connection_failure_does_not_echo_key(web_client, tmp_path, monkeypatch):
+    from qq_digest.ai.client import AIError
+
+    client, _, _ = web_client
+    key_path = tmp_path / "secrets" / "deepseek-api-key.txt"
+    client.app.state.config.ai.ui_api_key_file = str(key_path)
+    client.post("/login", data={"password": "password123"})
+    client.put("/api/ai-settings/key", json={"api_key": "synthetic-example-key"})
+
+    class FailingAI:
+        def __init__(self, **kwargs):
+            pass
+
+        def chat(self, messages):
+            raise AIError("synthetic-example-key was rejected")
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr("qq_digest.web.app.AIClient", FailingAI)
+
+    response = client.post("/api/ai-settings/test")
+
+    assert response.status_code == 503
+    assert "synthetic-example-key" not in response.text
+
+
 def test_login_and_confirm_candidate(web_client):
     client, candidate_id, knowledge_dir = web_client
     client.post("/login", data={"password": "password123"}, follow_redirects=False)

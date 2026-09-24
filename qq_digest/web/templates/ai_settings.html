@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% block title %}AI 设置 - QQ Digest{% endblock %}
+{% block page_title %}AI 设置{% endblock %}
+{% block content %}
+<section class="card ai-settings-card" aria-labelledby="deepseek-settings-title">
+  <div class="card-header" id="deepseek-settings-title">DeepSeek API</div>
+  <p class="settings-note">API Key 只保存在本机文件中，页面不会显示已保存的密钥。保存后，新的摘要和报告提问会使用它。</p>
+  <dl class="settings-meta">
+    <div><dt>接口地址</dt><dd id="deepseek-base-url">加载中...</dd></div>
+    <div><dt>模型</dt><dd id="deepseek-model">加载中...</dd></div>
+    <div><dt>本地密钥</dt><dd id="deepseek-key-status">加载中...</dd></div>
+  </dl>
+  <form id="deepseek-key-form" onsubmit="saveDeepSeekKey(event)">
+    <div class="field"><label for="deepseek-api-key">输入新的 API Key</label><input id="deepseek-api-key" class="input" type="password" autocomplete="new-password" spellcheck="false" required></div>
+    <div class="settings-actions">
+      <button class="btn btn-primary" id="deepseek-save-btn" type="submit">保存 API Key</button>
+      <button class="btn" id="deepseek-test-btn" type="button" onclick="testDeepSeekConnection()">测试连接</button>
+    </div>
+  </form>
+  <p class="settings-note">“测试连接”会向当前配置的 DeepSeek 接口发送一条不含群聊内容的短请求。</p>
+</section>
+<style>
+  .ai-settings-card { max-width: 680px; }
+  .settings-note { margin: 0 0 18px; color: var(--text-soft); font-size: 13px; }
+  .settings-meta { display: grid; gap: 10px; margin: 0 0 22px; }
+  .settings-meta div { display: grid; grid-template-columns: 100px minmax(0, 1fr); gap: 10px; }
+  .settings-meta dt { color: var(--text-dim); }
+  .settings-meta dd { min-width: 0; margin: 0; overflow-wrap: anywhere; }
+  .settings-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 14px 0 16px; }
+  @media (max-width: 430px) { .settings-meta div { grid-template-columns: 1fr; gap: 2px; } .settings-actions .btn { flex: 1 1 100%; } }
+</style>
+<script>
+  function loadAISettings() {
+    api('GET', '/api/ai-settings').then(function(data) {
+      document.getElementById('deepseek-base-url').textContent = data.base_url || '未配置';
+      document.getElementById('deepseek-model').textContent = data.model || '未配置';
+      document.getElementById('deepseek-key-status').textContent = data.key_configured ? '已保存到本机' : '尚未通过网页保存';
+    }).catch(function(error) { toast('加载 AI 设置失败：' + error.message, 'error'); });
+  }
+  function saveDeepSeekKey(event) {
+    event.preventDefault();
+    var field = document.getElementById('deepseek-api-key');
+    var button = document.getElementById('deepseek-save-btn');
+    button.disabled = true;
+    api('PUT', '/api/ai-settings/key', {api_key: field.value}).then(function() {
+      field.value = '';
+      toast('API Key 已保存到本机', 'success');
+      loadAISettings();
+    }).catch(function(error) { toast('保存失败：' + error.message, 'error'); })
+      .finally(function() { button.disabled = false; });
+  }
+  function testDeepSeekConnection() {
+    var button = document.getElementById('deepseek-test-btn');
+    button.disabled = true;
+    api('POST', '/api/ai-settings/test', {}).then(function() {
+      toast('DeepSeek 连接成功', 'success');
+    }).catch(function(error) { toast(error.message, 'error'); })
+      .finally(function() { button.disabled = false; });
+  }
+  loadAISettings();
+</script>
+{% endblock %}
