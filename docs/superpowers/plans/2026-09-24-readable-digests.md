@@ -66,7 +66,7 @@ Expected report shape:
 - [x] Copy exactly the five existing 2026-09-24 report pairs to `output/review/2026-09-24-before/` after verifying each source path.
 - [x] Run `D:\CodexTools\python\Scripts\qq-digest.exe run-daily --config-path config/config.yaml`; the changed prompt fingerprint regenerated five reports.
 - [x] Inspect new Markdown/JSON for readability, hidden empty sections, complete diagnostics, and no incorrect “我记得” todo; compare with the copies.
-- [ ] Restart the local web service if necessary, verify `/reports` responds, commit only intended tracked files, push `HEAD:main`, and verify remote SHA.
+- [x] Restart the local web service, verify `/reports` responds, commit only intended tracked files, push `HEAD:main`, and verify remote SHA.
 
 ### Review-driven follow-up
 
