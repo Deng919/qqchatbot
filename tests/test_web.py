@@ -970,6 +970,56 @@ def test_candidate_api_filters_history_and_returns_details(web_client):
     assert [item["candidate_id"] for item in pending["candidates"]] == [candidate_id]
 
 
+def test_candidate_source_context_api_is_group_scoped_and_detail_only(web_client):
+    client, _, _ = web_client
+    archive = client.app.state.archive
+    archive.upsert_groups([GroupConfig(group_id=999, name="其他群")])
+    stamp = datetime(2026, 9, 1, 12, tzinfo=ZoneInfo("Asia/Shanghai"))
+    archive.ingest([
+        NormalizedMessage(msg_id=msg_id, group_id=group_id, sender_qq=1001,
+                          timestamp=stamp + timedelta(minutes=index),
+                          collected_at=stamp + timedelta(minutes=index), text=body)
+        for index, (msg_id, group_id, body) in enumerate([
+            ("m1", 123, "前文"), ("m2", 123, "引用原文"),
+            ("m3", 123, "后文"), ("m2", 999, "其他群秘密"),
+        ])
+    ])
+    candidate_id = client.app.state.candidates.create(
+        group_id=123, created_date="2026-09-01", candidate_type="experience",
+        title="上下文候选", reason="测试", excerpt="旧摘录", message_ids=["m2"],
+    )
+
+    assert client.get(f"/api/candidates/{candidate_id}").status_code == 401
+    client.post("/login", data={"password": "password123"})
+    detail = client.get(f"/api/candidates/{candidate_id}")
+    listed = client.get("/api/candidates").json()["candidates"]
+
+    assert detail.status_code == 200
+    data = detail.json()
+    assert [item["msg_id"] for item in data["source_context"]] == ["m1", "m2", "m3"]
+    assert [item["msg_id"] for item in data["source_context"] if item["is_cited"]] == ["m2"]
+    assert "其他群秘密" not in detail.text
+    assert data["missing_source_count"] == 0
+    assert data["excerpt"] == "旧摘录"
+    assert data["message_ids"] == ["m2"]
+    assert all("source_context" not in item for item in listed)
+
+
+def test_candidate_source_context_api_retains_excerpt_when_message_missing(web_client):
+    client, _, _ = web_client
+    candidate_id = client.app.state.candidates.create(
+        group_id=123, created_date="2026-09-01", candidate_type="experience",
+        title="历史候选", reason="测试", excerpt="保存的原摘录", message_ids=["gone"],
+    )
+    client.post("/login", data={"password": "password123"})
+
+    detail = client.get(f"/api/candidates/{candidate_id}").json()
+
+    assert detail["source_context"] == []
+    assert detail["missing_source_count"] == 1
+    assert detail["excerpt"] == "保存的原摘录"
+
+
 def test_later_candidate_can_be_restored_to_pending(web_client):
     client, candidate_id, _ = web_client
     candidates = client.app.state.candidates

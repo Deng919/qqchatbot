@@ -20,6 +20,7 @@ from ..archive import Archive
 from ..ai.client import AIClient, AIError
 from ..ai.key_store import save_ui_api_key, ui_api_key_exists
 from ..candidates import CandidateService
+from ..candidate_context import candidate_source_context
 from ..collector.ntqq import NTQQCollector
 from ..config import Config, ConfigError, load_config
 from ..knowledge import KnowledgeItem, KnowledgeWriter
@@ -1191,6 +1192,7 @@ def create_app(
         return {
             **item.model_dump(),
             "group_name": group["name"] if group else str(item.group_id),
+            **candidate_source_context(_archive(request), item),
         }
 
     # ------------------------------------------------------------------
