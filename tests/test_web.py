@@ -146,6 +146,15 @@ def test_report_qa_dialog_has_ephemeral_controls(web_client):
     assert "qaHistory = []" in page
 
 
+def test_report_selection_ignores_stale_detail_responses(web_client):
+    client, _, _ = web_client
+    client.post("/login", data={"password": "password123"})
+    page = client.get("/reports").text
+
+    assert "reportSelectionToken" in page
+    assert "selectionToken !== reportSelectionToken" in page
+
+
 def test_ai_settings_page_saves_key_without_echoing_it(web_client, tmp_path):
     client, _, _ = web_client
     key_path = tmp_path / "secrets" / "deepseek-api-key.txt"

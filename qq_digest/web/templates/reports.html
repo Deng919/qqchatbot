@@ -95,7 +95,7 @@
 </style>
 <script>
   var rangeGroups = [], rangeBusy = false, rangeOpener = null;
-  var qaReport = null, qaHistory = [], qaOpener = null, qaRequestToken = 0, qaBusy = false;
+  var qaReport = null, qaHistory = [], qaOpener = null, qaRequestToken = 0, qaBusy = false, reportSelectionToken = 0;
   function loadReports() {
     api('GET', '/api/reports').then(function(d) {
       var el = document.getElementById('report-list');
@@ -113,13 +113,15 @@
   }
   function viewReport(kind, reportId) {
     if ((kind !== 'daily' && kind !== 'range') || !Number.isInteger(Number(reportId))) return;
+    var selectionToken = ++reportSelectionToken;
     closeReportQA(); qaReport = null;
     api('GET', '/api/reports/' + kind + '/' + Number(reportId)).then(function(d) {
+      if (selectionToken !== reportSelectionToken) return;
       qaReport = {kind: kind, id: Number(reportId), group_name: d.group_name, start: d.window_start_date, end: d.window_end_date};
       document.getElementById('report-detail').hidden = false; document.getElementById('report-layout').classList.add('has-detail'); document.getElementById('report-content').textContent = d.markdown;
-    }).catch(function(e) { toast('加载失败: ' + e.message, 'error'); });
+    }).catch(function(e) { if (selectionToken === reportSelectionToken) toast('加载失败: ' + e.message, 'error'); });
   }
-  function closeReport() { closeReportQA(); qaReport = null; document.getElementById('report-detail').hidden = true; document.getElementById('report-layout').classList.remove('has-detail'); }
+  function closeReport() { reportSelectionToken += 1; closeReportQA(); qaReport = null; document.getElementById('report-detail').hidden = true; document.getElementById('report-layout').classList.remove('has-detail'); }
   function openReportQA() {
     if (!qaReport) return;
     qaOpener = document.activeElement; qaHistory = [];
