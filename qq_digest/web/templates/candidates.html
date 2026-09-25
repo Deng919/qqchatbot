@@ -28,6 +28,7 @@
 <aside id="candidate-detail" class="candidate-detail" hidden aria-live="polite">
   <div class="section-header"><span>候选详情</span><button class="btn btn-sm" aria-label="关闭候选详情" type="button" onclick="closeCandidateDetail()">关闭</button></div>
   <div id="candidate-detail-content"></div>
+  <section id="candidate-source-context" class="candidate-source-context" aria-label="原文与上下文"></section>
 </aside>
 <script>
   var candidateStatusLabels={pending:'待审核',later:'稍后处理',confirmed:'已入库',ignored:'已忽略'};
@@ -36,8 +37,49 @@
   function actionForm(id,action,label,cls){return '<form method="post" action="/candidates/'+id+'/'+action+'"><button class="btn btn-sm '+(cls||'')+'" type="submit">'+label+'</button></form>'}
   function renderCandidate(c){var link=c.link||'',linkHtml='';if(/^https?:\/\//i.test(link))linkHtml='<a href="'+escapeHtml(link)+'" target="_blank" rel="noopener noreferrer">'+escapeHtml(link)+'</a>';else if(link)linkHtml='<span class="header-meta">'+escapeHtml(link)+'</span>';var actions='<button class="btn btn-sm" type="button" onclick="viewCandidate('+c.candidate_id+')">详情</button>';if(c.status==='pending'||c.status==='later'){actions+=actionForm(c.candidate_id,'confirm','入库','btn-primary');if(c.status==='pending')actions+=actionForm(c.candidate_id,'later','稍后','');if(c.status==='later')actions+=actionForm(c.candidate_id,'restore','恢复审核','')}return '<article class="candidate-item"><div class="candidate-main"><div><strong>'+escapeHtml(c.title)+'</strong><div class="candidate-meta"><span class="badge badge-dim">'+escapeHtml(candidateTypeLabels[c.candidate_type]||c.candidate_type)+'</span><span>'+escapeHtml(candidateStatusLabels[c.status]||c.status)+'</span><span>'+escapeHtml(c.group_name)+'</span><span>'+escapeHtml(c.created_date)+'</span></div></div><div class="candidate-actions">'+actions+'</div></div><div class="candidate-reason">'+escapeHtml(c.reason)+'</div>'+linkHtml+'</article>'}
   function loadCandidates(){return api('GET','/api/candidates?'+candidateParams()).then(function(d){document.getElementById('candidate-count').textContent=formatNumber(d.candidates.length)+' 条';document.getElementById('candidate-list').innerHTML=d.candidates.length?d.candidates.map(renderCandidate).join(''):'<div class="empty">当前筛选条件下没有候选</div>'}).catch(function(e){toast('加载候选失败: '+e.message,'error')})}
-  function viewCandidate(id){api('GET','/api/candidates/'+id).then(function(c){var messages=(c.message_ids||[]).map(function(v){return '<code>'+escapeHtml(v)+'</code>'}).join(' ');var rows=[['标题',c.title],['状态',candidateStatusLabels[c.status]||c.status],['类型',candidateTypeLabels[c.candidate_type]||c.candidate_type],['来源群',c.group_name],['日期',c.created_date],['链接',c.link],['内容',c.content],['价值理由',c.reason],['原文摘录',c.excerpt],['忽略原因',c.ignore_reason]];document.getElementById('candidate-detail-content').innerHTML=rows.filter(function(r){return r[1]}).map(function(r){return '<div class="detail-row"><div class="detail-label">'+escapeHtml(r[0])+'</div><div>'+escapeHtml(r[1])+'</div></div>'}).join('')+'<div class="detail-row"><div class="detail-label">消息引用</div><div>'+messages+'</div></div>';document.getElementById('candidate-detail').hidden=false;document.getElementById('candidate-detail-backdrop').hidden=false}).catch(function(e){toast('加载详情失败: '+e.message,'error')})}
-  function closeCandidateDetail(){document.getElementById('candidate-detail').hidden=true;document.getElementById('candidate-detail-backdrop').hidden=true}
+  function renderCandidateContext(c) {
+    var host = document.getElementById('candidate-source-context');
+    host.textContent = '';
+    var title = document.createElement('h3'); title.textContent = '原文与上下文'; host.appendChild(title);
+    var rows = c.source_context || [];
+    rows.forEach(function(item) {
+      var row = document.createElement('div'); row.className = 'source-context-row' + (item.is_cited ? ' is-cited' : '');
+      var meta = document.createElement('div'); meta.className = 'source-context-meta';
+      meta.textContent = new Date(item.timestamp).toLocaleString('zh-CN') + ' · ' + (item.sender_qq || '未知发送者') + (item.is_cited ? ' · 候选引用' : ' · 相邻消息');
+      var body = document.createElement('div'); body.className = 'source-context-text'; body.textContent = item.text;
+      row.appendChild(meta); row.appendChild(body);
+      if (item.text_truncated) { var shortNote = document.createElement('small'); shortNote.textContent = '原消息过长，已截断展示'; row.appendChild(shortNote); }
+      host.appendChild(row);
+    });
+    if (!rows.length) { var fallback = document.createElement('div'); fallback.textContent = c.excerpt || '没有可用的归档原消息'; host.appendChild(fallback); }
+    if (c.missing_source_count) { var missing = document.createElement('p'); missing.textContent = c.missing_source_count + ' 条引用原消息未在归档中找到'; host.appendChild(missing); }
+    if (c.source_context_truncated) { var limit = document.createElement('p'); limit.textContent = '消息较多，仅展示前 40 条（优先候选引用）'; host.appendChild(limit); }
+  }
+  var candidateViewToken = 0;
+  function viewCandidate(id) {
+    var token = ++candidateViewToken;
+    api('GET', '/api/candidates/' + id).then(function(c) {
+      if (token !== candidateViewToken) return;
+      var messages = (c.message_ids || []).map(function(v) { return '<code>' + escapeHtml(v) + '</code>'; }).join(' ');
+      var rows = [
+        ['标题', c.title], ['状态', candidateStatusLabels[c.status] || c.status],
+        ['类型', candidateTypeLabels[c.candidate_type] || c.candidate_type],
+        ['来源群', c.group_name], ['日期', c.created_date], ['链接', c.link],
+        ['内容', c.content], ['价值理由', c.reason], ['忽略原因', c.ignore_reason]
+      ];
+      document.getElementById('candidate-detail-content').innerHTML = rows.filter(function(r) { return r[1]; }).map(function(r) {
+        return '<div class="detail-row"><div class="detail-label">' + escapeHtml(r[0]) + '</div><div>' + escapeHtml(r[1]) + '</div></div>';
+      }).join('') + '<div class="detail-row"><div class="detail-label">消息引用</div><div>' + messages + '</div></div>';
+      renderCandidateContext(c);
+      document.getElementById('candidate-detail').hidden = false;
+      document.getElementById('candidate-detail-backdrop').hidden = false;
+    }).catch(function(e) { if (token === candidateViewToken) toast('加载详情失败: ' + e.message, 'error'); });
+  }
+  function closeCandidateDetail() {
+    candidateViewToken += 1;
+    document.getElementById('candidate-detail').hidden = true;
+    document.getElementById('candidate-detail-backdrop').hidden = true;
+  }
   api('GET','/api/groups').then(function(d){var s=document.getElementById('candidate-group');d.groups.forEach(function(g){var o=document.createElement('option');o.value=g.group_id;o.textContent=g.name;s.appendChild(o)})});
   document.getElementById('candidate-query').addEventListener('keydown',function(e){if(e.key==='Enter')loadCandidates()});
   document.addEventListener('keydown',function(e){if(e.key==='Escape')closeCandidateDetail()});loadCandidates();
@@ -53,6 +95,12 @@
   .candidate-detail { position: fixed; right: 18px; top: 70px; bottom: 18px; z-index: 40; width: min(540px, calc(100vw - 36px)); padding: 18px; overflow: auto; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: 0 24px 64px rgb(18 25 21 / .24); }
   .detail-row { display: grid; grid-template-columns: 90px minmax(0, 1fr); gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--border); overflow-wrap: anywhere; }
   .detail-label { color: var(--text-dim); }
+  .candidate-source-context { max-height: 360px; overflow-y: auto; margin-top: 14px; }
+  .candidate-source-context h3 { margin: 0 0 8px; font-size: 14px; }
+  .source-context-row { padding: 9px; border-bottom: 1px solid var(--border); }
+  .source-context-row.is-cited { border-left: 3px solid var(--primary); background: var(--primary-soft); }
+  .source-context-meta { margin-bottom: 4px; color: var(--text-dim); font-size: 11px; }
+  .source-context-text { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 13px; line-height: 1.6; }
   @media (max-width: 1040px) { .candidate-toolbar { grid-template-columns: repeat(3, minmax(0, 1fr)); } .candidate-query { grid-column: span 2; } }
   @media (max-width: 700px) { .candidate-toolbar { grid-template-columns: 1fr 1fr; padding: 10px; } #candidate-type, .candidate-query { grid-column: 1 / -1; } .candidate-toolbar .btn { grid-column: 1 / -1; min-height: 40px; } .candidate-main { display: block; } .candidate-actions { margin-top: 11px; } .candidate-detail { inset: 104px 10px 10px; width: auto; } .detail-row { grid-template-columns: 1fr; gap: 3px; } }
 </style>

@@ -1020,6 +1020,21 @@ def test_candidate_source_context_api_retains_excerpt_when_message_missing(web_c
     assert detail["excerpt"] == "保存的原摘录"
 
 
+def test_candidate_context_drawer_renders_plain_text_and_fallback(web_client):
+    client, _, _ = web_client
+    client.post("/login", data={"password": "password123"})
+
+    page = client.get("/candidates").text
+
+    assert 'class="candidate-source-context"' in page
+    assert "body.textContent = item.text" in page
+    assert "item.is_cited" in page
+    assert "c.missing_source_count" in page
+    assert "c.source_context_truncated" in page
+    assert "c.excerpt || '没有可用的归档原消息'" in page
+    assert "candidateViewToken" in page
+
+
 def test_later_candidate_can_be_restored_to_pending(web_client):
     client, candidate_id, _ = web_client
     candidates = client.app.state.candidates
