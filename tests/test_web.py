@@ -559,6 +559,7 @@ def test_manual_range_summary_creates_listed_report(web_client, monkeypatch):
     )
     assert detail.status_code == 200
     assert "测试群范围摘要" in detail.json()["markdown"]
+    assert detail.json()["group_name"] == "测试群"
     assert "effective_template" not in detail.json()
 
 

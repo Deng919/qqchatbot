@@ -115,7 +115,7 @@
     if ((kind !== 'daily' && kind !== 'range') || !Number.isInteger(Number(reportId))) return;
     closeReportQA(); qaReport = null;
     api('GET', '/api/reports/' + kind + '/' + Number(reportId)).then(function(d) {
-      qaReport = {kind: kind, id: Number(reportId), start: d.window_start_date, end: d.window_end_date};
+      qaReport = {kind: kind, id: Number(reportId), group_name: d.group_name, start: d.window_start_date, end: d.window_end_date};
       document.getElementById('report-detail').hidden = false; document.getElementById('report-layout').classList.add('has-detail'); document.getElementById('report-content').textContent = d.markdown;
     }).catch(function(e) { toast('加载失败: ' + e.message, 'error'); });
   }
@@ -126,7 +126,7 @@
     document.getElementById('report-qa-messages').textContent = '';
     document.getElementById('report-qa-sources').textContent = '';
     document.getElementById('report-qa-question').value = '';
-    document.getElementById('report-qa-scope').textContent = qaReport.start + (qaReport.start === qaReport.end ? '' : ' 至 ' + qaReport.end);
+    document.getElementById('report-qa-scope').textContent = qaReport.group_name + ' · ' + qaReport.start + (qaReport.start === qaReport.end ? '' : ' 至 ' + qaReport.end);
     document.getElementById('report-qa-dialog').hidden = false;
     document.getElementById('report-qa-backdrop').hidden = false;
     document.getElementById('report-qa-question').focus();
@@ -149,13 +149,14 @@
     var list = document.getElementById('report-qa-messages'); list.appendChild(entry); list.scrollTop = list.scrollHeight;
   }
   function renderQASources(data) {
-    var container = document.getElementById('report-qa-sources'); container.textContent = '';
-    var note = document.createElement('div'); note.textContent = '本次参考 ' + data.context_message_count + ' 条原始消息' + (data.context_truncated ? '（已按问题筛选）' : '') + '。'; container.appendChild(note);
+    var container = document.getElementById('report-qa-sources'), block = document.createElement('section');
+    var note = document.createElement('div'); note.textContent = '第 ' + (Math.floor(qaHistory.length / 2) + 1) + ' 次回答：参考 ' + data.context_message_count + ' 条原始消息' + (data.context_truncated ? '（已按问题筛选）' : '') + '。'; block.appendChild(note);
     (data.sources || []).forEach(function(source) {
       var details = document.createElement('details'), summary = document.createElement('summary'), excerpt = document.createElement('div');
       summary.textContent = source.timestamp + ' · ' + (source.sender_qq || '未知发送者') + ' · ' + source.msg_id;
-      excerpt.textContent = source.excerpt; details.appendChild(summary); details.appendChild(excerpt); container.appendChild(details);
+      excerpt.textContent = source.excerpt; details.appendChild(summary); details.appendChild(excerpt); block.appendChild(details);
     });
+    container.appendChild(block); container.scrollTop = container.scrollHeight;
   }
   function askReport(event) {
     event.preventDefault(); if (!qaReport || qaBusy) return;

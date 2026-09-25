@@ -1080,6 +1080,9 @@ def create_app(
         else:
             raise HTTPException(status_code=404, detail="报告类型不存在")
         markdown_path = Path(row["markdown_path"])
+        group = ar.connection.execute(
+            "SELECT name FROM groups WHERE group_id=?", (row["group_id"],)
+        ).fetchone()
         markdown = (
             markdown_path.read_text(encoding="utf-8")
             if markdown_path.exists()
@@ -1088,6 +1091,7 @@ def create_app(
         return {
             "markdown": markdown,
             "report_kind": report_kind,
+            "group_name": group["name"] if group else str(row["group_id"]),
             "window_start_date": start_date,
             "window_end_date": end_date,
         }
