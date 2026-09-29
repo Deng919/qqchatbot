@@ -108,9 +108,13 @@
     .input, select, textarea { min-height: 38px; width: 100%; padding: 7px 10px; background: var(--surface); border: 1px solid var(--border-strong); border-radius: var(--radius); color: var(--text); font-size: 13px; }
     .input:hover, select:hover, textarea:hover { border-color: #919c94; }
     .input:focus, select:focus, textarea:focus { outline: 3px solid rgb(23 111 101 / .13); border-color: var(--primary); }
+    .date-input { position: relative; display: block; width: 100%; }
+    .date-input-hint { position: absolute; top: 50%; left: 11px; transform: translateY(-50%); color: var(--text-dim); font-size: 13px; pointer-events: none; }
+    .date-input:not(.is-empty) .date-input-hint, .date-input:focus-within .date-input-hint { display: none; }
+    .date-input.is-empty:not(:focus-within) input::-webkit-datetime-edit { opacity: 0; }
     .search { width: min(300px, 100%); }
     .filter-toolbar { margin-bottom: 14px; padding: 12px; display: grid; gap: 8px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); }
-    .collect-toolbar { grid-template-columns: minmax(220px, 1.5fr) minmax(140px, .7fr) minmax(140px, .7fr) auto auto; align-items: end; }
+    .collect-toolbar { grid-template-columns: minmax(220px, 1.5fr) minmax(140px, .7fr) minmax(140px, .7fr) auto auto auto; align-items: end; }
     .field { min-width: 0; }
     .field label { display: block; margin-bottom: 4px; color: var(--text-dim); font-size: 11px; font-weight: 600; }
 
@@ -123,6 +127,8 @@
     .toggle input:focus-visible + .slider { outline: 3px solid rgb(23 111 101 / .22); outline-offset: 2px; }
 
     .group-config-table { min-width: 1460px; }
+    .group-config-table a.btn { display: inline-flex; align-items: center; text-decoration: none; }
+    .group-config-table .sync-error { display: inline-block; max-width: 190px; overflow-wrap: anywhere; }
     .group-config-table th:first-child, .group-config-table td:first-child { position: sticky; left: 0; z-index: 1; min-width: 200px; background: inherit; box-shadow: 1px 0 0 var(--border); }
     .group-config-table th:first-child { z-index: 3; background: #f8f9f7; }
     .keyword-field { width: 160px; }
@@ -198,6 +204,104 @@
       .collect-toolbar { grid-template-columns: 1fr 1fr; }
       .collect-toolbar .group-field, .collect-toolbar .toolbar-action { grid-column: 1 / -1; }
     }
+    /* Quiet workspace refresh: compact navigation, clear content hierarchy. */
+    :root {
+      --bg: #f6f7f4;
+      --surface: #ffffff;
+      --surface-subtle: #f8faf8;
+      --surface-strong: #eef2ee;
+      --border: #e4e9e4;
+      --border-strong: #cbd5cd;
+      --text: #1c2923;
+      --text-soft: #53625a;
+      --text-dim: #728077;
+      --header: #ffffff;
+      --header-border: #e7ebe6;
+      --primary: #176b58;
+      --primary-dark: #105541;
+      --primary-soft: #e9f3ed;
+      --radius: 12px;
+    }
+    body { background: var(--bg); font-size: 14px; }
+    .global-header { background: var(--surface); border-bottom: 1px solid var(--header-border); color: var(--text); box-shadow: 0 1px 12px rgb(28 48 34 / .035); }
+    .global-header-inner { width: min(100%, 1360px); min-height: 68px; padding: 0 32px; align-items: center; gap: 34px; }
+    .brand { align-items: center; gap: 10px; color: var(--text); font-size: 16px; letter-spacing: -.03em; }
+    .brand::before { content: ''; width: 28px; height: 28px; display: block; flex: none; border-radius: 9px; background: var(--primary); box-shadow: inset 0 0 0 7px var(--primary), inset 0 0 0 9px #fff; }
+    .brand small { color: #8b978e; font-size: 11px; letter-spacing: .02em; }
+    .global-nav { margin-left: auto; gap: 3px; }
+    .global-nav a { min-width: 0; min-height: 38px; padding: 0 14px; border: 0; border-radius: 9px; color: var(--text-soft); font-size: 13px; font-weight: 550; }
+    .global-nav a:hover { background: var(--surface-subtle); color: var(--text); }
+    .global-nav a:active { background: var(--surface-strong); }
+    .global-nav a.active { background: var(--primary-soft); color: var(--primary-dark); font-weight: 700; }
+    .page-toolbar { background: transparent; border-bottom: 0; }
+    .page-toolbar-inner { width: min(100%, 1360px); min-height: 0; padding: 38px 32px 21px; align-items: flex-end; }
+    .page-heading { min-width: 0; }
+    .page-eyebrow { display: block; margin-bottom: 8px; color: var(--primary); font-size: 11px; font-weight: 750; letter-spacing: .13em; text-transform: uppercase; }
+    .page-toolbar h1 { font-size: clamp(25px, 3vw, 31px); line-height: 1.18; font-weight: 750; letter-spacing: -.05em; }
+    .page-subtitle { margin: 8px 0 0; color: var(--text-soft); font-size: 13px; }
+    .page-subtitle:empty { display: none; }
+    .actions { gap: 9px; }
+    .content { width: min(100%, 1360px); padding: 0 32px 64px; }
+    .section { margin-bottom: 26px; }
+    .section-header, .card-header { margin-bottom: 16px; font-size: 15px; font-weight: 700; letter-spacing: -.02em; }
+    .header-meta { color: var(--text-dim); font-size: 12px; font-weight: 500; letter-spacing: 0; }
+    a.header-meta { color: var(--primary); text-decoration: none; }
+    a.header-meta:hover { text-decoration: underline; }
+    .card { margin-bottom: 18px; padding: 22px; border-color: var(--border); border-radius: 15px; box-shadow: 0 8px 26px rgb(30 48 34 / .025); }
+    .grid, .dashboard-grid { gap: 18px; }
+    .metrics { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-bottom: 20px; overflow: visible; border: 0; background: transparent; }
+    .metric { position: relative; min-height: 122px; padding: 20px 21px; border: 1px solid var(--border) !important; border-radius: 14px; background: var(--surface); box-shadow: 0 8px 24px rgb(30 48 34 / .025); }
+    .metric::before { content: ''; position: absolute; top: 20px; right: 21px; width: 7px; height: 7px; border-radius: 50%; background: #a6c4ae; }
+    .metric:nth-child(3)::before { background: #d1a15f; }
+    .stat { color: var(--text); font-family: var(--font); font-size: 34px; font-weight: 750; letter-spacing: -.05em; }
+    .stat-label { margin-top: 11px; color: var(--text-soft); font-size: 12px; font-weight: 550; }
+    .table-wrap { border-color: var(--border); border-radius: 10px; }
+    .table th, .table td { padding: 12px 14px; border-bottom-color: #edf0ec; }
+    .table th { background: #f8faf8; color: #69796f; font-weight: 650; }
+    .table tbody tr:hover { background: #f8faf8; }
+    .badge { min-height: 24px; padding: 3px 8px; border-radius: 6px; font-size: 11px; }
+    .btn { min-height: 39px; padding: 7px 14px; border-color: var(--border-strong); border-radius: 9px; font-weight: 650; }
+    .btn:hover { border-color: #aebdb1; }
+    .btn-primary { box-shadow: 0 4px 10px rgb(23 107 88 / .12); }
+    .btn-sm { min-height: 34px; padding: 5px 11px; }
+    .input, select, textarea { min-height: 40px; padding: 8px 11px; border-color: var(--border-strong); border-radius: 9px; }
+    .field label { margin-bottom: 6px; color: var(--text-soft); font-size: 12px; font-weight: 650; }
+    .filter-toolbar { margin-bottom: 18px; padding: 18px; gap: 11px; border-color: var(--border); border-radius: 14px; }
+    .status-line { min-height: 45px; padding: 11px 13px; border-color: var(--border); border-radius: 9px; color: var(--text-soft); }
+    .status-line strong { color: var(--text); font-weight: 650; }
+    .msg-list { border-color: var(--border); border-radius: 10px; }
+    .msg-item { padding: 13px 15px; border-bottom-color: var(--border); }
+    .empty { padding: 42px 16px; color: var(--text-dim); }
+    .muted-panel { border-radius: 9px; }
+    .candidate-item { padding: 18px 19px; border: 1px solid var(--border); border-left: 3px solid var(--primary); border-radius: 11px; box-shadow: 0 4px 16px rgb(30 48 34 / .02); }
+    .candidate-item:hover { background: var(--surface); border-color: #c5d3c9; border-left-color: var(--primary); }
+    .toast { top: 80px; border-radius: 9px; }
+    @media (max-width: 1040px) {
+      .metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    }
+    @media (max-width: 700px) {
+      .global-header-inner { padding: 0; }
+      .brand { min-height: 54px; padding: 0 18px; border-bottom: 1px solid var(--header-border); }
+      .global-nav { gap: 3px; padding: 6px 12px; }
+      .global-nav a { min-height: 36px; padding: 0 12px; }
+      .page-toolbar-inner { padding: 27px 18px 18px; gap: 17px; align-items: stretch; }
+      .page-toolbar h1 { font-size: 27px; }
+      .content { padding: 0 18px 44px; }
+      .metric { min-height: 110px; padding: 17px; }
+      .metric:nth-child(-n+2) { border-bottom: 1px solid var(--border); }
+      .stat { font-size: 29px; }
+      .card { padding: 18px; }
+      .filter-toolbar { padding: 14px; }
+      .toast { top: 110px; }
+    }
+    @media (max-width: 430px) {
+      .page-toolbar-inner { padding-top: 24px; }
+      .page-subtitle { line-height: 1.5; }
+      .metrics { gap: 9px; }
+      .metric { min-height: 100px; padding: 14px; }
+      .stat { font-size: 26px; }
+      .stat-label { margin-top: 8px; }
+    }
     @media (prefers-reduced-motion: reduce) {
       *, *::before, *::after { scroll-behavior: auto !important; transition: none !important; }
     }
@@ -210,18 +314,22 @@
       <a class="brand" href="/">群聊简报 <small>QQ Digest</small></a>
       <nav class="global-nav" aria-label="主要导航">
         <a href="/" id="nav-dashboard">总览</a>
+        <a href="/catchup" id="nav-catchup">补看</a>
+        <a href="/tasks" id="nav-tasks">待办</a>
         <a href="/groups" id="nav-groups">群组</a>
         <a href="/collect" id="nav-collect">采集</a>
+        <a href="/search" id="nav-search">搜索</a>
         <a href="/reports" id="nav-reports">摘要</a>
         <a href="/candidates" id="nav-candidates">审核</a>
         <a href="/ai-settings" id="nav-ai-settings">AI 设置</a>
+        <a href="/settings" id="nav-settings">设置</a>
       </nav>
     </div>
   </header>
   <main id="main-content">
     <header class="page-toolbar">
       <div class="page-toolbar-inner">
-        <h1>{% block page_title %}{% endblock %}</h1>
+        <div class="page-heading"><span class="page-eyebrow">QQ DIGEST / 工作台</span><h1>{% block page_title %}{% endblock %}</h1><p class="page-subtitle">{% block page_description %}{% endblock %}</p></div>
         <div class="actions">{% block actions %}{% endblock %}</div>
       </div>
     </header>
@@ -241,6 +349,11 @@
             .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
         }
         function formatNumber(value) { return Number(value || 0).toLocaleString('zh-CN'); }
+        function refreshDateHints() {
+          document.querySelectorAll('.date-input').forEach(function(wrapper) {
+            wrapper.classList.toggle('is-empty', !wrapper.querySelector('input').value);
+          });
+        }
         function dailyResultMessage(data) {
           if (data.status === 'partial_success') {
             return '已生成 ' + formatNumber(data.reports) + ' 份摘要，'
@@ -279,6 +392,22 @@
         })();
       </script>
       {% block content %}{% endblock %}
+      <script>
+        document.querySelectorAll('input[type="date"]').forEach(function(input) {
+          var wrapper = document.createElement('span');
+          wrapper.className = 'date-input';
+          var hint = document.createElement('span');
+          hint.className = 'date-input-hint';
+          hint.textContent = '选择日期';
+          hint.setAttribute('aria-hidden', 'true');
+          input.parentNode.insertBefore(wrapper, input);
+          wrapper.appendChild(input);
+          wrapper.appendChild(hint);
+          input.addEventListener('input', refreshDateHints);
+          input.addEventListener('change', refreshDateHints);
+        });
+        refreshDateHints();
+      </script>
     </div>
   </main>
 </body>

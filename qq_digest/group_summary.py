@@ -13,7 +13,7 @@ from .summary import Summarizer
 
 
 # Bump when report rendering changes without a prompt/schema change.
-REPORT_FORMAT_VERSION = 5
+REPORT_FORMAT_VERSION = 6
 
 
 @dataclass(frozen=True)
@@ -75,15 +75,27 @@ class GroupSummaryBuilder:
                 f"{window_end.astimezone(timezone):%Y-%m-%d %H:%M}"
             ),
             overview=summary.response.overview,
+            overview_source_ids=summary.response.overview_message_ids,
             topics=[item.model_dump() for item in summary.response.main_topics],
-            conclusions=summary.response.conclusions,
+            conclusions=[
+                item.model_dump() if hasattr(item, "model_dump")
+                else {"text": item, "message_ids": []}
+                for item in summary.response.conclusions
+            ],
             resources=[item.model_dump() for item in summary.response.resources],
             tasks=[
-                f"{item.owner}：{item.description}"
-                + (f"（{item.deadline}）" if item.deadline else "")
+                {
+                    "text": f"{item.owner}：{item.description}"
+                    + (f"（{item.deadline}）" if item.deadline else ""),
+                    "message_ids": item.message_ids,
+                }
                 for item in summary.response.tasks
             ],
-            open_questions=summary.response.open_questions,
+            open_questions=[
+                item.model_dump() if hasattr(item, "model_dump")
+                else {"text": item, "message_ids": []}
+                for item in summary.response.open_questions
+            ],
             deterministic=summary.deterministic,
             quality_note=quality_note,
             title_suffix="范围摘要" if report_kind == "range" else "日报",
@@ -116,7 +128,7 @@ class GroupSummaryBuilder:
         )
         return GroupSummaryArtifact(
             markdown=markdown,
-            payload={**summary.response.model_dump(), "diagnostics": diagnostics},
+            payload={**summary.response.model_dump(), "evidence_version": 1, "diagnostics": diagnostics},
             candidate_kwargs=candidate_kwargs,
             source_message_count=len(messages),
         )

@@ -11,18 +11,38 @@ from .preprocessing import Preprocessor
 from .prompt_builder import build_system_prompt, build_user_prompt, CANDIDATE_LIMITS
 
 
-class Topic(BaseModel):
+def _normalize_message_ids(value):
+    if not isinstance(value, list):
+        return value
+    return [
+        str(message_id)
+        if isinstance(message_id, int) and not isinstance(message_id, bool)
+        else message_id
+        for message_id in value
+    ]
+
+
+class EvidenceItem(BaseModel):
+    message_ids: list[str] = Field(default_factory=list)
+
+    @field_validator("message_ids", mode="before")
+    @classmethod
+    def normalize_message_ids(cls, value):
+        return _normalize_message_ids(value)
+
+
+class Topic(EvidenceItem):
     topic: str
     summary: str
 
 
-class Resource(BaseModel):
+class Resource(EvidenceItem):
     title: str
     url: str = Field(default="", validation_alias=AliasChoices("url", "link"))
     description: str = ""
 
 
-class TaskOutput(BaseModel):
+class TaskOutput(EvidenceItem):
     owner: str
     description: str
     deadline: str = ""
@@ -39,14 +59,7 @@ class CandidateOutput(BaseModel):
     @field_validator("message_ids", mode="before")
     @classmethod
     def normalize_integer_message_ids(cls, value):
-        if not isinstance(value, list):
-            return value
-        return [
-            str(message_id)
-            if isinstance(message_id, int) and not isinstance(message_id, bool)
-            else message_id
-            for message_id in value
-        ]
+        return _normalize_message_ids(value)
 
     @field_validator("type")
     @classmethod
@@ -56,15 +69,25 @@ class CandidateOutput(BaseModel):
         return value
 
 
+class CitedText(EvidenceItem):
+    text: str
+
+
 class SummaryResponse(BaseModel):
     group_id: int
     overview: str = ""
+    overview_message_ids: list[str] = Field(default_factory=list)
     main_topics: list[Topic]
-    conclusions: list[str]
+    conclusions: list[str | CitedText]
     resources: list[Resource]
     tasks: list[TaskOutput]
-    open_questions: list[str]
+    open_questions: list[str | CitedText]
     candidates: list[CandidateOutput]
+
+    @field_validator("overview_message_ids", mode="before")
+    @classmethod
+    def normalize_overview_message_ids(cls, value):
+        return _normalize_message_ids(value)
 
     @field_validator("conclusions", "open_questions", mode="before")
     @classmethod
@@ -241,6 +264,36 @@ class Summarizer:
             raise ValueError("AI响应 group_id 不匹配")
         limit = CANDIDATE_LIMITS.get(category, 1)
         included_ids = set(context_window.included_message_ids)
+        def valid_source_ids(message_ids: list[str]) -> list[str]:
+            return list(dict.fromkeys(
+                message_id for message_id in message_ids if message_id in included_ids
+            ))[:3]
+
+        response = response.model_copy(update={
+            "overview_message_ids": valid_source_ids(response.overview_message_ids),
+            "main_topics": [
+                item.model_copy(update={"message_ids": valid_source_ids(item.message_ids)})
+                for item in response.main_topics
+            ],
+            "conclusions": [
+                item.model_copy(update={"message_ids": valid_source_ids(item.message_ids)})
+                if isinstance(item, CitedText) else item
+                for item in response.conclusions
+            ],
+            "resources": [
+                item.model_copy(update={"message_ids": valid_source_ids(item.message_ids)})
+                for item in response.resources
+            ],
+            "tasks": [
+                item.model_copy(update={"message_ids": valid_source_ids(item.message_ids)})
+                for item in response.tasks
+            ],
+            "open_questions": [
+                item.model_copy(update={"message_ids": valid_source_ids(item.message_ids)})
+                if isinstance(item, CitedText) else item
+                for item in response.open_questions
+            ],
+        })
         valid_candidates = []
         for candidate in response.candidates[:limit]:
             message_ids = list(

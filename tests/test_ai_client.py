@@ -199,6 +199,43 @@ def test_chat_does_not_retry_permanent_client_error(respx_mock):
     assert route.call_count == 1
 
 
+def test_chat_retries_malformed_json_without_leaking_response(respx_mock):
+    private_fragment = "private message excerpt"
+    route = respx_mock.post("https://api.example.com/v1/chat/completions").mock(
+        side_effect=[
+            httpx.Response(200, json={"choices": [{"message": {"content": '{"text":"' + private_fragment}}]}),
+            httpx.Response(200, json={"choices": [{"message": {"content": '{"ok":true}'}}]}),
+        ]
+    )
+    delays = []
+    client = AIClient(
+        base_url="https://api.example.com/v1", api_key="synthetic-key",
+        model="test-model", transport=httpx.MockTransport(respx_mock.handler),
+        max_retries=2, retry_base_seconds=0, sleep_fn=delays.append,
+    )
+
+    assert client.chat([{"role": "user", "content": "test"}]) == {"ok": True}
+    assert route.call_count == 2
+
+
+def test_chat_malformed_json_error_does_not_include_private_output(respx_mock):
+    private_fragment = "private message excerpt"
+    respx_mock.post("https://api.example.com/v1/chat/completions").mock(
+        return_value=httpx.Response(
+            200, json={"choices": [{"message": {"content": private_fragment}}]}
+        )
+    )
+    client = AIClient(
+        base_url="https://api.example.com/v1", api_key="synthetic-key",
+        model="test-model", transport=httpx.MockTransport(respx_mock.handler),
+        max_retries=2, retry_base_seconds=0,
+    )
+
+    with pytest.raises(AIError) as captured:
+        client.chat([{"role": "user", "content": "test"}])
+    assert private_fragment not in str(captured.value)
+
+
 def test_chat_includes_safe_provider_error_message(respx_mock):
     respx_mock.post("https://api.example.com/v1/chat/completions").mock(
         return_value=httpx.Response(

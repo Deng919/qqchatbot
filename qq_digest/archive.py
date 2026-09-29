@@ -96,7 +96,9 @@ class Archive:
                     last_timestamp TEXT,
                     backfill_completed_at TEXT,
                     status TEXT NOT NULL DEFAULT 'active',
-                    updated_at TEXT NOT NULL
+                    updated_at TEXT NOT NULL,
+                    error TEXT NOT NULL DEFAULT '',
+                    last_success_at TEXT
                 );
                 CREATE TABLE IF NOT EXISTS reports (
                     report_id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -172,7 +174,40 @@ class Archive:
                     status TEXT NOT NULL,
                     started_at TEXT,
                     finished_at TEXT,
-                    error TEXT NOT NULL DEFAULT ''
+                    error TEXT NOT NULL DEFAULT '',
+                    target_date TEXT
+                );
+                CREATE TABLE IF NOT EXISTS catchup_state (
+                    state_id INTEGER PRIMARY KEY CHECK (state_id=1),
+                    last_viewed_at TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS catchup_reads (
+                    item_key TEXT PRIMARY KEY,
+                    read_at TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS tasks (
+                    task_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    group_id INTEGER NOT NULL,
+                    title TEXT NOT NULL,
+                    owner TEXT NOT NULL DEFAULT '',
+                    due_date TEXT,
+                    status TEXT NOT NULL DEFAULT 'open' CHECK(status IN ('open','completed','canceled')),
+                    source_ids TEXT NOT NULL,
+                    primary_source_id TEXT NOT NULL,
+                    source_report_id INTEGER,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    FOREIGN KEY (group_id, primary_source_id)
+                        REFERENCES messages(group_id, msg_id) ON DELETE CASCADE
+                );
+                CREATE INDEX IF NOT EXISTS idx_tasks_status_due
+                    ON tasks(status, due_date, task_id);
+                CREATE TABLE IF NOT EXISTS task_suggestion_decisions (
+                    suggestion_key TEXT PRIMARY KEY,
+                    group_id INTEGER NOT NULL,
+                    decision TEXT NOT NULL CHECK(decision IN ('confirmed','ignored')),
+                    task_id INTEGER REFERENCES tasks(task_id) ON DELETE CASCADE,
+                    decided_at TEXT NOT NULL
                 );
                 """
             )
@@ -192,11 +227,22 @@ class Archive:
                 "ALTER TABLE send_log ADD COLUMN retry_count INTEGER NOT NULL DEFAULT 0",
                 "ALTER TABLE send_log ADD COLUMN next_attempt_at TEXT",
                 "ALTER TABLE send_log ADD COLUMN updated_at TEXT NOT NULL DEFAULT ''",
+                "ALTER TABLE sync_state ADD COLUMN error TEXT NOT NULL DEFAULT ''",
+                "ALTER TABLE sync_state ADD COLUMN last_success_at TEXT",
+                "ALTER TABLE jobs ADD COLUMN target_date TEXT",
             ):
                 try:
                     self.connection.execute(statement)
                 except sqlite3.OperationalError:
                     pass
+            self.connection.execute(
+                """UPDATE sync_state
+                   SET last_success_at=CASE
+                       WHEN status='active' THEN updated_at
+                       ELSE last_timestamp
+                   END
+                   WHERE last_success_at IS NULL AND last_timestamp IS NOT NULL"""
+            )
 
     def enqueue_notification(
         self,
@@ -553,28 +599,55 @@ class Archive:
             self.connection.execute(
                 """
                 INSERT INTO sync_state(
-                    group_id, last_timestamp, status, updated_at
-                ) VALUES (?, ?, ?, ?)
+                    group_id, last_timestamp, status, updated_at, error, last_success_at
+                ) VALUES (?, ?, ?, ?, '', ?)
                 ON CONFLICT(group_id) DO UPDATE SET
-                    last_timestamp=excluded.last_timestamp,
+                    last_timestamp=CASE
+                        WHEN sync_state.last_timestamp IS NULL
+                             OR sync_state.last_timestamp < excluded.last_timestamp
+                        THEN excluded.last_timestamp
+                        ELSE sync_state.last_timestamp
+                    END,
                     status=excluded.status,
-                    updated_at=excluded.updated_at
+                    updated_at=excluded.updated_at,
+                    error='',
+                    last_success_at=excluded.last_success_at
                 """,
-                (group_id, self._utc_timestamp(last_timestamp), status, now),
+                (group_id, self._utc_timestamp(last_timestamp), status, now, now),
             )
 
-    def mark_sync_failure(self, *, group_id: int, status: str) -> None:
+    def mark_sync_failure(self, *, group_id: int, status: str, error: str = "") -> None:
         now = datetime.now(timezone.utc).isoformat()
         with self.transaction():
             self.connection.execute(
                 """
-                INSERT INTO sync_state(group_id, last_timestamp, status, updated_at)
-                VALUES (?, NULL, ?, ?)
+                INSERT INTO sync_state(group_id, last_timestamp, status, updated_at, error)
+                VALUES (?, NULL, ?, ?, ?)
                 ON CONFLICT(group_id) DO UPDATE SET
                     status=excluded.status,
-                    updated_at=excluded.updated_at
+                    updated_at=excluded.updated_at,
+                    error=excluded.error
                 """,
-                (group_id, status, now),
+                (group_id, status, now, error[:1000]),
+            )
+
+    def mark_manual_collect_success(self, *, group_id: int) -> None:
+        """Record a successful manual collection without moving the periodic cursor."""
+        now = datetime.now(timezone.utc).isoformat()
+        with self.transaction():
+            self.connection.execute(
+                """
+                INSERT INTO sync_state(
+                    group_id, last_timestamp, status, updated_at, error, last_success_at
+                ) VALUES (?, NULL, 'manual_repair_completed', ?, '', ?)
+                ON CONFLICT(group_id) DO UPDATE SET
+                    status=CASE WHEN sync_state.status='active' THEN 'active'
+                                ELSE 'manual_repair_completed' END,
+                    updated_at=excluded.updated_at,
+                    error='',
+                    last_success_at=excluded.last_success_at
+                """,
+                (group_id, now, now),
             )
 
     def report_for(self, group_id: int, report_date: str) -> sqlite3.Row | None:
@@ -686,7 +759,12 @@ class Archive:
             deleted["knowledge_items"] = delete_where_ids(
                 "knowledge_items", "candidate_id", candidate_ids
             )
+            cursor = self.connection.execute(
+                "DELETE FROM task_suggestion_decisions WHERE group_id=?", (group_id,)
+            )
+            deleted["task_suggestion_decisions"] = int(cursor.rowcount)
             for table in (
+                "tasks",
                 "manual_reports",
                 "candidates",
                 "reports",
@@ -835,12 +913,12 @@ class Archive:
             raise RuntimeError("范围报告写入后无法读取")
         return int(row["manual_report_id"])
 
-    def start_job(self, job_type: str) -> int:
+    def start_job(self, job_type: str, *, target_date: str | None = None) -> int:
         now = datetime.now(timezone.utc).isoformat()
         with self.transaction():
             cursor = self.connection.execute(
-                "INSERT INTO jobs(job_type, status, started_at) VALUES (?, 'running', ?)",
-                (job_type, now),
+                "INSERT INTO jobs(job_type, status, started_at, target_date) VALUES (?, 'running', ?, ?)",
+                (job_type, now, target_date),
             )
         return int(cursor.lastrowid)
 

@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% block title %}候选审核 - QQ Digest{% endblock %}
 {% block page_title %}候选审核{% endblock %}
+{% block page_description %}筛选重点信息，查看原文后决定是否入库。{% endblock %}
 {% block content %}
 <section>
   <div class="section-header">重点信息 <span class="header-meta" id="candidate-count">加载中...</span></div>
@@ -28,6 +29,16 @@
 <aside id="candidate-detail" class="candidate-detail" hidden aria-live="polite">
   <div class="section-header"><span>候选详情</span><button class="btn btn-sm" aria-label="关闭候选详情" type="button" onclick="closeCandidateDetail()">关闭</button></div>
   <div id="candidate-detail-content"></div>
+  <div id="candidate-detail-actions" class="candidate-detail-actions"></div>
+  <form id="candidate-edit-form" class="candidate-edit-form" hidden onsubmit="saveCandidateEdit(event)">
+    <div class="field"><label for="edit-type">类型</label><select id="edit-type"><option value="resource">资源</option><option value="experience">经验</option></select></div>
+    <div class="field"><label for="edit-title">标题</label><input class="input" id="edit-title" maxlength="300" required></div>
+    <div class="field"><label for="edit-link">链接</label><input class="input" id="edit-link" maxlength="2000"></div>
+    <div class="field"><label for="edit-content">内容</label><textarea class="input" id="edit-content" maxlength="10000" rows="4"></textarea></div>
+    <div class="field"><label for="edit-reason">价值理由</label><textarea class="input" id="edit-reason" maxlength="2000" rows="2" required></textarea></div>
+    <div class="field"><label for="edit-excerpt">引用片段</label><textarea class="input" id="edit-excerpt" maxlength="4000" rows="2"></textarea></div>
+    <div class="candidate-edit-actions"><button class="btn btn-primary" type="submit">保存修改</button><button class="btn" type="button" onclick="cancelCandidateEdit()">取消</button></div>
+  </form>
   <section id="candidate-source-context" class="candidate-source-context" aria-label="原文与上下文"></section>
 </aside>
 <script>
@@ -55,11 +66,12 @@
     if (c.missing_source_count) { var missing = document.createElement('p'); missing.textContent = c.missing_source_count + ' 条引用原消息未在归档中找到'; host.appendChild(missing); }
     if (c.source_context_truncated) { var limit = document.createElement('p'); limit.textContent = '消息较多，仅展示前 40 条（优先候选引用）'; host.appendChild(limit); }
   }
-  var candidateViewToken = 0;
+  var candidateViewToken = 0, currentCandidate = null;
   function viewCandidate(id) {
     var token = ++candidateViewToken;
     api('GET', '/api/candidates/' + id).then(function(c) {
       if (token !== candidateViewToken) return;
+      currentCandidate = c;
       var messages = (c.message_ids || []).map(function(v) { return '<code>' + escapeHtml(v) + '</code>'; }).join(' ');
       var rows = [
         ['标题', c.title], ['状态', candidateStatusLabels[c.status] || c.status],
@@ -70,19 +82,49 @@
       document.getElementById('candidate-detail-content').innerHTML = rows.filter(function(r) { return r[1]; }).map(function(r) {
         return '<div class="detail-row"><div class="detail-label">' + escapeHtml(r[0]) + '</div><div>' + escapeHtml(r[1]) + '</div></div>';
       }).join('') + '<div class="detail-row"><div class="detail-label">消息引用</div><div>' + messages + '</div></div>';
+      document.getElementById('candidate-edit-form').hidden = true;
+      document.getElementById('candidate-detail-content').hidden = false;
+      document.getElementById('candidate-detail-actions').hidden = false;
+      document.getElementById('candidate-detail-actions').innerHTML = c.status === 'confirmed'
+        ? '<button class="btn btn-danger" type="button" onclick="undoCandidate()">撤销入库</button>'
+        : (c.status === 'pending' || c.status === 'later' ? '<button class="btn" type="button" onclick="editCandidate()">编辑后入库</button>' : '');
       renderCandidateContext(c);
       document.getElementById('candidate-detail').hidden = false;
       document.getElementById('candidate-detail-backdrop').hidden = false;
     }).catch(function(e) { if (token === candidateViewToken) toast('加载详情失败: ' + e.message, 'error'); });
   }
+  function editCandidate() {
+    if (!currentCandidate) return;
+    var fields = {candidate_type:'edit-type',title:'edit-title',link:'edit-link',content:'edit-content',reason:'edit-reason',excerpt:'edit-excerpt'};
+    Object.keys(fields).forEach(function(key) { document.getElementById(fields[key]).value = currentCandidate[key] || ''; });
+    document.getElementById('candidate-detail-content').hidden = true;
+    document.getElementById('candidate-detail-actions').hidden = true;
+    document.getElementById('candidate-edit-form').hidden = false;
+    document.getElementById('edit-title').focus();
+  }
+  function cancelCandidateEdit() { document.getElementById('candidate-edit-form').hidden = true; document.getElementById('candidate-detail-content').hidden = false; document.getElementById('candidate-detail-actions').hidden = false; }
+  function saveCandidateEdit(event) {
+    event.preventDefault(); if (!currentCandidate) return;
+    var fields = {candidate_type:'edit-type',title:'edit-title',link:'edit-link',content:'edit-content',reason:'edit-reason',excerpt:'edit-excerpt'}, payload = {};
+    Object.keys(fields).forEach(function(key) { payload[key] = document.getElementById(fields[key]).value.trim(); });
+    var button = document.querySelector('#candidate-edit-form button[type="submit"]'); button.disabled = true;
+    api('PATCH', '/api/candidates/' + currentCandidate.candidate_id, payload).then(function() { toast('已保存修改', 'success'); viewCandidate(currentCandidate.candidate_id); loadCandidates(); }).catch(function(error) { toast('保存失败：' + error.message, 'error'); }).finally(function() { button.disabled = false; });
+  }
+  function undoCandidate() {
+    if (!currentCandidate || !confirm('撤销这条知识入库？对应的知识库条目将被移除，并回到待审核。')) return;
+    var id = currentCandidate.candidate_id;
+    api('POST', '/api/candidates/' + id + '/undo').then(function() { toast('已撤销入库，候选回到待审核', 'success'); document.getElementById('candidate-status').value = 'pending'; viewCandidate(id); loadCandidates(); }).catch(function(error) { toast('撤销失败：' + error.message, 'error'); });
+  }
   function closeCandidateDetail() {
     candidateViewToken += 1;
+    currentCandidate = null;
     document.getElementById('candidate-detail').hidden = true;
     document.getElementById('candidate-detail-backdrop').hidden = true;
   }
   api('GET','/api/groups').then(function(d){var s=document.getElementById('candidate-group');d.groups.forEach(function(g){var o=document.createElement('option');o.value=g.group_id;o.textContent=g.name;s.appendChild(o)})});
   document.getElementById('candidate-query').addEventListener('keydown',function(e){if(e.key==='Enter')loadCandidates()});
   document.addEventListener('keydown',function(e){if(e.key==='Escape')closeCandidateDetail()});loadCandidates();
+  (function openLinkedCandidate() { var id = Number(new URLSearchParams(location.search).get('candidate_id')); if (Number.isInteger(id) && id > 0) { document.getElementById('candidate-status').value = 'all'; loadCandidates(); viewCandidate(id); } })();
 </script>
 <style>
   .candidate-toolbar { display: grid; grid-template-columns: repeat(3, minmax(120px, .8fr)) repeat(2, minmax(130px, .8fr)) minmax(200px, 1.6fr) auto; gap: 8px; margin-bottom: 14px; padding: 12px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); }
@@ -93,6 +135,9 @@
   .candidate-actions form { margin: 0; }
   .candidate-reason { margin: 9px 0; color: var(--text-soft); }
   .candidate-detail { position: fixed; right: 18px; top: 70px; bottom: 18px; z-index: 40; width: min(540px, calc(100vw - 36px)); padding: 18px; overflow: auto; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: 0 24px 64px rgb(18 25 21 / .24); }
+  .candidate-detail-actions, .candidate-edit-actions { display: flex; gap: 8px; margin: 15px 0; }
+  .candidate-edit-form { display: grid; gap: 12px; margin: 14px 0 20px; }
+  .candidate-edit-form[hidden] { display: none; }
   .detail-row { display: grid; grid-template-columns: 90px minmax(0, 1fr); gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--border); overflow-wrap: anywhere; }
   .detail-label { color: var(--text-dim); }
   .candidate-source-context { max-height: 360px; overflow-y: auto; margin-top: 14px; }

@@ -19,6 +19,8 @@ dependencies = [
 
 [project.optional-dependencies]
 test = ["pytest>=8", "respx>=0.21"]
+desktop = ["pywebview>=5.0; sys_platform == 'win32'"]
+desktop-build = ["pyinstaller>=6.0; sys_platform == 'win32'"]
 
 [build-system]
 requires = ["setuptools>=68"]
@@ -30,6 +32,9 @@ exclude = ["config*", "docs*", "tests*"]
 
 [project.scripts]
 qq-digest = "qq_digest.cli:main"
+
+[project.gui-scripts]
+qq-digest-desktop = "qq_digest.desktop:main"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

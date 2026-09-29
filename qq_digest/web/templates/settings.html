@@ -1,0 +1,260 @@
+{% extends "base.html" %}
+{% block title %}设置 - QQ Digest{% endblock %}
+{% block page_title %}设置{% endblock %}
+{% block page_description %}管理桌面程序的存储、摘要导出、备份与启动方式。{% endblock %}
+{% block content %}
+<div class="desktop-settings">
+  <div id="desktop-required" class="card" hidden>这些设置需要在 QQ Digest 桌面程序中打开。</div>
+
+  <section class="card setting-card" aria-labelledby="storage-title">
+    <div class="setting-heading"><div><h2 id="storage-title">存储位置</h2><p>消息、摘要、知识库和工作文件保存在这里。</p></div><span class="setting-index">01</span></div>
+    <div class="setting-current"><span>当前位置</span><strong id="current-storage">加载中…</strong></div>
+    <button id="open-storage" class="btn btn-sm" type="button" disabled>打开当前位置</button>
+    <label class="setting-label" for="next-storage">新位置</label>
+    <div class="setting-row"><input id="next-storage" class="input setting-path" type="text" placeholder="选择文件夹，或输入完整路径" spellcheck="false"><button id="choose-storage" class="btn" type="button">选择文件夹</button></div>
+    <p class="setting-help">切换时会复制现有数据，并更新摘要与知识条目的文件路径。旧目录会保留；重启桌面程序后生效。</p>
+    <button id="migrate-storage" class="btn btn-primary" type="button" disabled>复制并切换</button>
+    <p id="migration-result" class="setting-result" role="status" hidden></p>
+  </section>
+
+  <section class="card setting-card" aria-labelledby="export-title">
+    <div class="setting-heading"><div><h2 id="export-title">消息摘要导出</h2><p>将每日摘要和区间摘要导出到本机文件夹。</p></div><span class="setting-index">02</span></div>
+    <label class="setting-label" for="export-folder">导出到</label>
+    <div class="setting-row"><input id="export-folder" class="input setting-path" type="text" spellcheck="false"><button id="choose-export" class="btn" type="button">选择文件夹</button></div>
+    <div class="setting-row export-options"><label for="export-format">文件格式</label><select id="export-format" class="input"><option value="both">Markdown 和 JSON</option><option value="markdown">仅 Markdown</option><option value="json">仅 JSON</option></select><button id="export-reports" class="btn btn-primary" type="button">导出摘要</button></div>
+    <p class="setting-help">每次导出都会建立一个带时间的子文件夹，原始摘要不会改动。</p>
+    <button id="open-export" class="btn btn-sm" type="button" disabled>打开导出目录</button>
+    <p id="export-result" class="setting-result" role="status" hidden></p>
+  </section>
+
+  <section class="card setting-card" aria-labelledby="startup-title">
+    <div class="setting-heading"><div><h2 id="startup-title">开机自启</h2><p>登录 Windows 后自动打开 QQ Digest 桌面程序。</p></div><span class="setting-index">03</span></div>
+    <label class="startup-option"><input id="auto-start" type="checkbox"><span>开机时启动</span></label>
+    <p class="setting-help">此开关只影响当前 Windows 用户。</p>
+  </section>
+
+  <section class="card setting-card" aria-labelledby="backup-title">
+    <div class="setting-heading"><div><h2 id="backup-title">数据备份</h2><p>将消息数据库、摘要、知识库和配置打包保存。</p></div><span class="setting-index">04</span></div>
+    <div class="setting-current"><span>备份目录</span><strong id="backup-folder">加载中…</strong></div>
+    <label class="setting-label" for="backup-schedule">自动备份频率</label>
+    <div class="setting-row"><select id="backup-schedule" class="input" disabled><option value="weekly">每周</option><option value="daily">每天</option><option value="off">关闭</option></select><span class="setting-muted">程序运行时检查；不会自动删除旧备份。</span></div>
+    <div class="setting-row"><button id="backup-data" class="btn btn-primary" type="button" disabled>立即备份</button><button id="open-backup" class="btn" type="button" disabled>打开备份目录</button></div>
+    <p class="setting-help">备份包含群聊消息；数据目录内的会话密钥和 API 密钥也会一并保存，请妥善保管。</p>
+    <p id="backup-result" class="setting-result" role="status" hidden></p>
+  </section>
+
+  <section class="card setting-card" aria-labelledby="restore-title">
+    <div class="setting-heading"><div><h2 id="restore-title">恢复数据</h2><p>先校验并预览备份，再恢复到一个空文件夹。</p></div><span class="setting-index">05</span></div>
+    <label class="setting-label" for="recent-backups">最近备份</label>
+    <select id="recent-backups" class="input setting-select"><option value="">选择最近备份，或在下方输入完整路径</option></select>
+    <label class="setting-label" for="restore-file">备份 ZIP 文件</label>
+    <div class="setting-row"><input id="restore-file" class="input setting-path" type="text" placeholder="选择 ZIP，或输入完整路径" spellcheck="false"><button id="choose-backup" class="btn" type="button" disabled>选择文件</button></div>
+    <button id="preview-backup" class="btn" type="button" disabled>校验并预览</button>
+    <div id="restore-preview" class="restore-preview" hidden role="status"></div>
+    <div id="restore-steps" hidden>
+      <label class="setting-label" for="restore-destination">恢复到新位置</label>
+      <div class="setting-row"><input id="restore-destination" class="input setting-path" type="text" placeholder="选择空文件夹，或输入新目录完整路径" spellcheck="false"><button id="choose-restore-folder" class="btn" type="button">选择文件夹</button></div>
+      <p class="setting-help">恢复前会自动备份当前位置。旧数据保留；重启桌面程序后切换到恢复的数据。</p>
+      <label class="restore-confirm"><input id="confirm-restore" type="checkbox"><span>我已核对备份内容和新位置</span></label>
+      <button id="restore-data" class="btn btn-primary" type="button" disabled>恢复并切换</button>
+    </div>
+    <p id="restore-result" class="setting-result" role="status" hidden></p>
+  </section>
+</div>
+<style>
+  .desktop-settings { max-width: 850px; }
+  .setting-card { padding: 27px 30px; }
+  .setting-heading { display: flex; justify-content: space-between; gap: 24px; margin-bottom: 24px; }
+  .setting-heading h2 { margin: 0 0 5px; font-size: 17px; letter-spacing: -.025em; }
+  .setting-heading p { margin: 0; color: var(--text-soft); font-size: 13px; }
+  .setting-index { color: #a7b9ad; font-size: 12px; font-weight: 700; }
+  .setting-current { display: grid; gap: 5px; margin-bottom: 20px; padding: 14px 16px; background: var(--surface-subtle); border: 1px solid var(--border); border-radius: 9px; }
+  .setting-current span, .setting-label { color: var(--text-dim); font-size: 12px; font-weight: 650; }
+  .setting-current strong { overflow-wrap: anywhere; font-family: var(--mono); font-size: 12px; font-weight: 600; }
+  .setting-label { display: block; margin-bottom: 7px; }
+  .setting-row { display: flex; align-items: center; gap: 9px; }
+  .setting-path { min-width: 0; flex: 1; color: var(--text-soft); font-family: var(--mono); font-size: 12px; }
+  .setting-help { margin: 12px 0 18px; color: var(--text-dim); font-size: 12px; }
+  .export-options { margin-top: 16px; }
+  .export-options label { color: var(--text-soft); font-size: 12px; white-space: nowrap; }
+  .export-options select { width: 185px; }
+  .setting-result { margin: 17px 0 0; padding: 11px 13px; border-radius: 8px; background: var(--primary-soft); color: var(--primary-dark); font-size: 12px; overflow-wrap: anywhere; }
+  .startup-option { display: inline-flex; align-items: center; gap: 10px; cursor: pointer; font-weight: 650; }
+  .startup-option input { width: 18px; height: 18px; accent-color: var(--primary); }
+  #backup-schedule { width: 130px; margin-bottom: 17px; }
+  .setting-muted { color: var(--text-dim); font-size: 12px; }
+  .setting-select { width: 100%; margin-bottom: 17px; font-size: 12px; }
+  #preview-backup { margin-top: 13px; }
+  .restore-preview { margin: 17px 0; padding: 16px; border: 1px solid var(--border); border-radius: 9px; background: var(--surface-subtle); font-size: 13px; line-height: 1.8; white-space: pre-line; }
+  .restore-confirm { display: flex; align-items: center; gap: 9px; margin: 15px 0; font-size: 13px; }
+  .restore-confirm input { width: 18px; height: 18px; accent-color: var(--primary); }
+  @media (max-width: 700px) { .setting-card { padding: 20px; } .export-options { align-items: stretch; flex-wrap: wrap; } .export-options label { width: 100%; } .export-options select { flex: 1; } }
+</style>
+<script>
+  var restorePreview = null;
+  function settingsError(error) { toast(error && error.message ? error.message : String(error), 'error'); }
+  function setResult(id, message) { var node = document.getElementById(id); node.textContent = message; node.hidden = false; }
+  function addRecentBackup(item) {
+    var recent = document.getElementById('recent-backups');
+    if (!item || !item.path) return;
+    var existing = Array.from(recent.options).find(function(option) { return option.value === item.path; });
+    if (existing) existing.remove();
+    var option = document.createElement('option'); option.value = item.path;
+    option.textContent = (item.name || item.path.split(/[\\/]/).pop()) + ' · ' + (Number(item.size_bytes || 0) / 1048576).toFixed(1) + ' MB';
+    recent.insertBefore(option, recent.options[1] || null);
+    while (recent.options.length > 11) recent.remove(recent.options.length - 1);
+  }
+  function resetRestorePreview() {
+    restorePreview = null;
+    document.getElementById('restore-preview').hidden = true;
+    document.getElementById('restore-steps').hidden = true;
+    document.getElementById('confirm-restore').checked = false;
+    document.getElementById('restore-data').disabled = true;
+  }
+  function updateRestoreReady() {
+    document.getElementById('restore-data').disabled = !restorePreview || !document.getElementById('restore-destination').value.trim() || !document.getElementById('confirm-restore').checked;
+  }
+  function initDesktopSettings() {
+    api('GET', '/api/desktop-settings').then(function(data) {
+      document.getElementById('desktop-required').hidden = true;
+      document.getElementById('current-storage').textContent = data.storage_path;
+      document.getElementById('export-folder').value = data.export_path;
+      document.getElementById('backup-folder').textContent = data.backup_path;
+      document.getElementById('backup-schedule').value = data.backup_schedule || 'weekly';
+      document.getElementById('backup-schedule').dataset.saved = document.getElementById('backup-schedule').value;
+      document.getElementById('backup-schedule').disabled = false;
+      (data.recent_backups || []).slice().reverse().forEach(addRecentBackup);
+      if (data.backup_error) setResult('backup-result', '最近一次自动备份失败：' + data.backup_error);
+      document.getElementById('auto-start').checked = !!data.auto_start;
+      document.getElementById('auto-start').disabled = !data.packaged;
+      document.getElementById('export-reports').disabled = false;
+      document.getElementById('choose-export').disabled = false;
+      document.getElementById('choose-storage').disabled = !data.packaged;
+      document.getElementById('open-storage').disabled = false;
+      document.getElementById('open-export').disabled = false;
+      document.getElementById('backup-data').disabled = false;
+      document.getElementById('choose-backup').disabled = false;
+      document.getElementById('preview-backup').disabled = false;
+    }).catch(function(error) {
+      document.getElementById('desktop-required').textContent = error.message;
+      document.getElementById('desktop-required').hidden = false;
+      document.getElementById('current-storage').textContent = '请启动桌面程序后刷新';
+    });
+  }
+  document.getElementById('choose-storage').addEventListener('click', function() {
+    var button = this; button.disabled = true;
+    api('POST', '/api/desktop-settings/choose-folder', {kind: 'storage'}).then(function(data) {
+      if (data.path) { document.getElementById('next-storage').value = data.path; document.getElementById('migrate-storage').disabled = false; }
+      else { toast('未选中文件夹，也可以直接输入完整路径'); }
+    }).catch(settingsError).finally(function() { button.disabled = false; });
+  });
+  document.getElementById('next-storage').addEventListener('input', function() {
+    document.getElementById('migrate-storage').disabled = !this.value.trim();
+  });
+  document.getElementById('open-storage').addEventListener('click', function() {
+    api('POST', '/api/desktop-settings/open-folder', {kind: 'storage'}).catch(settingsError);
+  });
+  document.getElementById('migrate-storage').addEventListener('click', function() {
+    var button = this, path = document.getElementById('next-storage').value;
+    button.disabled = true;
+    api('POST', '/api/desktop-settings/migrate', {destination: path}).then(function(data) {
+      setResult('migration-result', '复制完成：' + data.path + '。请关闭并重新打开桌面程序，之后会从新位置读取数据。旧目录已保留。');
+      toast('数据已复制，重启后生效', 'success');
+    }).catch(function(error) { settingsError(error); button.disabled = false; });
+  });
+  document.getElementById('choose-export').addEventListener('click', function() {
+    var button = this; button.disabled = true;
+    api('POST', '/api/desktop-settings/choose-folder', {kind: 'export'}).then(function(data) {
+      if (data.path) { document.getElementById('export-folder').value = data.path; }
+      else { toast('未选中文件夹，也可以直接输入完整路径'); }
+    }).catch(settingsError).finally(function() { button.disabled = false; });
+  });
+  document.getElementById('open-export').addEventListener('click', function() {
+    api('POST', '/api/desktop-settings/open-folder', {kind: 'export'}).catch(settingsError);
+  });
+  document.getElementById('export-reports').addEventListener('click', function() {
+    var button = this; button.disabled = true;
+    api('POST', '/api/desktop-settings/export', {destination: document.getElementById('export-folder').value, format: document.getElementById('export-format').value})
+      .then(function(data) {
+        setResult('export-result', '已导出 ' + data.reports + ' 份摘要、' + data.files + ' 个文件：' + data.path + (data.missing ? '；' + data.missing + ' 个原文件缺失' : ''));
+        toast('摘要导出完成', 'success');
+      }).catch(settingsError).finally(function() { button.disabled = false; });
+  });
+  document.getElementById('auto-start').addEventListener('change', function() {
+    var checkbox = this, wanted = checkbox.checked; checkbox.disabled = true;
+    api('POST', '/api/desktop-settings/auto-start', {enabled: wanted}).then(function(data) {
+      checkbox.checked = !!data.auto_start;
+      toast(checkbox.checked ? '已开启开机自启' : '已关闭开机自启', 'success');
+    }).catch(function(error) { checkbox.checked = !wanted; settingsError(error); })
+      .finally(function() { checkbox.disabled = false; });
+  });
+  document.getElementById('backup-data').addEventListener('click', function() {
+    var button = this; button.disabled = true;
+    api('POST', '/api/desktop-settings/backup', {}).then(function(data) {
+      setResult('backup-result', '备份已保存：' + data.path);
+      addRecentBackup(data);
+      document.getElementById('restore-file').value = data.path;
+      resetRestorePreview();
+      document.getElementById('open-backup').disabled = false;
+      toast('数据备份完成', 'success');
+    }).catch(settingsError).finally(function() { button.disabled = false; });
+  });
+  document.getElementById('open-backup').addEventListener('click', function() {
+    api('POST', '/api/desktop-settings/open-folder', {kind: 'backup'}).catch(settingsError);
+  });
+  document.getElementById('backup-schedule').addEventListener('change', function() {
+    var select = this, oldValue = select.dataset.saved || 'weekly'; select.disabled = true;
+    api('POST', '/api/desktop-settings/backup-schedule', {schedule: select.value}).then(function(data) {
+      select.value = data.backup_schedule; select.dataset.saved = data.backup_schedule;
+      toast('自动备份频率已保存', 'success');
+    }).catch(function(error) { select.value = oldValue; settingsError(error); }).finally(function() { select.disabled = false; });
+  });
+  document.getElementById('recent-backups').addEventListener('change', function() {
+    if (this.value) document.getElementById('restore-file').value = this.value;
+    resetRestorePreview();
+  });
+  document.getElementById('restore-file').addEventListener('input', resetRestorePreview);
+  document.getElementById('choose-backup').addEventListener('click', function() {
+    var button = this; button.disabled = true;
+    api('POST', '/api/desktop-settings/choose-backup', {}).then(function(data) {
+      if (data.path) { document.getElementById('restore-file').value = data.path; resetRestorePreview(); }
+    }).catch(settingsError).finally(function() { button.disabled = false; });
+  });
+  document.getElementById('preview-backup').addEventListener('click', function() {
+    var path = document.getElementById('restore-file').value.trim();
+    if (!path) { toast('请先选择备份文件'); return; }
+    var button = this; button.disabled = true; resetRestorePreview();
+    api('POST', '/api/desktop-settings/restore-preview', {path: path}).then(function(data) {
+      restorePreview = data;
+      var summary = '校验通过 · ' + (Number(data.size_bytes || 0) / 1048576).toFixed(1) + ' MB · ' + data.messages + ' 条消息 · ' + data.reports + ' 份报告 · ' + data.knowledge_items + ' 条知识 · ' + data.file_count + ' 个文件';
+      if (data.legacy) summary += '\n旧版备份没有逐文件哈希；已检查 ZIP 和数据库完整性。';
+      document.getElementById('restore-preview').textContent = summary;
+      document.getElementById('restore-preview').hidden = false;
+      document.getElementById('restore-steps').hidden = false;
+      updateRestoreReady();
+    }).catch(settingsError).finally(function() { button.disabled = false; });
+  });
+  document.getElementById('choose-restore-folder').addEventListener('click', function() {
+    var button = this; button.disabled = true;
+    api('POST', '/api/desktop-settings/choose-folder', {kind: 'storage'}).then(function(data) {
+      if (data.path) { document.getElementById('restore-destination').value = data.path; updateRestoreReady(); }
+    }).catch(settingsError).finally(function() { button.disabled = false; });
+  });
+  document.getElementById('restore-destination').addEventListener('input', updateRestoreReady);
+  document.getElementById('confirm-restore').addEventListener('change', updateRestoreReady);
+  document.getElementById('restore-data').addEventListener('click', function() {
+    if (!restorePreview) return;
+    var button = this; button.disabled = true;
+    api('POST', '/api/desktop-settings/restore', {path: restorePreview.path, destination: document.getElementById('restore-destination').value.trim(), sha256: restorePreview.sha256}).then(function(data) {
+      setResult('restore-result', '已恢复到 ' + data.path + '；恢复前的当前数据已备份到 ' + data.safety_backup + '。请关闭并重新打开桌面程序。');
+      document.getElementById('restore-steps').hidden = true;
+      toast('数据已恢复，重启后生效', 'success');
+    }).catch(function(error) { settingsError(error); updateRestoreReady(); });
+  });
+  document.getElementById('export-reports').disabled = true;
+  document.getElementById('choose-export').disabled = true;
+  document.getElementById('choose-storage').disabled = true;
+  document.getElementById('auto-start').disabled = true;
+  initDesktopSettings();
+</script>
+{% endblock %}

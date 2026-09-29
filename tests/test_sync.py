@@ -21,6 +21,11 @@ class RecordingCollector:
         ]
 
 
+class FailingCollector:
+    def collect(self, group_id, start, end):
+        raise RuntimeError("本地消息库不可读")
+
+
 def test_periodic_sync_uses_overlap_and_archives_messages(tmp_path):
     now = datetime(2026, 8, 30, 22, 0, tzinfo=ZoneInfo("Asia/Shanghai"))
     previous_sync = now - timedelta(minutes=10)
@@ -66,3 +71,31 @@ def test_periodic_sync_uses_overlap_and_archives_messages(tmp_path):
     ).fetchone()
     assert state["status"] == "active"
     assert datetime.fromisoformat(state["last_timestamp"]) == now.astimezone(ZoneInfo("UTC"))
+
+
+def test_periodic_sync_records_group_failure_reason(tmp_path):
+    now = datetime(2026, 9, 27, 12, tzinfo=ZoneInfo("Asia/Shanghai"))
+    config = Config(
+        data_dir=tmp_path,
+        archive_path=tmp_path / "archive" / "archive.sqlite",
+        report_dir=tmp_path / "reports",
+        knowledge_dir=tmp_path / "knowledge",
+        work_dir=tmp_path / "work",
+        log_dir=tmp_path / "logs",
+        security=SecurityConfig(web_password_hash="x" * 32),
+        ai=AIConfig(base_url="https://example.com/v1", model="test", api_key_env="TEST_KEY"),
+        ntqq=NTQQConfig(enabled=True, qq_number=1, db_dir=str(tmp_path / "ntqq")),
+    )
+    archive = Archive.open(config.archive_path)
+    archive.upsert_groups([GroupConfig(group_id=123, name="测试群")])
+    archive.close()
+
+    result = run_message_sync(config=config, now=now, refresh=False, collector=FailingCollector())
+
+    assert result.success is False
+    archive = Archive.open(config.archive_path)
+    state = archive.connection.execute(
+        "SELECT status, error FROM sync_state WHERE group_id=123"
+    ).fetchone()
+    assert state["status"] == "adapter_incompatible"
+    assert state["error"] == "本地消息库不可读"

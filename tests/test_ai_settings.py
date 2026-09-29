@@ -72,3 +72,27 @@ def test_ui_key_reader_rejects_multiline_file(tmp_path):
 
     with pytest.raises(ValueError):
         read_ui_api_key(path)
+
+
+def test_config_retries_transient_key_file_access_failure(tmp_path, monkeypatch):
+    config = make_config(tmp_path)
+    config.ai.ui_api_key_file = ""
+    key_path = tmp_path / "legacy-key.txt"
+    key_path.write_text("synthetic-example-key\n", encoding="utf-8")
+    config.ai.api_key_file = str(key_path)
+    monkeypatch.delenv(config.ai.api_key_env, raising=False)
+    original_read = Path.read_text
+    attempts = 0
+
+    def flaky_read(path, *args, **kwargs):
+        nonlocal attempts
+        if path == key_path:
+            attempts += 1
+            if attempts == 1:
+                raise PermissionError("temporarily locked")
+        return original_read(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", flaky_read)
+
+    assert config.resolve_api_key() == "synthetic-example-key"
+    assert attempts == 2

@@ -140,7 +140,10 @@ class DailyPipeline:
         ).process_due()
 
     def run_daily(self, now: datetime) -> DailyRunResult:
-        job_id = self.archive.start_job("daily_digest")
+        start, _ = summary_window(now, self.window_mode, self.timezone)
+        job_id = self.archive.start_job(
+            "daily_digest", target_date=start.date().isoformat()
+        )
         try:
             result = self._run_without_job_tracking(now)
         except Exception as exc:

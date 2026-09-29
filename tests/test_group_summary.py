@@ -83,7 +83,8 @@ def test_group_summary_builder_builds_range_content_and_candidate_draft():
     )
 
     assert "# 测试群范围摘要" in artifact.markdown
-    assert "## 今日概览\n群内确认了工具回退方案。" in artifact.markdown
+    assert "## 今日概览\n待核实：群内确认了工具回退方案。" in artifact.markdown
+    assert artifact.payload["evidence_version"] == 1
     assert "template" not in summarizer.last_kwargs
     assert "- 日期范围：2026-09-01 至 2026-09-07" in artifact.markdown
     assert "## 数据范围" in artifact.markdown
@@ -120,6 +121,40 @@ def test_group_summary_builder_keeps_daily_heading():
     assert "# 测试群日报" in artifact.markdown
     assert "- 日期：2026-09-01" in artifact.markdown
     assert "## 数据范围" in artifact.markdown
+
+
+def test_group_summary_builder_persists_per_claim_sources():
+    timezone = ZoneInfo("Asia/Shanghai")
+    start = datetime(2026, 9, 1, tzinfo=timezone)
+    response = SummaryResponse.model_validate({
+        "group_id": 123,
+        "overview": "确认了方案 A",
+        "overview_message_ids": ["m1"],
+        "main_topics": [{"topic": "方案", "summary": "采用 A", "message_ids": ["m1"]}],
+        "conclusions": [{"text": "采用 A", "message_ids": ["m1"]}],
+        "resources": [],
+        "tasks": [{"owner": "小王", "description": "明天复查", "message_ids": ["m1"]}],
+        "open_questions": [],
+        "candidates": [],
+    })
+
+    class CitedSummarizer:
+        def summarize(self, **_kwargs):
+            return SummaryResult(
+                response=response, deterministic={"links": [], "files": [], "todos": []},
+                context_chars=60, included_messages=1, source_messages=1,
+            )
+
+    artifact = GroupSummaryBuilder(CitedSummarizer()).build(
+        group=GroupConfig(group_id=123, name="测试群"),
+        window_start=start, window_end=start.replace(hour=22),
+        report_date="2026-09-01", candidate_date="2026-09-01",
+        messages=[make_message()], timezone=timezone, knowledge_base="", report_kind="daily",
+    )
+
+    assert "采用 A 〔原消息：m1〕" in artifact.markdown
+    assert artifact.payload["conclusions"][0]["message_ids"] == ["m1"]
+    assert artifact.payload["evidence_version"] == 1
 
 
 def test_summary_fingerprint_ignores_legacy_template_value():

@@ -28,6 +28,25 @@ def test_render_markdown_contains_required_sections():
     assert "## 数据质量" not in markdown
 
 
+def test_render_markdown_marks_cited_and_uncited_claims():
+    markdown = render_markdown(
+        group_name="测试群", report_date="2026-09-29", window="09:00 至 22:00",
+        overview="决定使用方案 A", overview_source_ids=["m1"],
+        topics=[{"topic": "选型", "summary": "采用 A", "message_ids": ["m1", "m2"]}],
+        conclusions=[{"text": "A 已上线", "message_ids": []}],
+        resources=[{"title": "文档", "url": "", "description": "使用说明", "message_ids": ["m2"]}],
+        tasks=[{"text": "小王：明天复查", "message_ids": ["m1"]}],
+        open_questions=[{"text": "是否稳定？", "message_ids": []}],
+        deterministic={"links": [], "files": [], "todos": []}, quality_note="",
+    )
+
+    assert "决定使用方案 A 〔原消息：m1〕" in markdown
+    assert "**选型**：采用 A 〔原消息：m1、m2〕" in markdown
+    assert "- 待核实：A 已上线" in markdown
+    assert "- 待核实：是否稳定？" in markdown
+    assert "小王：明天复查 〔原消息：m1〕" in markdown
+
+
 def test_render_markdown_omits_empty_sections_and_internal_diagnostics():
     markdown = render_markdown(
         group_name="测试群",

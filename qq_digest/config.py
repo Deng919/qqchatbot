@@ -126,7 +126,9 @@ class Config(BaseModel):
             from .ai.key_store import read_ui_api_key
 
             try:
-                ui_key = read_ui_api_key(Path(self.ai.ui_api_key_file).expanduser())
+                ui_key = self._read_key_file_with_retry(
+                    lambda: read_ui_api_key(Path(self.ai.ui_api_key_file).expanduser())
+                )
             except (OSError, UnicodeError, ValueError) as exc:
                 raise ConfigError("无法读取本地 DeepSeek API 密钥") from exc
             if ui_key:
@@ -139,13 +141,27 @@ class Config(BaseModel):
             if not path.is_absolute():
                 path = self.data_dir / path
             try:
-                value = path.read_text(encoding="utf-8-sig").strip()
+                value = self._read_key_file_with_retry(
+                    lambda: path.read_text(encoding="utf-8-sig")
+                ).strip()
             except (OSError, UnicodeError) as exc:
                 raise ConfigError("无法读取配置的 API 密钥文件") from exc
             if not value or any(char.isspace() for char in value):
                 raise ConfigError("API 密钥文件必须包含一行非空密钥")
             return value
         return self._discover_codex_api_key()
+
+    @staticmethod
+    def _read_key_file_with_retry(reader):
+        import time
+
+        for attempt in range(3):
+            try:
+                return reader()
+            except OSError:
+                if attempt == 2:
+                    raise
+                time.sleep(0.2 * (attempt + 1))
 
     def resolve_session_secret(self) -> str:
         value = os.environ.get(self.security.session_secret_env, "")
@@ -204,7 +220,7 @@ class Config(BaseModel):
         return entry.get("api_base_url", "")
 
 
-def load_config(path: Path) -> Config:
+def load_config(path: Path, *, create_dirs: bool = True) -> Config:
     try:
         raw = yaml.safe_load(Path(path).read_text(encoding="utf-8")) or {}
     except (OSError, yaml.YAMLError) as exc:
@@ -287,11 +303,12 @@ def load_config(path: Path) -> Config:
     except Exception as exc:
         raise ConfigError(f"summary.timezone 无效: {exc}") from exc
 
-    config.archive_path.parent.mkdir(parents=True, exist_ok=True)
-    config.report_dir.mkdir(parents=True, exist_ok=True)
-    config.knowledge_dir.mkdir(parents=True, exist_ok=True)
-    for knowledge_path in config.resolve_knowledge_paths().values():
-        knowledge_path.parent.mkdir(parents=True, exist_ok=True)
-    config.work_dir.mkdir(parents=True, exist_ok=True)
-    config.log_dir.mkdir(parents=True, exist_ok=True)
+    if create_dirs:
+        config.archive_path.parent.mkdir(parents=True, exist_ok=True)
+        config.report_dir.mkdir(parents=True, exist_ok=True)
+        config.knowledge_dir.mkdir(parents=True, exist_ok=True)
+        for knowledge_path in config.resolve_knowledge_paths().values():
+            knowledge_path.parent.mkdir(parents=True, exist_ok=True)
+        config.work_dir.mkdir(parents=True, exist_ok=True)
+        config.log_dir.mkdir(parents=True, exist_ok=True)
     return config

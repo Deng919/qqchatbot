@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% block title %}群组 - 群聊简报{% endblock %}
 {% block page_title %}采集群组{% endblock %}
+{% block page_description %}选择要采集的群聊，调整摘要与审核设置。{% endblock %}
 {% block actions %}
   <input id="group-search" class="input search" type="search" placeholder="搜索群名或群号" aria-label="搜索群组" oninput="renderConfiguredGroups()">
   <button class="btn btn-primary" id="discover-btn" onclick="discoverGroups()">扫描本地群聊</button>
@@ -23,7 +24,7 @@
   <div class="card-header"><span>已配置群组</span><span class="header-meta" id="configured-count"></span></div>
   <div class="table-wrap">
     <table class="table group-config-table">
-      <thead><tr><th>群聊</th><th>归档消息</th><th>最近消息</th><th>最近同步</th><th>分类</th><th>关键词</th><th>首次采集</th><th>摘要</th><th>重点审核</th><th>采集</th><th>操作</th></tr></thead>
+      <thead><tr><th>群聊</th><th>归档消息</th><th>最近消息</th><th>采集状态</th><th>分类</th><th>关键词</th><th>首次采集</th><th>摘要</th><th>重点审核</th><th>采集</th><th>操作</th></tr></thead>
       <tbody id="group-list"><tr><td colspan="11" class="empty">加载中...</td></tr></tbody>
     </table>
   </div>
@@ -33,6 +34,31 @@
   var configuredGroups = [];
   var categoryLabels = {tech: '技术', resource: '资源', project: '项目', study: '学习', general: '综合'};
   var toggleLabels = {daily_summary: '每日摘要', important_candidates: '重点审核', enabled: '采集启用'};
+
+  function repairUrl(group) {
+    var start = group.latest_message_at ? group.latest_message_at.slice(0, 10) : '';
+    if (!start) {
+      var firstDay = new Date();
+      firstDay.setDate(firstDay.getDate() - (group.collection_window_days || 30));
+      start = firstDay.getFullYear() + '-' + String(firstDay.getMonth() + 1).padStart(2, '0') + '-' + String(firstDay.getDate()).padStart(2, '0');
+    }
+    var params = new URLSearchParams({group_id: group.group_id, repair: '1'});
+    if (start) params.set('start', start);
+    return '/collect?' + params.toString();
+  }
+
+  function syncCell(group) {
+    var failed = group.sync_status !== 'active' && group.sync_status !== 'never_synced' && group.sync_status !== 'manual_repair_completed';
+    var label = group.sync_status === 'manual_collect_failed' ? '补采失败'
+      : failed ? '采集失败' : group.suspected_gap ? '可能漏采' : group.source_has_newer_messages ? '待同步'
+      : group.sync_status === 'manual_repair_completed' ? '补采完成' : group.sync_status === 'never_synced' ? '未同步' : '正常';
+    var badge = failed || group.suspected_gap ? 'badge-red' : group.source_has_newer_messages || group.sync_status === 'never_synced' ? 'badge-orange' : 'badge-green';
+    return '<span class="badge ' + badge + '">' + label + '</span><br>'
+      + '<span class="header-meta">最近成功：' + escapeHtml(group.last_success_at || '尚无记录') + '</span>'
+      + (group.last_sync && group.last_sync !== '未同步' ? '<br><span class="header-meta">自动同步至：' + escapeHtml(group.last_sync) + '</span>' : '')
+      + (group.sync_error ? '<br><span class="header-meta sync-error" title="' + escapeHtml(group.sync_error) + '">' + escapeHtml(group.sync_error.slice(0, 80)) + '</span>' : '')
+      + (group.source_latest_message_at ? '<br><span class="header-meta">源库最近：' + escapeHtml(group.source_latest_message_at.slice(0, 16).replace('T', ' ')) + '</span>' : '');
+  }
 
   function toggleControl(groupId, field, checked) {
     return '<label class="toggle"><input aria-label="' + escapeHtml(toggleLabels[field] || field) + '" type="checkbox" ' + (checked ? 'checked' : '')
@@ -56,14 +82,15 @@
       return '<tr><td><strong>' + escapeHtml(group.name) + '</strong><br><span class="header-meta number">' + escapeHtml(group.group_id) + '</span></td>'
         + '<td class="number">' + formatNumber(group.message_count) + '</td>'
         + '<td>' + escapeHtml(group.latest_message_at || '无') + '</td>'
-        + '<td>' + escapeHtml(group.last_sync || '未同步') + '</td>'
+        + '<td>' + syncCell(group) + '</td>'
         + '<td><select aria-label="群分类" onchange="updateGroup(' + group.group_id + ',{category:this.value})">' + categoryOptions + '</select></td>'
         + '<td><input class="input group-keywords keyword-field" aria-label="重点关键词" value="' + escapeHtml((group.keywords || []).join('，')) + '" placeholder="网站，经验" onchange="updateKeywords(' + group.group_id + ',this.value)"></td>'
         + '<td><span class="days-control"><input class="input collection-window number days-field" type="number" min="1" max="365" aria-label="首次采集天数" value="' + escapeHtml(group.collection_window_days || 30) + '" onchange="updateCollectionWindow(' + group.group_id + ',this.value)"><span>天</span></span></td>'
         + '<td>' + toggleControl(group.group_id, 'daily_summary', group.daily_summary) + '</td>'
         + '<td>' + toggleControl(group.group_id, 'important_candidates', group.important_candidates) + '</td>'
         + '<td>' + toggleControl(group.group_id, 'enabled', group.enabled) + '</td>'
-        + '<td><button class="btn btn-danger btn-sm" onclick="deleteGroup(' + group.group_id + ')">删除</button></td></tr>';
+        + '<td><a class="btn btn-sm" href="' + escapeHtml(repairUrl(group)) + '">补采</a> '
+        + '<button class="btn btn-danger btn-sm" onclick="deleteGroup(' + group.group_id + ')">删除</button></td></tr>';
     }).join('');
   }
   function loadGroups() {
@@ -97,6 +124,14 @@
     api('GET', '/api/discover-groups').then(function(data) {
       var configuredIds = new Set(configuredGroups.map(function(group) { return group.group_id; }));
       var groups = data.groups.slice().sort(function(a, b) { return (b.message_count_30d || 0) - (a.message_count_30d || 0); });
+      groups.forEach(function(source) {
+        var configured = configuredGroups.find(function(group) { return group.group_id === source.group_id; });
+        if (!configured) return;
+        configured.source_latest_message_at = source.latest_message_at;
+        configured.source_has_newer_messages = source.source_has_newer_messages;
+        configured.suspected_gap = source.suspected_gap;
+      });
+      renderConfiguredGroups();
       var node = document.getElementById('discover-list');
       document.getElementById('discover-card').hidden = false;
       if (!groups.length) { node.innerHTML = '<tr><td colspan="5" class="empty">近 30 天未发现群消息</td></tr>'; }

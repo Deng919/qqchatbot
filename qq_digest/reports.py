@@ -69,35 +69,49 @@ def render_markdown(
     group_name: str,
     report_date: str,
     window: str,
-    topics: list[str | Mapping[str, str]],
-    conclusions: list[str],
-    resources: list[str | Mapping[str, str]],
-    tasks: list[str],
-    open_questions: list[str],
+    topics: list[str | Mapping[str, object]],
+    conclusions: list[str | Mapping[str, object]],
+    resources: list[str | Mapping[str, object]],
+    tasks: list[str | Mapping[str, object]],
+    open_questions: list[str | Mapping[str, object]],
     deterministic: dict[str, list[str]],
     quality_note: str,
     overview: str = "",
+    overview_source_ids: list[str] | None = None,
     title_suffix: str = "日报",
     date_label: str = "日期",
 ) -> str:
     def bullets(items: list[str]) -> list[str]:
         return [f"- {item}" for item in items if item.strip()]
 
-    def topic_line(item: str | Mapping[str, str]) -> str:
-        if isinstance(item, str):
-            return item
-        title = item.get("topic", "").strip()
-        summary = item.get("summary", "").strip()
-        return f"**{title}**：{summary}" if summary else title
+    def cite_line(text: str, source_ids: object) -> str:
+        if not isinstance(source_ids, list):
+            return text
+        ids = [value for value in source_ids if isinstance(value, str) and value]
+        return f"{text} 〔原消息：{'、'.join(ids)}〕" if ids else f"待核实：{text}"
 
-    def resource_line(item: str | Mapping[str, str]) -> str:
+    def topic_line(item: str | Mapping[str, object]) -> str:
         if isinstance(item, str):
             return item
-        title = item.get("title", "").strip()
-        url = item.get("url", "").strip()
-        description = item.get("description", "").strip()
+        title = str(item.get("topic", "")).strip()
+        summary = str(item.get("summary", "")).strip()
+        line = f"**{title}**：{summary}" if summary else title
+        return cite_line(line, item.get("message_ids"))
+
+    def resource_line(item: str | Mapping[str, object]) -> str:
+        if isinstance(item, str):
+            return item
+        title = str(item.get("title", "")).strip()
+        url = str(item.get("url", "")).strip()
+        description = str(item.get("description", "")).strip()
         label = f"[{title}]({url})" if url else title
-        return f"{label}：{description}" if description else label
+        line = f"{label}：{description}" if description else label
+        return cite_line(line, item.get("message_ids"))
+
+    def statement_line(item: str | Mapping[str, object]) -> str:
+        if isinstance(item, str):
+            return item
+        return cite_line(str(item.get("text", "")).strip(), item.get("message_ids"))
 
     lines = [
         f"# {group_name}{title_suffix}",
@@ -110,14 +124,14 @@ def render_markdown(
         and overview.strip() in topic_line(topics[0])
     )
     if overview.strip() and not repeated_overview:
-        lines.extend(["", "## 今日概览", overview.strip()])
+        lines.extend(["", "## 今日概览", cite_line(overview.strip(), overview_source_ids)])
 
     for title, items in (
         ("主要话题", [topic_line(item) for item in topics]),
-        ("重要结论", conclusions),
+        ("重要结论", [statement_line(item) for item in conclusions]),
         ("资源与链接", [resource_line(item) for item in resources]),
-        ("任务或承诺", tasks),
-        ("未解决问题或争议", open_questions),
+        ("任务或承诺", [statement_line(item) for item in tasks]),
+        ("未解决问题或争议", [statement_line(item) for item in open_questions]),
     ):
         content = bullets(items)
         if content:

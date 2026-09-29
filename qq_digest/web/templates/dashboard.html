@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% block title %}总览 - 群聊简报{% endblock %}
-{% block page_title %}运行总览{% endblock %}
+{% block page_title %}工作台总览{% endblock %}
+{% block page_description %}查看采集与摘要状态，快速处理需要关注的信息。{% endblock %}
 {% block actions %}<button class="btn btn-primary" id="run-daily-btn" onclick="runDaily()">立即生成摘要</button>{% endblock %}
 {% block content %}
 <section class="metrics" aria-label="归档统计">
@@ -9,6 +10,15 @@
   <div class="metric"><div class="stat" id="stat-pending">--</div><div class="stat-label">待审核重点</div></div>
   <div class="metric"><div class="stat" id="stat-reports">--</div><div class="stat-label">已生成摘要</div></div>
 </section>
+
+<nav class="overview-links" aria-label="常用操作">
+  <a href="/catchup"><span><strong>跨群补看</strong><small>一次看完各群日报要点</small></span><span aria-hidden="true">↗</span></a>
+  <a href="/tasks"><span><strong>待办收件箱</strong><small id="task-reminder">确认任务并跟踪截止日期</small></span><span aria-hidden="true">↗</span></a>
+  <a href="/search"><span><strong>搜索归档</strong><small>查找消息、摘要与知识</small></span><span aria-hidden="true">↗</span></a>
+  <a href="/reports"><span><strong>查看摘要</strong><small>浏览已生成的群聊简报</small></span><span aria-hidden="true">↗</span></a>
+  <a href="/candidates"><span><strong>处理审核</strong><small>整理待确认的重点信息</small></span><span aria-hidden="true">↗</span></a>
+</nav>
+<section class="health-strip" aria-live="polite"><span class="health-dot" id="health-dot"></span><strong id="health-service">服务状态读取中</strong><span id="health-sync">最近同步：读取中</span><span id="health-daily">日报：读取中</span><span id="health-job">最近任务：读取中</span><span id="health-send">发送失败：读取中</span></section>
 
 <div class="dashboard-grid">
   <section class="card">
@@ -34,9 +44,45 @@
   </section>
 </div>
 
+<style>
+  .overview-links { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; margin-bottom: 16px; }
+  .overview-links a { min-width: 0; min-height: 76px; padding: 15px 18px; display: flex; align-items: center; justify-content: space-between; gap: 16px; border: 1px solid #dbe8df; border-radius: 13px; background: #edf5ef; color: var(--text); text-decoration: none; transition: background 160ms ease, border-color 160ms ease, transform 120ms ease; }
+  .overview-links a:hover { background: #e4f0e8; border-color: #bfd6c6; }
+  .overview-links a:active { transform: translateY(1px); }
+  .overview-links a strong, .overview-links a small { display: block; }
+  .overview-links a strong { font-size: 14px; }
+  .overview-links a small { margin-top: 3px; color: var(--text-soft); font-size: 12px; }
+  .overview-links a > span:last-child { color: var(--primary); font-size: 19px; }
+  .health-strip { display: flex; align-items: center; flex-wrap: wrap; gap: 9px 20px; margin-bottom: 20px; padding: 12px 16px; border: 1px solid var(--border); border-radius: 11px; background: var(--surface); color: var(--text-soft); font-size: 12px; }
+  .health-strip strong { color: var(--text); }
+  .health-dot { width: 8px; height: 8px; border-radius: 50%; background: #b7bdba; }
+  .health-dot.is-healthy { background: #309969; box-shadow: 0 0 0 4px #e4f4e9; }
+  .health-dot.is-warning { background: #c57633; box-shadow: 0 0 0 4px #fff0dc; }
+  @media (max-width: 1100px) { .overview-links { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  @media (max-width: 600px) { .overview-links { grid-template-columns: 1fr; gap: 9px; } .overview-links a { min-height: 64px; } }
+</style>
+
 <script>
+  api('GET', '/api/tasks').then(function(data) {
+    var late = data.counts.overdue, today = data.counts.today;
+    document.getElementById('task-reminder').textContent = late || today
+      ? (late ? late + ' 项逾期' : '') + (late && today ? ' · ' : '') + (today ? today + ' 项今天到期' : '')
+      : data.counts.open + ' 项进行中';
+  }).catch(function() {});
   var jobLabels = {daily_digest: '每日摘要', message_sync: '消息导入', backfill: '历史回填'};
   var statusLabels = {success: '成功', partial_success: '部分成功', failed: '失败', running: '运行中'};
+  function loadHealth() {
+    api('GET', '/api/health').then(function(data) {
+      var dailyWarning = data.latest_daily_status === 'failed' || data.latest_daily_status === 'partial_success';
+      var warning = data.latest_job_status === 'failed' || dailyWarning || data.failed_notifications > 0;
+      document.getElementById('health-dot').className = 'health-dot ' + (warning ? 'is-warning' : 'is-healthy');
+      document.getElementById('health-service').textContent = warning ? '服务运行中 · 有待处理异常' : '服务运行正常';
+      document.getElementById('health-sync').textContent = '最近同步：' + (data.last_sync_at ? data.last_sync_at.slice(0, 19).replace('T', ' ') : '尚未同步');
+      document.getElementById('health-daily').textContent = '日报：' + (data.latest_daily_date || '尚未执行') + (data.latest_daily_status ? ' · ' + (statusLabels[data.latest_daily_status] || data.latest_daily_status) : '');
+      document.getElementById('health-job').textContent = '最近任务：' + (statusLabels[data.latest_job_status] || '尚未执行');
+      document.getElementById('health-send').textContent = '发送失败：' + formatNumber(data.failed_notifications);
+    }).catch(function() { document.getElementById('health-service').textContent = '状态读取失败'; document.getElementById('health-dot').className = 'health-dot is-warning'; });
+  }
 
   function loadStats() {
     api('GET', '/api/stats').then(function(data) {
@@ -52,7 +98,7 @@
       if (!data.jobs.length) { node.innerHTML = '<tr><td colspan="5" class="empty">尚未执行摘要任务</td></tr>'; return; }
       node.innerHTML = data.jobs.map(function(job) {
         var badge = job.status === 'success' ? 'badge-green' : job.status === 'failed' ? 'badge-red' : 'badge-orange';
-        return '<tr><td data-label="任务">' + escapeHtml(jobLabels[job.job_type] || job.job_type) + '</td>'
+        return '<tr><td data-label="任务">' + escapeHtml(jobLabels[job.job_type] || job.job_type) + (job.target_date ? '<br><span class="header-meta">' + escapeHtml(job.target_date) + '</span>' : '') + '</td>'
           + '<td data-label="状态"><span class="badge ' + badge + '">' + escapeHtml(statusLabels[job.status] || job.status) + '</span></td>'
           + '<td data-label="开始">' + escapeHtml(job.started_at || '—') + '</td><td data-label="结束">' + escapeHtml(job.finished_at || '—') + '</td>'
           + '<td data-label="错误"><span class="job-error" title="' + escapeHtml(job.error || '') + '">' + escapeHtml(job.error ? job.error.slice(0, 48) : '—') + '</span></td></tr>';
@@ -79,7 +125,7 @@
       button.textContent = data.running ? '摘要生成中...' : '立即生成摘要';
       if (data.running) node.textContent = '正在运行';
       else if (data.last_result && data.last_result.status === 'partial_success') node.textContent = '上次部分完成 · 将自动重试';
-      else if (data.last_result && !data.last_result.success) node.textContent = '上次执行失败 · 可手动重试';
+      else if (data.last_result && !data.last_result.success) node.textContent = '上次执行失败 · 将尝试自动补跑';
       else if (data.last_run_date) node.textContent = '每日 ' + data.schedule + ' · 今日已运行';
       else node.textContent = '每日 ' + data.schedule + ' 自动运行';
       var collectionNode = document.getElementById('collection-info');
@@ -106,7 +152,7 @@
       button.disabled = false; button.textContent = '立即生成摘要';
     });
   }
-  loadStats(); loadJobs(); loadGroupStats(); loadScheduler();
-  setInterval(function() { loadStats(); loadJobs(); loadGroupStats(); loadScheduler(); }, 30000);
+  loadStats(); loadJobs(); loadGroupStats(); loadScheduler(); loadHealth();
+  setInterval(function() { loadStats(); loadJobs(); loadGroupStats(); loadScheduler(); loadHealth(); }, 30000);
 </script>
 {% endblock %}

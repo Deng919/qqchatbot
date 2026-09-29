@@ -157,6 +157,7 @@
  {
    "group_id": 123456789,
    "overview": "当天消息主要为闲聊，没有形成可归纳的实质讨论。",
+   "overview_message_ids": [],
    "main_topics": [],
    "conclusions": [],
    "resources": [],

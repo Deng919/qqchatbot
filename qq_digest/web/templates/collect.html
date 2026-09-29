@@ -1,16 +1,20 @@
 {% extends "base.html" %}
 {% block title %}消息采集 - QQ Digest{% endblock %}
 {% block page_title %}消息采集{% endblock %}
+{% block page_description %}按群组和日期查看消息，也可以刷新本地数据库。{% endblock %}
 {% block content %}
+<div class="status-line" id="repair-hint" hidden>已预填补采范围。点击“刷新并补采”会先读取 QQ 最新数据库，再补齐所选日期的消息。</div>
 <section class="filter-toolbar collect-toolbar" aria-label="采集条件">
   <div class="field group-field"><label for="collect-group">群聊</label><select id="collect-group" class="input"><option value="">选择群...</option></select></div>
   <div class="field"><label for="collect-start">开始日期</label><input type="date" id="collect-start" class="input"></div>
   <div class="field"><label for="collect-end">结束日期</label><input type="date" id="collect-end" class="input"></div>
-  <button class="btn btn-primary toolbar-action" onclick="collectMessages()">采集消息</button>
+  <button class="btn toolbar-action" id="check-gaps" onclick="checkGaps()">检查缺口</button>
+  <button class="btn btn-primary toolbar-action" id="collect-action" onclick="collectMessages()">采集消息</button>
   <button class="btn toolbar-action" id="btn-refresh" onclick="refreshDatabase()">刷新数据库</button>
 </section>
 <section class="card">
   <div class="card-header">采集结果 <span id="collect-count" class="header-meta"></span></div>
+  <div class="status-line" id="collect-gap-summary" hidden></div>
   <div class="msg-list" id="collect-results">
     <div class="empty" id="collect-empty">选择群和日期范围后点击采集</div>
   </div>
@@ -44,19 +48,66 @@
     var end = document.getElementById('collect-end').value;
     if (!gid) { toast('请选择群', 'error'); return; }
     if (!start || !end) { toast('请选择日期范围', 'error'); return; }
-    toast('采集中...', '');
-    api('POST', '/api/collect', {group_id: parseInt(gid), start: start, end: end}).then(function(d) {
+    if (start > end) { toast('开始日期不能晚于结束日期', 'error'); return; }
+    var repair = params.get('repair') === '1';
+    var button = document.getElementById('collect-action');
+    button.disabled = true;
+    button.textContent = repair ? '刷新并补采中...' : '采集中...';
+    toast(repair ? '正在刷新数据库并补采，可能需要几分钟' : '采集中...', '');
+    api('POST', '/api/collect', {group_id: parseInt(gid, 10), start: start, end: end, refresh: repair}).then(function(d) {
       var el = document.getElementById('collect-results');
+      var gap = document.getElementById('collect-gap-summary');
+      var days = d.missing_days || [];
+      gap.hidden = false;
+      gap.textContent = !d.total ? '源库在所选日期没有消息' : days.length
+        ? '本次补齐：' + days.map(function(item) { return item.date + '（' + formatNumber(item.count) + ' 条）'; }).join('、')
+        : '所选日期的源库消息已在归档中，无需补齐';
       document.getElementById('collect-count').textContent = '采集 ' + formatNumber(d.total) + ' 条 · 新增 ' + formatNumber(d.inserted) + ' 条' + (d.preview_truncated ? ' · 显示最近 500 条' : '');
-      if (!d.messages.length) { el.innerHTML = '<div class="empty">该时间段无消息</div>'; return; }
+      if (!d.messages.length) {
+        el.innerHTML = '<div class="empty">该时间段无消息</div>';
+        toast('采集完成，源库在该日期范围没有消息', 'success');
+        return;
+      }
       el.innerHTML = d.messages.map(function(m) {
         var t = m.timestamp.slice(11,16);
         var d2 = m.timestamp.slice(5,10);
         var typeBadge = m.message_type === 'text' ? 'badge-blue' : m.message_type === 'file' ? 'badge-orange' : 'badge-dim';
         return '<div class="msg-item"><span class="msg-time">' + escapeHtml(d2) + ' ' + escapeHtml(t) + '</span><span class="msg-sender">' + escapeHtml(m.sender_qq) + '</span><span class="badge ' + typeBadge + '">' + escapeHtml(m.message_type) + '</span><span class="msg-text">' + escapeHtml(m.text) + '</span></div>';
       }).join('');
-      toast('采集到 ' + formatNumber(d.total) + ' 条消息', 'success');
-    }).catch(function(e) { toast('采集失败: ' + e.message, 'error'); });
+      toast('采集到 ' + formatNumber(d.total) + ' 条消息，新增 ' + formatNumber(d.inserted) + ' 条', 'success');
+    }).catch(function(e) { toast('采集失败: ' + e.message, 'error'); })
+      .finally(function() { button.disabled = false; button.textContent = repair ? '刷新并补采' : '采集消息'; });
+  }
+  function checkGaps() {
+    var gid = document.getElementById('collect-group').value;
+    var start = document.getElementById('collect-start').value;
+    var end = document.getElementById('collect-end').value;
+    if (!gid) { toast('请选择群', 'error'); return; }
+    if (!start || !end || start > end) { toast('请选择有效的日期范围', 'error'); return; }
+    var button = document.getElementById('check-gaps');
+    var collectButton = document.getElementById('collect-action');
+    button.disabled = true;
+    collectButton.disabled = true;
+    button.textContent = '检查中...';
+    toast('正在刷新数据库并检查所选日期，可能需要几分钟', '');
+    api('POST', '/api/collect', {group_id: parseInt(gid, 10), start: start, end: end, refresh: true, dry_run: true}).then(function(d) {
+      var days = d.missing_days || [];
+      var missing = days.reduce(function(total, item) { return total + item.count; }, 0);
+      var gap = document.getElementById('collect-gap-summary');
+      gap.hidden = false;
+      gap.textContent = !d.total ? '源库在所选日期没有消息' : days.length
+        ? '发现未归档消息：' + days.map(function(item) { return item.date + '（' + formatNumber(item.count) + ' 条）'; }).join('、')
+        : '所选日期的源库消息已在归档中，无需补采';
+      document.getElementById('collect-count').textContent = '源库 ' + formatNumber(d.total) + ' 条 · 待补 ' + formatNumber(missing) + ' 条';
+      document.getElementById('collect-results').innerHTML = '<div class="empty">检查只读取消息，不修改归档。需要补齐时点击“刷新并补采”。</div>';
+      if (missing) {
+        params.set('repair', '1');
+        document.getElementById('repair-hint').hidden = false;
+        collectButton.textContent = '刷新并补采';
+      }
+      toast(missing ? '发现 ' + formatNumber(missing) + ' 条待补消息' : '检查完成，没有发现缺口', 'success');
+    }).catch(function(e) { toast('缺口检查失败: ' + e.message, 'error'); })
+      .finally(function() { button.disabled = false; collectButton.disabled = false; button.textContent = '检查缺口'; });
   }
   function refreshDatabase() {
     var btn = document.getElementById('btn-refresh');
@@ -73,10 +124,25 @@
       toast('刷新失败: ' + e.message, 'error');
     });
   }
-  var today = new Date().toISOString().slice(0,10);
-  var weekAgo = new Date(Date.now() - 7*86400000).toISOString().slice(0,10);
+  function localDate(date) {
+    return date.getFullYear() + '-' + String(date.getMonth() + 1).padStart(2, '0') + '-' + String(date.getDate()).padStart(2, '0');
+  }
+  var params = new URLSearchParams(window.location.search);
+  var today = localDate(new Date());
+  var weekDate = new Date();
+  weekDate.setDate(weekDate.getDate() - 7);
+  var weekAgo = localDate(weekDate);
   document.getElementById('collect-start').value = weekAgo;
   document.getElementById('collect-end').value = today;
-  loadGroupOptions();
+  if (params.get('repair') === '1') {
+    document.getElementById('repair-hint').hidden = false;
+    document.getElementById('collect-action').textContent = '刷新并补采';
+  }
+  if (/^\d{4}-\d{2}-\d{2}$/.test(params.get('start') || '')) {
+    document.getElementById('collect-start').value = params.get('start');
+  }
+  loadGroupOptions().then(function() {
+    if (params.get('group_id')) document.getElementById('collect-group').value = params.get('group_id');
+  });
 </script>
 {% endblock %}

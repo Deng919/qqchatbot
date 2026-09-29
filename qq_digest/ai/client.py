@@ -91,9 +91,21 @@ class AIClient:
             except (ValueError, KeyError, IndexError) as exc:
                 raise AIError(f"AI 返回结构无效: {exc}") from exc
             try:
-                return json.loads(content)
+                parsed = json.loads(content)
             except json.JSONDecodeError:
-                return self._extract_json(content)
+                try:
+                    parsed = self._extract_json(content)
+                except AIError as exc:
+                    if attempt + 1 < self.max_retries:
+                        self._sleep(self.retry_base_seconds * (2**attempt))
+                        continue
+                    raise AIError("AI 连续返回无效 JSON，已耗尽重试次数") from exc
+            if isinstance(parsed, dict):
+                return parsed
+            if attempt + 1 < self.max_retries:
+                self._sleep(self.retry_base_seconds * (2**attempt))
+                continue
+            raise AIError("AI 连续返回非对象 JSON，已耗尽重试次数")
         raise AIError("AI 调用失败: 已耗尽重试次数")
 
     @staticmethod
@@ -136,7 +148,7 @@ class AIClient:
                 return json.loads(text[brace_start : brace_end + 1])
             except json.JSONDecodeError:
                 pass
-        raise AIError(f"AI 返回的不是有效 JSON: {text[:200]}")
+        raise AIError("AI 返回的不是有效 JSON")
 
     def close(self) -> None:
         self._client.close()

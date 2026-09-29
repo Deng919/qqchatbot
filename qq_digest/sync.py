@@ -81,6 +81,7 @@ def run_message_sync(
                 archive.mark_sync_failure(
                     group_id=group.group_id,
                     status="adapter_incompatible",
+                    error=str(exc),
                 )
                 result.errors.append(f"{group.name}: {exc}")
 

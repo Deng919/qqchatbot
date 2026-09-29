@@ -100,12 +100,40 @@ def test_adaptive_prompt_excludes_ephemeral_threads_and_unproven_causality():
     assert "不要在 overview 汇报空栏目" in prompt
 
 
-def test_prompt_requires_string_arrays_for_conclusions_and_questions():
+def test_prompt_requires_message_evidence_for_each_claim():
     prompt = build_system_prompt("general")
 
-    assert "conclusions: 字符串数组" in prompt
-    assert "open_questions: 字符串数组" in prompt
-    assert "不能用对象包裹" in prompt
+    assert "conclusions: 对象数组" in prompt
+    assert "open_questions: 对象数组" in prompt
+    assert "message_ids" in prompt
+    assert "不得编造消息 ID" in prompt
+
+
+def test_summarizer_keeps_only_ids_present_in_actual_model_context():
+    payload = valid_response()
+    payload.update({
+        "overview": "群内确认了方案",
+        "overview_message_ids": ["m1", "made-up"],
+        "main_topics": [{"topic": "方案", "summary": "已确认", "message_ids": ["m1", "made-up", "m1"]}],
+        "conclusions": [{"text": "采用方案 A", "message_ids": ["made-up"]}],
+        "resources": [{"title": "文档", "url": "https://example.com", "message_ids": ["m1"]}],
+        "tasks": [{"owner": "小王", "description": "整理文档", "message_ids": ["m1"]}],
+        "open_questions": [{"text": "何时发布？", "message_ids": ["m1"]}],
+    })
+    result = Summarizer(ai=FakeAI(payload), max_context_chars=1000).summarize(
+        group_id=123, group_name="测试群",
+        window_start=datetime(2026, 8, 24, 0, tzinfo=ZoneInfo("Asia/Shanghai")),
+        window_end=datetime(2026, 8, 25, 0, tzinfo=ZoneInfo("Asia/Shanghai")),
+        messages=[message("m1", datetime(2026, 8, 24, 9, tzinfo=ZoneInfo("Asia/Shanghai")), "确认方案 A")],
+        timezone=ZoneInfo("Asia/Shanghai"),
+    )
+
+    assert result.response.overview_message_ids == ["m1"]
+    assert result.response.main_topics[0].message_ids == ["m1"]
+    assert result.response.conclusions[0].message_ids == []
+    assert result.response.resources[0].message_ids == ["m1"]
+    assert result.response.tasks[0].message_ids == ["m1"]
+    assert result.response.open_questions[0].message_ids == ["m1"]
 
 
 def test_specialized_prompts_preserve_important_single_message_exception():

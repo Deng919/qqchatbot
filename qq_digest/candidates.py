@@ -170,5 +170,28 @@ class CandidateService:
     def confirm(self, candidate_id: int) -> None:
         self.update_status(candidate_id, "confirmed")
 
+    def update_details(
+        self, candidate_id: int, *, candidate_type: str, title: str,
+        link: str, content: str, reason: str, excerpt: str,
+    ) -> SummaryCandidate:
+        if candidate_type not in {"resource", "experience"}:
+            raise ValueError("非法候选类型")
+        with self.archive.transaction():
+            cursor = self.archive.connection.execute(
+                """UPDATE candidates
+                   SET candidate_type=?, title=?, link=?, content=?, reason=?, excerpt=?,
+                       updated_at=?
+                   WHERE candidate_id=? AND status IN ('pending', 'later')""",
+                (
+                    candidate_type, title.strip(), link.strip(), content.strip(),
+                    reason.strip(), excerpt.strip(), datetime.now(timezone.utc).isoformat(),
+                    candidate_id,
+                ),
+            )
+            if not cursor.rowcount:
+                self.get(candidate_id)
+                raise ValueError("只能修改待审核或稍后处理的候选")
+        return self.get(candidate_id)
+
     def ignore(self, candidate_id: int, reason: str = "") -> None:
         self.update_status(candidate_id, "ignored", reason)

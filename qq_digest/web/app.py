@@ -10,24 +10,30 @@ from datetime import date, datetime, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-from fastapi import FastAPI, Form, HTTPException, Request
+from fastapi import FastAPI, Form, HTTPException, Query, Request
 from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, Field, field_validator
 from typing import Literal
 
-from ..archive import Archive
+from ..archive import Archive, IngestResult
 from ..ai.client import AIClient, AIError
 from ..ai.key_store import save_ui_api_key, ui_api_key_exists
 from ..candidates import CandidateService
+from ..catchup import CatchupService
+from ..task_inbox import TaskInboxService
 from ..candidate_context import candidate_source_context
 from ..collector.ntqq import NTQQCollector
 from ..config import Config, ConfigError, load_config
-from ..knowledge import KnowledgeItem, KnowledgeWriter
-from ..scheduler import daily_retry_state
+from ..knowledge import KnowledgeItem, KnowledgeWriter, remove_item
+from ..scheduler import (
+    daily_retry_state, pending_catchup_date, run_at_for_report_date, summary_window,
+)
+from ..search import search_archive
 from ..report_qa import (
     NoReportEvidence, ReportNotFound, answer_report_question, load_report_evidence,
 )
+from ..report_sources import load_verified_report_sources
 from .auth import PasswordHasher, SessionCookie
 from .operations import OperationBusy, OperationCoordinator
 
@@ -43,6 +49,22 @@ class ManualRangePayload(BaseModel):
 
 class AIKeyPayload(BaseModel):
     api_key: str
+
+
+class CandidateEditPayload(BaseModel):
+    candidate_type: Literal["resource", "experience"]
+    title: str = Field(min_length=1, max_length=300)
+    link: str = Field(default="", max_length=2000)
+    content: str = Field(default="", max_length=10000)
+    reason: str = Field(min_length=1, max_length=2000)
+    excerpt: str = Field(default="", max_length=4000)
+
+    @field_validator("title", "reason")
+    @classmethod
+    def nonblank(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("内容不能为空")
+        return value.strip()
 
 
 class QATurn(BaseModel):
@@ -62,6 +84,65 @@ class AskReportPayload(BaseModel):
         return value.strip()
 
 
+class FolderSelectionPayload(BaseModel):
+    kind: Literal["storage", "export"]
+
+
+class StorageMigrationPayload(BaseModel):
+    destination: str = Field(min_length=1)
+
+
+class ReportExportPayload(BaseModel):
+    destination: str = ""
+    format: Literal["markdown", "json", "both"] = "both"
+
+
+class AutoStartPayload(BaseModel):
+    enabled: bool
+
+
+class BackupSchedulePayload(BaseModel):
+    schedule: Literal["off", "daily", "weekly"]
+
+
+class RestorePreviewPayload(BaseModel):
+    path: str = Field(min_length=1, max_length=4096)
+
+
+class RestorePayload(RestorePreviewPayload):
+    destination: str = Field(min_length=1, max_length=4096)
+    sha256: str = Field(min_length=64, max_length=64)
+
+
+class OpenFolderPayload(BaseModel):
+    kind: Literal["storage", "export", "backup"]
+
+
+class CatchupReadPayload(BaseModel):
+    key: str = Field(pattern=r"^[0-9a-f]{64}$")
+    read: bool
+
+
+class TaskFieldsPayload(BaseModel):
+    title: str = Field(min_length=1, max_length=300)
+    owner: str = Field(default="", max_length=100)
+    due_date: str | None = None
+
+
+class TaskDecisionPayload(TaskFieldsPayload):
+    title: str = Field(default="", max_length=300)
+    action: Literal["confirm", "ignore"]
+
+
+class MessageTaskPayload(TaskFieldsPayload):
+    group_id: int
+    msg_id: str = Field(min_length=1, max_length=500)
+
+
+class TaskUpdatePayload(TaskFieldsPayload):
+    status: Literal["open", "completed", "canceled"]
+
+
 def require_login(request: Request):
     cookie = request.app.state.cookie
     if not cookie.verify(request.cookies.get("qq_digest_session")):
@@ -76,6 +157,14 @@ def _config(request: Request) -> Config:
 
 def _archive(request: Request) -> Archive:
     return request.app.state.archive
+
+
+def _desktop_bridge(request: Request):
+    require_login(request)
+    bridge = getattr(request.app.state, "desktop_bridge", None)
+    if bridge is None:
+        raise HTTPException(status_code=503, detail="请启动 QQ Digest 桌面程序后刷新设置页")
+    return bridge
 
 
 def _utc(iso_str: str | None) -> str:
@@ -155,7 +244,8 @@ def create_app(
             SELECT status, started_at, error
             FROM jobs
             WHERE job_type='daily_digest'
-            ORDER BY job_id DESC
+            ORDER BY COALESCE(target_date, substr(started_at, 1, 10)) DESC,
+                     job_id DESC
             LIMIT 1
             """
         ).fetchone()
@@ -166,13 +256,24 @@ def create_app(
             attempt_date = started_at.date().isoformat()
             scheduler_state["last_attempt_date"] = attempt_date
             succeeded = latest_daily_job["status"] == "success"
-            if succeeded:
-                scheduler_state["last_run_date"] = attempt_date
             scheduler_state["last_result"] = {
                 "status": latest_daily_job["status"],
                 "success": succeeded,
                 "error": latest_daily_job["error"] or "" if not succeeded else "",
             }
+        local_now = datetime.now(ZoneInfo(config.summary.timezone))
+        scheduled_target = summary_window(
+            local_now, config.summary.window_mode, ZoneInfo(config.summary.timezone)
+        )[0].date().isoformat()
+        if daily_retry_state(
+            archive.connection, local_now,
+            target_hour=config.summary.hour,
+            target_minute=config.summary.minute,
+            max_attempts=config.summary.max_attempts,
+            retry_interval_minutes=config.summary.retry_interval_minutes,
+            target_date=scheduled_target,
+        ).succeeded:
+            scheduler_state["last_run_date"] = local_now.date().isoformat()
     operations = OperationCoordinator()
     sync_scheduler_state = {
         "running": False,
@@ -197,23 +298,32 @@ def create_app(
                 "error": latest_sync_job["error"] or "",
             }
 
-    def _run_daily_task(cfg):
+    def _run_daily_task(cfg, run_at: datetime | None = None):
         """Synchronous daily pipeline: refresh DB then run summaries."""
         import logging
         scheduler_logger = logging.getLogger("qq_digest.scheduler")
         worker_archive = None
         ai_client = None
         pipeline_started = False
+        scheduled_at = run_at or datetime.now(ZoneInfo(cfg.summary.timezone))
+        target_date = summary_window(
+            scheduled_at, cfg.summary.window_mode, ZoneInfo(cfg.summary.timezone)
+        )[0].date().isoformat()
 
         def record_preflight_failure(error: str) -> None:
             failure_archive = Archive.open(cfg.archive_path)
             try:
-                job_id = failure_archive.start_job("daily_digest")
+                job_id = failure_archive.start_job(
+                    "daily_digest", target_date=target_date
+                )
                 failure_archive.finish_job(job_id, "failed", error)
             finally:
                 failure_archive.close()
 
         try:
+            from ..ai.factory import build_ai_client
+            ai_client = build_ai_client(cfg)
+
             # Step 1: Refresh NTQQ database
             if cfg.ntqq.enabled and cfg.ntqq.db_dir:
                 scheduler_logger.info("定时任务: 刷新 NTQQ 数据库...")
@@ -236,7 +346,6 @@ def create_app(
             # Step 2: Create fresh collector (picks up new DB)
             from ..collector.ntqq import NTQQCollector
             from ..collector.fixture import FixtureCollector
-            from ..ai.factory import build_ai_client
             from ..pipeline import DailyPipeline
             from ..notify import BotConfig
 
@@ -251,7 +360,6 @@ def create_app(
 
             # Step 3: Run daily pipeline
             worker_archive = Archive.open(cfg.archive_path)
-            ai_client = build_ai_client(cfg)
             pipeline = DailyPipeline(
                 archive=worker_archive,
                 collector=collector,
@@ -276,7 +384,7 @@ def create_app(
                 ),
             )
             pipeline_started = True
-            result = pipeline.run_daily(datetime.now(ZoneInfo(cfg.summary.timezone)))
+            result = pipeline.run_daily(scheduled_at)
             scheduler_logger.info(
                 "定时任务完成: %d 群, %d 消息, %d 报告, %d 候选",
                 result.groups_processed, result.messages_inserted,
@@ -361,6 +469,41 @@ def create_app(
             tz = ZoneInfo(config.summary.timezone)
             now = datetime.now(tz)
             today = now.date().isoformat()
+            catchup_date = pending_catchup_date(
+                archive.connection, now,
+                mode=config.summary.window_mode,
+                max_attempts=config.summary.max_attempts,
+                retry_interval_minutes=config.summary.retry_interval_minutes,
+            )
+            if catchup_date is not None:
+                scheduler_logger.info("补生成遗漏日报: %s", catchup_date)
+                try:
+                    with operations.claim("daily"):
+                        scheduler_state["running"] = True
+                        scheduler_state["last_attempt_date"] = catchup_date.isoformat()
+                        try:
+                            catchup_result = await asyncio.to_thread(
+                                _run_daily_task, config,
+                                run_at_for_report_date(
+                                    catchup_date, config.summary.window_mode, tz
+                                ),
+                            )
+                            latest_report = archive.connection.execute(
+                                """SELECT target_date FROM jobs WHERE job_type='daily_digest'
+                                   ORDER BY COALESCE(target_date, substr(started_at, 1, 10)) DESC,
+                                            job_id DESC LIMIT 1"""
+                            ).fetchone()
+                            if latest_report and latest_report["target_date"] == catchup_date.isoformat():
+                                scheduler_state["last_result"] = catchup_result
+                        finally:
+                            scheduler_state["running"] = False
+                except OperationBusy:
+                    pass
+                continue
+
+            scheduled_target = summary_window(
+                now, config.summary.window_mode, tz
+            )[0].date().isoformat()
             retry = daily_retry_state(
                 archive.connection,
                 now,
@@ -368,6 +511,7 @@ def create_app(
                 target_minute=config.summary.minute,
                 max_attempts=config.summary.max_attempts,
                 retry_interval_minutes=config.summary.retry_interval_minutes,
+                target_date=scheduled_target,
             )
             if not retry.due:
                 continue
@@ -512,6 +656,19 @@ def create_app(
     app.state.cookie = cookie
     app.state.config = config
     app.state.operations = operations
+    app.state.desktop_bridge = None
+
+    @app.get("/healthz")
+    async def healthz():
+        return {"status": "ok"}
+
+    @app.get("/desktop-info")
+    async def desktop_info():
+        return {
+            "config_signature": getattr(app.state, "desktop_config_signature", ""),
+            "settings_api_version": getattr(app.state, "desktop_settings_api_version", 0),
+            "backend_id": getattr(app.state, "desktop_backend_id", ""),
+        }
 
     # ------------------------------------------------------------------
     # Auth
@@ -563,6 +720,105 @@ def create_app(
             return RedirectResponse("/login", status_code=303)
         return templates.TemplateResponse(request, "reports.html", {})
 
+    @app.get("/catchup")
+    async def catchup_page(request: Request):
+        if not cookie.verify(request.cookies.get("qq_digest_session")):
+            return RedirectResponse("/login", status_code=303)
+        return templates.TemplateResponse(request, "catchup.html", {})
+
+    def catchup_service() -> CatchupService:
+        return CatchupService(archive, timezone_name=(
+            config.summary.timezone if config is not None else "Asia/Shanghai"
+        ))
+
+    @app.post("/api/catchup/visit")
+    async def api_catchup_visit(request: Request):
+        require_login(request)
+        return catchup_service().visit()
+
+    @app.get("/api/catchup")
+    async def api_catchup(
+        request: Request, scope: Literal["since", "today", "week"] = "since",
+        since: str | None = None, page: int = Query(1, ge=1),
+    ):
+        require_login(request)
+        try:
+            return await asyncio.to_thread(
+                catchup_service().list_items, scope, since=since, page=page
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.post("/api/catchup/read")
+    async def api_catchup_read(request: Request, payload: CatchupReadPayload):
+        require_login(request)
+        catchup_service().set_read(payload.key, payload.read)
+        return {"key": payload.key, "read": payload.read}
+
+    @app.get("/tasks")
+    async def task_inbox_page(request: Request):
+        if not cookie.verify(request.cookies.get("qq_digest_session")):
+            return RedirectResponse("/login", status_code=303)
+        return templates.TemplateResponse(request, "tasks.html", {})
+
+    def task_inbox_service() -> TaskInboxService:
+        return TaskInboxService(archive, timezone_name=(
+            config.summary.timezone if config is not None else "Asia/Shanghai"
+        ))
+
+    @app.get("/api/tasks/suggestions")
+    async def api_task_suggestions(request: Request):
+        require_login(request)
+        return {"items": await asyncio.to_thread(task_inbox_service().suggestions)}
+
+    @app.get("/api/tasks")
+    async def api_tasks(request: Request,
+                        status: Literal["open", "completed", "canceled", "all"] = "open"):
+        require_login(request)
+        return task_inbox_service().list_tasks(status=status)
+
+    @app.post("/api/tasks/suggestions/{key}/decision")
+    async def api_task_decision(request: Request, key: str, payload: TaskDecisionPayload):
+        require_login(request)
+        try:
+            task = await asyncio.to_thread(
+                task_inbox_service().decide, key, action=payload.action,
+                title=payload.title, owner=payload.owner, due_date=payload.due_date,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return {"task": task, "decision": payload.action}
+
+    @app.post("/api/tasks/from-message")
+    async def api_task_from_message(request: Request, payload: MessageTaskPayload):
+        require_login(request)
+        try:
+            task = task_inbox_service().create_from_message(
+                group_id=payload.group_id, msg_id=payload.msg_id,
+                title=payload.title, owner=payload.owner, due_date=payload.due_date,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return {"task": task}
+
+    @app.patch("/api/tasks/{task_id}")
+    async def api_task_update(request: Request, task_id: int, payload: TaskUpdatePayload):
+        require_login(request)
+        try:
+            task = task_inbox_service().update_task(
+                task_id, title=payload.title, owner=payload.owner,
+                due_date=payload.due_date, status=payload.status,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return {"task": task}
+
+    @app.get("/search")
+    async def search_page(request: Request):
+        if not cookie.verify(request.cookies.get("qq_digest_session")):
+            return RedirectResponse("/login", status_code=303)
+        return templates.TemplateResponse(request, "search.html", {})
+
     @app.get("/candidates")
     async def candidate_list(request: Request):
         if not cookie.verify(request.cookies.get("qq_digest_session")):
@@ -579,6 +835,86 @@ def create_app(
             return RedirectResponse("/login", status_code=303)
         return templates.TemplateResponse(request, "ai_settings.html", {})
 
+    @app.get("/settings")
+    async def settings_page(request: Request):
+        if not cookie.verify(request.cookies.get("qq_digest_session")):
+            return RedirectResponse("/login", status_code=303)
+        return templates.TemplateResponse(request, "settings.html", {})
+
+    @app.get("/api/desktop-settings")
+    async def desktop_settings_state(request: Request):
+        bridge = _desktop_bridge(request)
+        return await asyncio.to_thread(bridge.get_settings)
+
+    @app.post("/api/desktop-settings/choose-folder")
+    async def desktop_choose_folder(request: Request, payload: FolderSelectionPayload):
+        bridge = _desktop_bridge(request)
+        try:
+            return {"path": await asyncio.to_thread(bridge.choose_folder, payload.kind)}
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=f"文件夹窗口打开失败：{exc}") from exc
+
+    @app.post("/api/desktop-settings/migrate")
+    async def desktop_migrate(request: Request, payload: StorageMigrationPayload):
+        bridge = _desktop_bridge(request)
+        try:
+            return await asyncio.to_thread(bridge.migrate_storage, payload.destination)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.post("/api/desktop-settings/export")
+    async def desktop_export(request: Request, payload: ReportExportPayload):
+        bridge = _desktop_bridge(request)
+        return await asyncio.to_thread(bridge.export_reports, payload.destination, payload.format)
+
+    @app.post("/api/desktop-settings/auto-start")
+    async def desktop_auto_start(request: Request, payload: AutoStartPayload):
+        bridge = _desktop_bridge(request)
+        return await asyncio.to_thread(bridge.set_auto_start, payload.enabled)
+
+    @app.post("/api/desktop-settings/backup")
+    async def desktop_backup(request: Request):
+        bridge = _desktop_bridge(request)
+        try:
+            return await asyncio.to_thread(bridge.backup_data)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.post("/api/desktop-settings/backup-schedule")
+    async def desktop_backup_schedule(request: Request, payload: BackupSchedulePayload):
+        bridge = _desktop_bridge(request)
+        return await asyncio.to_thread(bridge.set_backup_schedule, payload.schedule)
+
+    @app.post("/api/desktop-settings/choose-backup")
+    async def desktop_choose_backup(request: Request):
+        bridge = _desktop_bridge(request)
+        try:
+            return {"path": await asyncio.to_thread(bridge.choose_backup_file)}
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=f"备份文件窗口打开失败：{exc}") from exc
+
+    @app.post("/api/desktop-settings/restore-preview")
+    async def desktop_restore_preview(request: Request, payload: RestorePreviewPayload):
+        bridge = _desktop_bridge(request)
+        try:
+            return await asyncio.to_thread(bridge.preview_restore, payload.path)
+        except (ValueError, OSError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.post("/api/desktop-settings/restore")
+    async def desktop_restore(request: Request, payload: RestorePayload):
+        bridge = _desktop_bridge(request)
+        try:
+            return await asyncio.to_thread(bridge.restore_backup, payload.path,
+                                           payload.destination, payload.sha256)
+        except (ValueError, OSError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.post("/api/desktop-settings/open-folder")
+    async def desktop_open_folder(request: Request, payload: OpenFolderPayload):
+        bridge = _desktop_bridge(request)
+        return await asyncio.to_thread(bridge.open_folder, payload.kind)
+
     # ------------------------------------------------------------------
     # API: DeepSeek settings
     # ------------------------------------------------------------------
@@ -589,6 +925,8 @@ def create_app(
         return {
             "base_url": cfg.ai.base_url,
             "model": cfg.ai.model,
+            "provider_priority": cfg.ai.provider_priority,
+            "bridge_model": cfg.ai.bridge_model,
             "key_configured": bool(
                 cfg.ai.ui_api_key_file
                 and ui_api_key_exists(Path(cfg.ai.ui_api_key_file))
@@ -647,6 +985,92 @@ def create_app(
             "total_reports": daily_reports + range_reports,
         }
 
+    @app.get("/api/health")
+    async def api_health(request: Request):
+        require_login(request)
+        ar = _archive(request)
+        ar.connection.execute("SELECT 1").fetchone()
+        last_sync = ar.connection.execute(
+            "SELECT MAX(last_success_at) FROM sync_state"
+        ).fetchone()[0]
+        latest_job = ar.connection.execute(
+            "SELECT status, finished_at FROM jobs ORDER BY job_id DESC LIMIT 1"
+        ).fetchone()
+        latest_daily = ar.connection.execute(
+            """SELECT status, target_date, started_at FROM jobs
+               WHERE job_type='daily_digest'
+               ORDER BY COALESCE(target_date, substr(started_at, 1, 10)) DESC,
+                        job_id DESC LIMIT 1"""
+        ).fetchone()
+        latest_daily_date = latest_daily["target_date"] if latest_daily else ""
+        if latest_daily and not latest_daily_date and latest_daily["started_at"]:
+            cfg = _config(request)
+            local_timezone = ZoneInfo(cfg.summary.timezone) if cfg else ZoneInfo("Asia/Shanghai")
+            started = datetime.fromisoformat(latest_daily["started_at"])
+            if started.tzinfo is None:
+                started = started.replace(tzinfo=timezone.utc)
+            latest_daily_date = summary_window(
+                started, cfg.summary.window_mode if cfg else "today", local_timezone
+            )[0].date().isoformat()
+        failed_notifications = ar.connection.execute(
+            "SELECT COUNT(*) FROM send_log WHERE status='failed'"
+        ).fetchone()[0]
+        return {
+            "service": "running", "archive": "ready",
+            "last_sync_at": _utc(last_sync) if last_sync else "",
+            "latest_job_status": latest_job["status"] if latest_job else "",
+            "latest_job_at": _utc(latest_job["finished_at"]) if latest_job else "",
+            "latest_daily_status": latest_daily["status"] if latest_daily else "",
+            "latest_daily_date": latest_daily_date or "",
+            "failed_notifications": failed_notifications,
+        }
+
+    @app.get("/api/search")
+    async def api_search(
+        request: Request, q: str = "",
+        kind: Literal["all", "message", "report", "knowledge"] = "all",
+        group_id: int | None = None,
+        date_from: date | None = None, date_to: date | None = None,
+        page: int = Query(1, ge=1), page_size: int = Query(20, ge=1, le=100),
+    ):
+        require_login(request)
+        try:
+            return search_archive(
+                _archive(request), query=q, kind=kind, group_id=group_id,
+                date_from=date_from, date_to=date_to, page=page, page_size=page_size,
+                timezone_name=_config(request).summary.timezone if _config(request) else "Asia/Shanghai",
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    @app.get("/api/search/messages/{group_id}/{msg_id}/context")
+    async def api_search_message_context(request: Request, group_id: int, msg_id: str):
+        require_login(request)
+        ar = _archive(request)
+        message = ar.connection.execute(
+            "SELECT timestamp FROM messages WHERE group_id=? AND msg_id=?",
+            (group_id, msg_id),
+        ).fetchone()
+        if message is None:
+            raise HTTPException(status_code=404, detail="消息不存在")
+        before = ar.connection.execute(
+            "SELECT msg_id, sender_qq, timestamp, text FROM messages "
+            "WHERE group_id=? AND (timestamp < ? OR (timestamp=? AND msg_id < ?)) "
+            "ORDER BY timestamp DESC, msg_id DESC LIMIT 2",
+            (group_id, message["timestamp"], message["timestamp"], msg_id),
+        ).fetchall()
+        after = ar.connection.execute(
+            "SELECT msg_id, sender_qq, timestamp, text FROM messages "
+            "WHERE group_id=? AND (timestamp > ? OR (timestamp=? AND msg_id > ?)) "
+            "ORDER BY timestamp, msg_id LIMIT 2",
+            (group_id, message["timestamp"], message["timestamp"], msg_id),
+        ).fetchall()
+        current = ar.connection.execute(
+            "SELECT msg_id, sender_qq, timestamp, text FROM messages WHERE group_id=? AND msg_id=?",
+            (group_id, msg_id),
+        ).fetchone()
+        return {"messages": [dict(row) for row in [*reversed(before), current, *after]]}
+
     # ------------------------------------------------------------------
     # API: Jobs
     # ------------------------------------------------------------------
@@ -658,6 +1082,7 @@ def create_app(
             "SELECT * FROM jobs ORDER BY job_id DESC LIMIT 10"
         ).fetchall()
         return {"jobs": [{"job_type": r["job_type"], "status": r["status"],
+                           "target_date": r["target_date"],
                            "started_at": _utc(r["started_at"]) if r["started_at"] else "",
                            "finished_at": _utc(r["finished_at"]) if r["finished_at"] else "",
                            "error": (r["error"] or "")[:500]}
@@ -680,7 +1105,7 @@ def create_app(
                 (g.group_id,),
             ).fetchone()
             sync = ar.connection.execute(
-                "SELECT last_timestamp FROM sync_state WHERE group_id=?",
+                "SELECT last_timestamp, status, updated_at, error, last_success_at FROM sync_state WHERE group_id=?",
                 (g.group_id,),
             ).fetchone()
             latest = stats["latest_message_at"]
@@ -696,6 +1121,10 @@ def create_app(
                 "message_count": stats["message_count"],
                 "latest_message_at": _utc(latest) if latest else None,
                 "last_sync": _utc(sync["last_timestamp"]) if sync and sync["last_timestamp"] else "未同步",
+                "sync_status": sync["status"] if sync else "never_synced",
+                "sync_error": sync["error"] if sync else "",
+                "last_sync_attempt": _utc(sync["updated_at"]) if sync else None,
+                "last_success_at": _utc(sync["last_success_at"]) if sync and sync["last_success_at"] else None,
             })
         return {"groups": result}
 
@@ -710,10 +1139,10 @@ def create_app(
                 "SELECT COUNT(*) AS c FROM messages WHERE group_id=?", (g.group_id,)
             ).fetchone()["c"]
             sync = ar.connection.execute(
-                "SELECT last_timestamp FROM sync_state WHERE group_id=?", (g.group_id,)
+                "SELECT last_success_at FROM sync_state WHERE group_id=?", (g.group_id,)
             ).fetchone()
             result.append({"name": g.name, "message_count": cnt,
-                           "last_sync": _utc(sync["last_timestamp"]) if sync and sync["last_timestamp"] else "未同步"})
+                           "last_sync": _utc(sync["last_success_at"]) if sync and sync["last_success_at"] else "未同步"})
         return {"groups": result}
 
     @app.get("/api/discover-groups")
@@ -731,10 +1160,34 @@ def create_app(
             groups = await asyncio.to_thread(collector.discover_groups)
         except Exception as exc:
             raise HTTPException(status_code=503, detail=f"群聊扫描失败: {exc}") from exc
-        return {"groups": [{"group_id": g["group_id"], "name": g["name"],
-                            "message_count_30d": g["message_count_30d"],
-                            "latest_message_at": g["latest_message_at"].isoformat() if g["latest_message_at"] else None}
-                           for g in groups]}
+        result = []
+        ar = _archive(request)
+        for group in groups:
+            group_id = group["group_id"]
+            archived = ar.connection.execute(
+                "SELECT MAX(timestamp) AS latest FROM messages WHERE group_id=?",
+                (group_id,),
+            ).fetchone()["latest"]
+            sync = ar.connection.execute(
+                "SELECT last_timestamp FROM sync_state WHERE group_id=?",
+                (group_id,),
+            ).fetchone()
+            source_latest = group["latest_message_at"]
+            archived_latest = datetime.fromisoformat(archived) if archived else None
+            source_has_newer = bool(
+                source_latest and (archived_latest is None or source_latest > archived_latest)
+            )
+            last_sync = datetime.fromisoformat(sync["last_timestamp"]) if sync and sync["last_timestamp"] else None
+            result.append({
+                "group_id": group_id,
+                "name": group["name"],
+                "message_count_30d": group["message_count_30d"],
+                "latest_message_at": source_latest.isoformat() if source_latest else None,
+                "archive_latest_message_at": archived,
+                "source_has_newer_messages": source_has_newer,
+                "suspected_gap": bool(source_has_newer and last_sync and last_sync >= source_latest),
+            })
+        return {"groups": result}
 
     @app.post("/api/groups")
     async def api_add_group(request: Request):
@@ -847,16 +1300,43 @@ def create_app(
         gid = body.get("group_id")
         start_str = body.get("start")
         end_str = body.get("end")
+        refresh_requested = body.get("refresh", False)
+        dry_run = body.get("dry_run", False)
         if not gid or not start_str or not end_str:
             raise HTTPException(status_code=400, detail="缺少参数")
+        if not isinstance(refresh_requested, bool):
+            raise HTTPException(status_code=400, detail="refresh 必须是布尔值")
+        if not isinstance(dry_run, bool):
+            raise HTTPException(status_code=400, detail="dry_run 必须是布尔值")
         cfg = _config(request)
         tz = ZoneInfo(cfg.summary.timezone if cfg else "Asia/Shanghai")
-        start = datetime.fromisoformat(start_str + "T00:00:00").replace(tzinfo=tz)
-        end = datetime.fromisoformat(end_str + "T23:59:59").replace(tzinfo=tz)
+        try:
+            start = datetime.fromisoformat(start_str + "T00:00:00").replace(tzinfo=tz)
+            end = datetime.fromisoformat(end_str + "T23:59:59").replace(tzinfo=tz)
+        except (TypeError, ValueError) as exc:
+            raise HTTPException(status_code=400, detail="日期格式无效") from exc
+        if start > end:
+            raise HTTPException(status_code=400, detail="开始日期不能晚于结束日期")
+        if dry_run and (end.date() - start.date()).days > 90:
+            raise HTTPException(status_code=400, detail="单次缺口检查最多支持 91 天")
         if not cfg or not cfg.ntqq.enabled:
             raise HTTPException(status_code=400, detail="NTQQ 未启用")
+        if not isinstance(gid, int) or isinstance(gid, bool) or not any(
+            group.group_id == gid for group in _archive(request).all_groups()
+        ):
+            raise HTTPException(status_code=404, detail="群组不存在")
 
         def collect_in_worker():
+            if refresh_requested:
+                from ..refresh import refresh_database
+
+                refreshed = refresh_database(
+                    qq_number=cfg.ntqq.qq_number,
+                    output_dir=cfg.ntqq.db_dir,
+                    snapshot_root=cfg.work_dir / "snapshots",
+                )
+                if not refreshed.success:
+                    raise RuntimeError(f"数据库刷新失败：{refreshed.message}")
             collector = NTQQCollector(
                 db_dir=cfg.ntqq.db_dir,
                 qq_number=cfg.ntqq.qq_number,
@@ -865,21 +1345,53 @@ def create_app(
             msgs = list(collector.collect(gid, start, end))
             worker_archive = Archive.open(cfg.archive_path)
             try:
-                ingest = worker_archive.ingest(msgs)
-                worker_archive.mark_sync(group_id=gid, last_timestamp=min(end, datetime.now(tz)))
-                worker_archive.connection.commit()
+                stored_ids = {
+                    row["msg_id"] for row in worker_archive.connection.execute(
+                        "SELECT msg_id FROM messages WHERE group_id=?",
+                        (gid,),
+                    )
+                }
+                missing_dates: dict[str, int] = {}
+                seen_ids: set[str] = set()
+                for message in msgs:
+                    if message.msg_id in stored_ids or message.msg_id in seen_ids:
+                        continue
+                    seen_ids.add(message.msg_id)
+                    day = message.timestamp.astimezone(tz).date().isoformat()
+                    missing_dates[day] = missing_dates.get(day, 0) + 1
+                if dry_run:
+                    ingest = IngestResult(inserted=0, skipped=len(msgs) - len(seen_ids))
+                else:
+                    ingest = worker_archive.ingest(msgs)
+                    worker_archive.mark_manual_collect_success(group_id=gid)
             finally:
                 worker_archive.connection.close()
-            return msgs, ingest
+            missing_days = [
+                {"date": day, "count": missing_dates[day]}
+                for day in sorted(missing_dates)
+            ]
+            return msgs, ingest, missing_days
 
         try:
             with operations.claim("collect"):
-                msgs, ingest = await asyncio.to_thread(collect_in_worker)
+                msgs, ingest, missing_days = await asyncio.to_thread(collect_in_worker)
         except OperationBusy as exc:
             raise HTTPException(
                 status_code=409,
                 detail={"message": "已有冲突任务在运行", "active": exc.active},
             ) from exc
+        except Exception as exc:
+            if not dry_run:
+                worker_archive = Archive.open(cfg.archive_path)
+                try:
+                    worker_archive.mark_sync_failure(
+                        group_id=gid,
+                        status="manual_collect_failed",
+                        error=str(exc),
+                    )
+                finally:
+                    worker_archive.close()
+            raise HTTPException(status_code=503, detail=f"采集失败：{exc}") from exc
 
         preview = msgs[-500:]
         return {
@@ -891,11 +1403,14 @@ def create_app(
                     "message_type": m.message_type,
                     "text": m.text,
                 }
-                for m in preview
+                for m in ([] if dry_run else preview)
             ],
             "total": len(msgs),
             "inserted": ingest.inserted,
             "skipped": ingest.skipped,
+            "missing_days": missing_days,
+            "refreshed": refresh_requested,
+            "dry_run": dry_run,
             "preview_truncated": len(preview) < len(msgs),
         }
 
@@ -964,65 +1479,71 @@ def create_app(
     # API: Reports
     # ------------------------------------------------------------------
     @app.get("/api/reports")
-    async def api_reports(request: Request):
+    async def api_reports(
+        request: Request,
+        page: int = Query(1, ge=1),
+        page_size: int = Query(20, ge=1, le=100),
+        group_id: int | None = None,
+        kind: Literal["all", "daily", "range"] = "all",
+        date_from: date | None = None,
+        date_to: date | None = None,
+    ):
         require_login(request)
+        if date_from and date_to and date_from > date_to:
+            raise HTTPException(status_code=422, detail="开始日期不能晚于结束日期")
         ar = _archive(request)
-        daily_rows = ar.connection.execute(
-            """SELECT r.*, g.name AS group_name FROM reports r
-               JOIN groups g ON g.group_id = r.group_id
-               ORDER BY r.report_date DESC, g.name LIMIT 100"""
-        ).fetchall()
-        range_rows = ar.connection.execute(
-            """
-            SELECT r.*, g.name AS group_name FROM manual_reports r
-            JOIN groups g ON g.group_id = r.group_id
-            ORDER BY r.end_date DESC, r.start_date DESC, g.name LIMIT 100
-            """
+        source = """WITH all_reports AS (
+            SELECT 'daily' AS report_kind, r.report_id AS report_id, r.group_id,
+                   g.name AS group_name, r.report_date AS window_start_date,
+                   r.report_date AS window_end_date, r.json_path, r.candidate_ids,
+                   r.created_at
+            FROM reports r JOIN groups g ON g.group_id=r.group_id
+            UNION ALL
+            SELECT 'range', r.manual_report_id, r.group_id, g.name,
+                   r.start_date, r.end_date, r.json_path, r.candidate_ids, r.updated_at
+            FROM manual_reports r JOIN groups g ON g.group_id=r.group_id
+        )"""
+        clauses = []
+        params: list[object] = []
+        if kind != "all":
+            clauses.append("report_kind=?")
+            params.append(kind)
+        if group_id is not None:
+            clauses.append("group_id=?")
+            params.append(group_id)
+        if date_from is not None:
+            clauses.append("window_end_date>=?")
+            params.append(date_from.isoformat())
+        if date_to is not None:
+            clauses.append("window_start_date<=?")
+            params.append(date_to.isoformat())
+        where = " WHERE " + " AND ".join(clauses) if clauses else ""
+        total = ar.connection.execute(
+            source + " SELECT COUNT(*) FROM all_reports" + where, params
+        ).fetchone()[0]
+        rows = ar.connection.execute(
+            source + " SELECT * FROM all_reports" + where
+            + " ORDER BY window_end_date DESC, window_start_date DESC, created_at DESC"
+            + " LIMIT ? OFFSET ?",
+            [*params, page_size, (page - 1) * page_size],
         ).fetchall()
         reports = [
             {
-                "report_kind": "daily",
+                "report_kind": row["report_kind"],
                 "report_id": int(row["report_id"]),
-                "report_key": f"daily:{row['report_id']}",
-                "report_date": row["report_date"],
-                "window_start_date": row["report_date"],
-                "window_end_date": row["report_date"],
+                "report_key": f"{row['report_kind']}:{row['report_id']}",
+                "report_date": row["window_end_date"],
+                "window_start_date": row["window_start_date"],
+                "window_end_date": row["window_end_date"],
                 "group_name": row["group_name"],
-                "_json_path": row["json_path"],
+                "group_id": row["group_id"],
                 "candidate_count": len(json.loads(row["candidate_ids"])),
                 "created_at": _utc(row["created_at"]),
+                "reference_message_count": _reference_message_count(row["json_path"]),
             }
-            for row in daily_rows
+            for row in rows
         ]
-        reports.extend(
-            {
-                "report_kind": "range",
-                "report_id": int(row["manual_report_id"]),
-                "report_key": f"range:{row['manual_report_id']}",
-                "report_date": row["end_date"],
-                "window_start_date": row["start_date"],
-                "window_end_date": row["end_date"],
-                "group_name": row["group_name"],
-                "_json_path": row["json_path"],
-                "candidate_count": len(json.loads(row["candidate_ids"])),
-                "created_at": _utc(row["updated_at"]),
-            }
-            for row in range_rows
-        )
-        reports.sort(
-            key=lambda row: (
-                row["window_end_date"],
-                row["window_start_date"],
-                row["created_at"],
-            ),
-            reverse=True,
-        )
-        selected_reports = reports[:100]
-        for report in selected_reports:
-            report["reference_message_count"] = _reference_message_count(
-                report.pop("_json_path")
-            )
-        return {"reports": selected_reports}
+        return {"reports": reports, "total": total, "page": page, "page_size": page_size}
 
     @app.post("/api/reports/range")
     async def api_create_range_report(
@@ -1089,13 +1610,53 @@ def create_app(
             if markdown_path.exists()
             else "报告文件不存在"
         )
+        cfg = _config(request)
+        evidence_items = load_verified_report_sources(
+            ar.connection, row["json_path"], group_id=row["group_id"],
+            start_date=start_date, end_date=end_date,
+            timezone_name=cfg.summary.timezone if cfg else "Asia/Shanghai",
+        )
         return {
             "markdown": markdown,
             "report_kind": report_kind,
             "group_name": group["name"] if group else str(row["group_id"]),
             "window_start_date": start_date,
             "window_end_date": end_date,
+            "evidence_status": "available" if evidence_items is not None else "legacy",
+            "evidence_items": evidence_items or [],
         }
+
+    @app.get("/api/reports/{report_kind}/{report_id}/sources/{msg_id}")
+    async def api_report_source_context(
+        request: Request, report_kind: str, report_id: int, msg_id: str
+    ):
+        require_login(request)
+        ar = _archive(request)
+        if report_kind == "daily":
+            row = ar.connection.execute(
+                "SELECT * FROM reports WHERE report_id=?", (report_id,)
+            ).fetchone()
+            start_date = end_date = row["report_date"] if row else None
+        elif report_kind == "range":
+            row = ar.manual_report_by_id(report_id)
+            start_date = row["start_date"] if row else None
+            end_date = row["end_date"] if row else None
+        else:
+            row = None
+            start_date = end_date = None
+        if row is None:
+            raise HTTPException(status_code=404, detail="报告不存在")
+        cfg = _config(request)
+        evidence_items = load_verified_report_sources(
+            ar.connection, row["json_path"], group_id=row["group_id"],
+            start_date=start_date, end_date=end_date,
+            timezone_name=cfg.summary.timezone if cfg else "Asia/Shanghai",
+        )
+        if not evidence_items or not any(
+            msg_id in item["source_ids"] for item in evidence_items
+        ):
+            raise HTTPException(status_code=404, detail="报告未引用这条消息")
+        return await api_search_message_context(request, row["group_id"], msg_id)
 
     @app.post("/api/reports/{report_kind}/{report_id}/ask")
     async def api_ask_report(
@@ -1194,6 +1755,51 @@ def create_app(
             "group_name": group["name"] if group else str(item.group_id),
             **candidate_source_context(_archive(request), item),
         }
+
+    @app.patch("/api/candidates/{candidate_id}")
+    async def api_edit_candidate(request: Request, candidate_id: int, payload: CandidateEditPayload):
+        require_login(request)
+        try:
+            updated = candidates.update_details(candidate_id, **payload.model_dump())
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        return updated.model_dump()
+
+    @app.post("/api/candidates/{candidate_id}/undo")
+    async def api_undo_candidate(request: Request, candidate_id: int):
+        require_login(request)
+        try:
+            item = candidates.get(candidate_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        if item.status != "confirmed":
+            raise HTTPException(status_code=409, detail="只有已入库的候选可以撤销")
+        ar = _archive(request)
+        row = ar.connection.execute(
+            "SELECT markdown_path FROM knowledge_items WHERE candidate_id=?", (candidate_id,)
+        ).fetchone()
+        if row is None:
+            raise HTTPException(status_code=409, detail="找不到对应的知识库条目")
+        path = Path(row["markdown_path"])
+        try:
+            original = remove_item(path, str(candidate_id))
+        except (OSError, ValueError) as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        try:
+            with ar.transaction():
+                ar.connection.execute(
+                    "DELETE FROM knowledge_items WHERE candidate_id=?", (candidate_id,)
+                )
+                ar.connection.execute(
+                    "UPDATE candidates SET status='pending', updated_at=? WHERE candidate_id=?",
+                    (datetime.now(timezone.utc).isoformat(), candidate_id),
+                )
+        except Exception:
+            path.write_text(original, encoding="utf-8")
+            raise
+        return {"status": "pending"}
 
     # ------------------------------------------------------------------
     # API: Run daily

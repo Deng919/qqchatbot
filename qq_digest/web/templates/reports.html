@@ -1,24 +1,37 @@
 {% extends "base.html" %}
 {% block title %}摘要报告 - QQ Digest{% endblock %}
 {% block page_title %}摘要报告{% endblock %}
+{% block page_description %}浏览群聊摘要，按需要生成指定日期范围的报告。{% endblock %}
 {% block actions %}
   <button class="btn" id="range-open-btn" type="button" onclick="openRangeSummary()">生成范围摘要</button>
   <button class="btn btn-primary" id="report-run-btn" type="button" onclick="runDaily()">生成今日日报</button>
 {% endblock %}
 {% block content %}
+<div class="filter-toolbar report-filters" aria-label="筛选报告">
+  <div class="field"><label for="report-kind">类型</label><select id="report-kind" onchange="filterReports()"><option value="all">全部报告</option><option value="daily">日报</option><option value="range">范围摘要</option></select></div>
+  <div class="field"><label for="report-group">群组</label><select id="report-group" onchange="filterReports()"><option value="">全部群</option></select></div>
+  <div class="field"><label for="report-from">开始日期</label><input class="input" id="report-from" type="date" onchange="filterReports()"></div>
+  <div class="field"><label for="report-to">结束日期</label><input class="input" id="report-to" type="date" onchange="filterReports()"></div>
+  <button class="btn" type="button" onclick="clearReportFilters()">清除筛选</button>
+</div>
 <div class="report-layout" id="report-layout">
   <section class="card">
-    <div class="card-header">报告列表</div>
+    <div class="card-header">报告列表 <span class="header-meta" id="report-count"></span></div>
     <div class="table-wrap">
       <table class="table responsive-table report-table">
         <thead><tr><th>类型</th><th>日期范围</th><th>群名</th><th title="实际纳入摘要的消息条数">参考消息数</th><th>候选数</th><th>更新时间</th><th>操作</th></tr></thead>
         <tbody id="report-list"><tr><td colspan="7" class="empty">加载中...</td></tr></tbody>
       </table>
     </div>
+    <div class="report-pages" id="report-pages" hidden><button class="btn btn-sm" id="report-prev" type="button" onclick="changeReportPage(-1)">上一页</button><span id="report-page-label"></span><button class="btn btn-sm" id="report-next" type="button" onclick="changeReportPage(1)">下一页</button></div>
   </section>
   <section class="card report-detail" id="report-detail" hidden>
     <div class="card-header">报告详情 <span><button class="btn btn-sm" id="report-qa-open" type="button" onclick="openReportQA()">问 DeepSeek</button> <button class="btn btn-sm" aria-label="关闭报告详情" type="button" onclick="closeReport()">关闭</button></span></div>
-    <div id="report-content" class="report-content"></div>
+    <div class="report-detail-scroll">
+      <div id="report-content" class="report-content"></div>
+      <section id="report-evidence" class="report-evidence" aria-label="逐条来源"></section>
+      <section id="report-source-context" class="report-source-context" aria-label="原消息与上下文" hidden></section>
+    </div>
   </section>
 </div>
 
@@ -54,12 +67,26 @@
 </aside>
 
 <style>
+  .report-filters { grid-template-columns: repeat(4, minmax(130px, 1fr)) auto; align-items: end; }
+  .report-pages { display: flex; gap: 12px; align-items: center; justify-content: flex-end; margin-top: 15px; color: var(--text-soft); font-size: 12px; }
   .report-layout { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; }
   .report-layout.has-detail { grid-template-columns: minmax(560px, .95fr) minmax(420px, 1.05fr); }
   .report-table { min-width: 720px; }
   .report-layout.has-detail .report-table { min-width: 0; }
   .report-detail { min-width: 0; }
-  .report-content { max-height: 660px; overflow-y: auto; white-space: pre-wrap; overflow-wrap: anywhere; font-family: var(--mono); font-size: 12px; line-height: 1.7; }
+  .report-detail-scroll { max-height: 660px; overflow-y: auto; }
+  .report-content { white-space: pre-wrap; overflow-wrap: anywhere; font-family: var(--mono); font-size: 12px; line-height: 1.7; }
+  .report-evidence, .report-source-context { margin-top: 22px; padding-top: 16px; border-top: 1px solid var(--border); }
+  .report-evidence h3, .report-source-context h3 { margin: 0 0 10px; font-size: 14px; }
+  .report-evidence-note { color: var(--text-dim); font-size: 12px; }
+  .report-evidence-item { margin: 0 0 8px; padding: 10px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface-subtle); }
+  .report-evidence-label { color: var(--text-dim); font-size: 11px; }
+  .report-evidence-text { margin: 4px 0 8px; white-space: pre-wrap; overflow-wrap: anywhere; }
+  .report-evidence-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+  .report-source-row { padding: 9px; border-bottom: 1px solid var(--border); }
+  .report-source-row.is-cited { border-left: 3px solid var(--primary); background: var(--primary-soft); }
+  .report-source-meta { margin-bottom: 4px; color: var(--text-dim); font-size: 11px; }
+  .report-source-text { white-space: pre-wrap; overflow-wrap: anywhere; }
   .range-summary-backdrop { position: fixed; inset: 0; z-index: 39; background: rgb(21 27 23 / .32); backdrop-filter: blur(1px); }
   .range-summary-panel { position: fixed; right: 18px; top: 70px; bottom: 18px; z-index: 40; width: min(520px, calc(100vw - 36px)); padding: 18px; overflow-y: auto; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: 0 24px 64px rgb(18 25 21 / .24); }
   .range-panel-header { margin-bottom: 16px; display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; }
@@ -90,16 +117,28 @@
   #report-qa-question { width: 100%; resize: vertical; min-height: 76px; }
   #report-qa-submit { justify-self: end; }
   @media (max-width: 1040px) { .report-layout.has-detail { grid-template-columns: 1fr; } }
-  @media (max-width: 700px) { .report-table { min-width: 0; } .range-summary-panel, .report-qa-dialog { inset: 104px 10px 10px; width: auto; padding: 15px; } .range-panel-footer { bottom: -15px; margin: 16px -15px -15px; padding: 11px 15px; } }
+  @media (max-width: 700px) { .report-filters { grid-template-columns: repeat(2, minmax(0, 1fr)); } .report-filters button { grid-column: 1 / -1; } .report-table { min-width: 0; } .range-summary-panel, .report-qa-dialog { inset: 104px 10px 10px; width: auto; padding: 15px; } .range-panel-footer { bottom: -15px; margin: 16px -15px -15px; padding: 11px 15px; } }
   @media (max-width: 430px) { .range-date-grid { grid-template-columns: 1fr; } }
 </style>
 <script>
   var rangeGroups = [], rangeBusy = false, rangeOpener = null;
-  var qaReport = null, qaHistory = [], qaOpener = null, qaRequestToken = 0, qaBusy = false, reportSelectionToken = 0;
+  var qaReport = null, qaHistory = [], qaOpener = null, qaRequestToken = 0, qaBusy = false, reportSelectionToken = 0, sourceRequestToken = 0;
+  var reportPage = 1, reportLoadToken = 0;
+  function reportParams() { var p = new URLSearchParams(); p.set('page', reportPage); p.set('kind', document.getElementById('report-kind').value); [['group_id','report-group'],['date_from','report-from'],['date_to','report-to']].forEach(function(row) { var value = document.getElementById(row[1]).value; if (value) p.set(row[0], value); }); return p; }
+  function filterReports() { reportPage = 1; loadReports(); }
+  function clearReportFilters() { ['report-group','report-from','report-to'].forEach(function(id) { document.getElementById(id).value = ''; }); document.getElementById('report-kind').value = 'all'; refreshDateHints(); filterReports(); }
+  function changeReportPage(step) { reportPage += step; loadReports(); }
   function loadReports() {
-    api('GET', '/api/reports').then(function(d) {
+    var token = ++reportLoadToken;
+    api('GET', '/api/reports?' + reportParams().toString()).then(function(d) {
+      if (token !== reportLoadToken) return;
       var el = document.getElementById('report-list');
-      if (!d.reports.length) { el.innerHTML = '<tr><td colspan="7" class="empty">暂无报告</td></tr>'; return; }
+      document.getElementById('report-count').textContent = '共 ' + formatNumber(d.total) + ' 份';
+      var pages = document.getElementById('report-pages'); pages.hidden = d.total <= d.page_size;
+      document.getElementById('report-page-label').textContent = '第 ' + d.page + ' / ' + Math.max(1, Math.ceil(d.total / d.page_size)) + ' 页';
+      document.getElementById('report-prev').disabled = d.page <= 1;
+      document.getElementById('report-next').disabled = d.page * d.page_size >= d.total;
+      if (!d.reports.length) { el.innerHTML = '<tr><td colspan="7" class="empty">当前条件下暂无报告</td></tr>'; return; }
       el.innerHTML = d.reports.map(function(r) {
         var kind = r.report_kind === 'range' ? 'range' : 'daily', reportId = Number(r.report_id);
         var windowLabel = r.window_start_date === r.window_end_date ? r.window_start_date : r.window_start_date + ' 至 ' + r.window_end_date;
@@ -119,9 +158,52 @@
       if (selectionToken !== reportSelectionToken) return;
       qaReport = {kind: kind, id: Number(reportId), group_name: d.group_name, start: d.window_start_date, end: d.window_end_date};
       document.getElementById('report-detail').hidden = false; document.getElementById('report-layout').classList.add('has-detail'); document.getElementById('report-content').textContent = d.markdown;
+      renderReportEvidence(d);
     }).catch(function(e) { if (selectionToken === reportSelectionToken) toast('加载失败: ' + e.message, 'error'); });
   }
-  function closeReport() { reportSelectionToken += 1; closeReportQA(); qaReport = null; document.getElementById('report-detail').hidden = true; document.getElementById('report-layout').classList.remove('has-detail'); }
+  function closeReport() { reportSelectionToken += 1; sourceRequestToken += 1; closeReportQA(); qaReport = null; document.getElementById('report-detail').hidden = true; document.getElementById('report-layout').classList.remove('has-detail'); document.getElementById('report-source-context').hidden = true; }
+  function renderReportEvidence(data) {
+    var host = document.getElementById('report-evidence'); host.textContent = '';
+    var title = document.createElement('h3'); title.textContent = '逐条来源'; host.appendChild(title);
+    var context = document.getElementById('report-source-context'); context.hidden = true; context.textContent = '';
+    if (data.evidence_status !== 'available') {
+      var legacy = document.createElement('p'); legacy.className = 'report-evidence-note'; legacy.textContent = '这份旧报告生成时未记录逐条来源，不能据此核实具体结论。'; host.appendChild(legacy); return;
+    }
+    if (!(data.evidence_items || []).length) {
+      var empty = document.createElement('p'); empty.className = 'report-evidence-note'; empty.textContent = '这份报告没有可溯源的重点条目。'; host.appendChild(empty); return;
+    }
+    data.evidence_items.forEach(function(item) {
+      var card = document.createElement('article'); card.className = 'report-evidence-item';
+      var label = document.createElement('div'); label.className = 'report-evidence-label'; label.textContent = item.section; card.appendChild(label);
+      var content = document.createElement('div'); content.className = 'report-evidence-text'; content.textContent = item.text; card.appendChild(content);
+      var actions = document.createElement('div'); actions.className = 'report-evidence-actions';
+      if (item.status === 'unverified') {
+        var warning = document.createElement('span'); warning.className = 'badge badge-orange'; warning.textContent = '待核实 · 无有效原消息引用'; actions.appendChild(warning);
+      } else {
+        (item.source_ids || []).forEach(function(id) {
+          var button = document.createElement('button'); button.type = 'button'; button.className = 'btn btn-sm'; button.textContent = '查看原消息 ' + id;
+          button.addEventListener('click', function() { openReportSource(id); }); actions.appendChild(button);
+        });
+      }
+      card.appendChild(actions); host.appendChild(card);
+    });
+  }
+  function openReportSource(messageId) {
+    if (!qaReport) return;
+    var report = qaReport, token = ++sourceRequestToken;
+    api('GET', '/api/reports/' + report.kind + '/' + report.id + '/sources/' + encodeURIComponent(messageId)).then(function(data) {
+      if (token !== sourceRequestToken || qaReport !== report) return;
+      var host = document.getElementById('report-source-context'); host.textContent = '';
+      var header = document.createElement('h3'); header.textContent = '原消息与上下文'; host.appendChild(header);
+      (data.messages || []).forEach(function(item) {
+        var row = document.createElement('div'); row.className = 'report-source-row' + (item.msg_id === messageId ? ' is-cited' : '');
+        var meta = document.createElement('div'); meta.className = 'report-source-meta'; meta.textContent = new Date(item.timestamp).toLocaleString('zh-CN') + ' · ' + (item.sender_qq || '未知发送者');
+        var body = document.createElement('div'); body.className = 'report-source-text'; body.textContent = item.text;
+        row.appendChild(meta); row.appendChild(body); host.appendChild(row);
+      });
+      host.hidden = false; host.scrollIntoView({block: 'nearest'});
+    }).catch(function(error) { if (token === sourceRequestToken) toast('无法打开原消息：' + error.message, 'error'); });
+  }
   function openReportQA() {
     if (!qaReport) return;
     qaOpener = document.activeElement; qaHistory = [];
@@ -173,10 +255,16 @@
       .finally(function() { if (requestToken === qaRequestToken) { qaBusy = false; document.getElementById('report-qa-submit').disabled = false; input.focus(); } });
   }
   function localDateValue(value) { return value.getFullYear() + '-' + String(value.getMonth() + 1).padStart(2, '0') + '-' + String(value.getDate()).padStart(2, '0'); }
+  function recentWeekDates() {
+    var today = new Date(), start = new Date(today);
+    start.setDate(start.getDate() - 6);
+    return {start: localDateValue(start), end: localDateValue(today)};
+  }
   function openRangeSummary() {
-    rangeOpener = document.activeElement; var today = localDateValue(new Date());
-    if (!document.getElementById('range-start-date').value) document.getElementById('range-start-date').value = today;
-    if (!document.getElementById('range-end-date').value) document.getElementById('range-end-date').value = today;
+    rangeOpener = document.activeElement; var dates = recentWeekDates();
+    if (!document.getElementById('range-start-date').value) document.getElementById('range-start-date').value = dates.start;
+    if (!document.getElementById('range-end-date').value) document.getElementById('range-end-date').value = dates.end;
+    refreshDateHints();
     document.getElementById('range-summary-panel').hidden = false; document.getElementById('range-summary-backdrop').hidden = false; document.getElementById('range-result').hidden = true;
     if (!rangeGroups.length) loadRangeGroups(); updateRangeSelectionSummary(); document.getElementById('range-group-search').focus();
   }
@@ -228,6 +316,13 @@
       .catch(function(e) { toast('执行失败: ' + e.message, 'error'); }).finally(function() { button.disabled = false; button.textContent = '生成今日日报'; });
   }
   document.addEventListener('keydown', function(event) { if (event.key === 'Escape' && !document.getElementById('report-qa-dialog').hidden) closeReportQA(); else if (event.key === 'Escape' && !document.getElementById('range-summary-panel').hidden) closeRangeSummary(); });
+  api('GET', '/api/groups').then(function(data) { var select = document.getElementById('report-group'); data.groups.forEach(function(group) { var option = document.createElement('option'); option.value = group.group_id; option.textContent = group.name; select.appendChild(option); }); }).catch(function() {});
+  (function openLinkedReport() { var params = new URLSearchParams(location.search), kind = params.get('kind'), id = Number(params.get('id')); if ((kind === 'daily' || kind === 'range') && Number.isInteger(id) && id > 0) viewReport(kind, id); })();
+  (function setDefaultReportDates() {
+    var dates = recentWeekDates();
+    document.getElementById('report-from').value = dates.start;
+    document.getElementById('report-to').value = dates.end;
+  })();
   loadReports();
 </script>
 {% endblock %}

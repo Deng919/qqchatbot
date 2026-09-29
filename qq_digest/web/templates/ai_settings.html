@@ -1,10 +1,19 @@
 {% extends "base.html" %}
 {% block title %}AI 设置 - QQ Digest{% endblock %}
 {% block page_title %}AI 设置{% endblock %}
+{% block page_description %}管理摘要与报告问答使用的模型连接。{% endblock %}
 {% block content %}
+<section class="card ai-settings-card" aria-labelledby="summary-provider-title">
+  <div class="card-header" id="summary-provider-title">摘要引擎</div>
+  <p class="settings-note">按顺序调用；首选连接失败时自动尝试备用连接。</p>
+  <dl class="settings-meta">
+    <div><dt>首选</dt><dd id="summary-primary">加载中...</dd></div>
+    <div><dt>备用</dt><dd id="summary-fallback">加载中...</dd></div>
+  </dl>
+</section>
 <section class="card ai-settings-card" aria-labelledby="deepseek-settings-title">
   <div class="card-header" id="deepseek-settings-title">DeepSeek API</div>
-  <p class="settings-note">API Key 只保存在本机文件中，页面不会显示已保存的密钥。保存后，新的摘要和报告提问会使用它。</p>
+  <p class="settings-note">API Key 只保存在本机文件中，页面不会显示已保存的密钥。摘要或报告问答调用 DeepSeek 时会使用它。</p>
   <dl class="settings-meta">
     <div><dt>接口地址</dt><dd id="deepseek-base-url">加载中...</dd></div>
     <div><dt>模型</dt><dd id="deepseek-model">加载中...</dd></div>
@@ -32,6 +41,14 @@
 <script>
   function loadAISettings() {
     api('GET', '/api/ai-settings').then(function(data) {
+      var providers = data.provider_priority || [];
+      function providerLabel(name) {
+        if (name === 'chatgpt_bridge') return '本机 ChatGPT 桥接' + (data.bridge_model ? ' · ' + data.bridge_model : '');
+        if (name === 'compatible') return 'DeepSeek API · ' + (data.model || '未配置模型');
+        return name || '未配置';
+      }
+      document.getElementById('summary-primary').textContent = providerLabel(providers[0]);
+      document.getElementById('summary-fallback').textContent = providers[1] ? providerLabel(providers[1]) : '无';
       document.getElementById('deepseek-base-url').textContent = data.base_url || '未配置';
       document.getElementById('deepseek-model').textContent = data.model || '未配置';
       document.getElementById('deepseek-key-status').textContent = data.key_configured ? '已保存到本机' : '尚未通过网页保存';

@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta
+import json
 from pathlib import Path
 from types import SimpleNamespace
 from zoneinfo import ZoneInfo
@@ -71,6 +72,196 @@ def test_ai_settings_requires_login(web_client):
     assert client.get("/api/ai-settings").status_code == 401
     assert client.put("/api/ai-settings/key", json={"api_key": "example-key"}).status_code == 401
     assert client.post("/api/ai-settings/test").status_code == 401
+
+
+def test_desktop_settings_page_requires_login_and_renders(web_client):
+    client, _, _ = web_client
+    assert client.get("/settings", follow_redirects=False).status_code == 303
+    client.post("/login", data={"password": "password123"})
+    response = client.get("/settings")
+    assert response.status_code == 200
+    assert "消息摘要导出" in response.text
+    assert "开机自启" in response.text
+    assert "数据备份" in response.text
+    assert "恢复数据" in response.text
+
+
+def test_catchup_requires_login_and_persists_read_state(web_client, tmp_path):
+    client, _, _ = web_client
+    assert client.get("/catchup", follow_redirects=False).status_code == 303
+    assert client.get("/api/catchup?scope=today").status_code == 401
+    assert client.post("/api/catchup/visit").status_code == 401
+    assert client.post("/api/catchup/read", json={"key": "a" * 64, "read": True}).status_code == 401
+
+    today = datetime.now(ZoneInfo("Asia/Shanghai")).date().isoformat()
+    payload_path = tmp_path / "catchup.json"
+    payload_path.write_text(json.dumps({
+        "evidence_version": 1, "overview": "概览", "main_topics": [{
+            "topic": "发布", "summary": "今天发布", "message_ids": ["catchup-source"],
+        }], "conclusions": [], "resources": [], "tasks": [], "open_questions": [],
+    }, ensure_ascii=False), encoding="utf-8")
+    archive = client.app.state.archive
+    report_id = archive.record_report(
+        group_id=123, report_date=today,
+        markdown_path=tmp_path / "catchup.md", json_path=payload_path,
+        candidate_ids=[],
+    )
+    local_time = datetime.now(ZoneInfo("Asia/Shanghai"))
+    archive.ingest([NormalizedMessage(
+        msg_id="catchup-source", group_id=123, sender_qq=1001,
+        timestamp=local_time, collected_at=local_time, text="今天发布",
+    )])
+    client.post("/login", data={"password": "password123"})
+    assert "跨群补看" in client.get("/catchup").text
+    assert client.post("/api/catchup/visit").json()["previous_viewed_at"] is None
+    assert client.post("/api/catchup/visit").json()["previous_viewed_at"] is not None
+    result = client.get("/api/catchup?scope=today").json()
+    assert result["total"] == 1
+    assert result["unread"] == 1
+    item = result["items"][0]
+    assert item["source_ids"] == ["catchup-source"]
+    assert item["report_url"] == f"/reports?kind=daily&id={report_id}"
+    assert client.get(f"/api/reports/daily/{report_id}/sources/catchup-source").status_code == 200
+    assert client.post("/api/catchup/read", json={"key": item["key"], "read": True}).status_code == 200
+    assert client.get("/api/catchup?scope=today").json()["unread"] == 0
+    assert client.post("/api/catchup/read", json={"key": item["key"], "read": False}).status_code == 200
+    assert client.get("/api/catchup?scope=today").json()["unread"] == 1
+    assert client.get("/api/catchup?scope=since&since=invalid").status_code == 400
+    assert client.get("/api/catchup?scope=today&page=0").status_code == 422
+    assert client.post("/api/catchup/read", json={"key": "bad", "read": True}).status_code == 422
+
+
+def test_task_inbox_requires_login_and_supports_confirmation_and_edit(web_client, tmp_path):
+    client, _, _ = web_client
+    assert client.get("/tasks", follow_redirects=False).status_code == 303
+    assert client.get("/api/tasks").status_code == 401
+    assert client.get("/api/tasks/suggestions").status_code == 401
+    assert client.post("/api/tasks/from-message", json={
+        "group_id": 123, "msg_id": "m1", "title": "任务", "owner": "",
+    }).status_code == 401
+    assert client.patch("/api/tasks/1", json={
+        "title": "任务", "owner": "", "status": "open",
+    }).status_code == 401
+
+    today = datetime.now(ZoneInfo("Asia/Shanghai")).date().isoformat()
+    source_time = datetime.now(ZoneInfo("Asia/Shanghai"))
+    archive = client.app.state.archive
+    archive.ingest([NormalizedMessage(
+        msg_id="task-source", group_id=123, sender_qq=1001,
+        timestamp=source_time, collected_at=source_time,
+        text="小王确认本周提交文档",
+    )])
+    payload_path = tmp_path / "task-report.json"
+    payload_path.write_text(json.dumps({
+        "evidence_version": 1, "overview": "", "main_topics": [],
+        "conclusions": [], "resources": [],
+        "tasks": [{"owner": "小王", "description": "提交文档", "deadline": "本周",
+                   "message_ids": ["task-source"]}],
+        "open_questions": [],
+    }, ensure_ascii=False), encoding="utf-8")
+    archive.record_report(group_id=123, report_date=today,
+                          markdown_path=tmp_path / "task-report.md",
+                          json_path=payload_path, candidate_ids=[])
+
+    client.post("/login", data={"password": "password123"})
+    assert "待办收件箱" in client.get("/tasks").text
+    suggested = client.get("/api/tasks/suggestions").json()["items"]
+    assert len(suggested) == 1
+    assert suggested[0]["source_ids"] == ["task-source"]
+    key = suggested[0]["key"]
+    confirmed = client.post(f"/api/tasks/suggestions/{key}/decision", json={
+        "action": "confirm", "title": "提交最终文档", "owner": "小王", "due_date": today,
+    })
+    assert confirmed.status_code == 200
+    task = confirmed.json()["task"]
+    assert task["source_ids"] == ["task-source"]
+    assert task["due_bucket"] == "today"
+    assert client.get("/api/tasks/suggestions").json()["items"] == []
+    assert client.get("/api/tasks").json()["counts"]["today"] == 1
+    edited = client.patch(f"/api/tasks/{task['task_id']}", json={
+        "title": "已提交", "owner": "小王", "due_date": today, "status": "completed",
+    })
+    assert edited.status_code == 200
+    assert edited.json()["task"]["status"] == "completed"
+    assert edited.json()["task"]["source_ids"] == ["task-source"]
+    assert client.get("/api/tasks?status=completed").json()["items"][0]["title"] == "已提交"
+    assert client.post("/api/tasks/from-message", json={
+        "group_id": 123, "msg_id": "missing", "title": "伪造", "owner": "",
+    }).status_code == 400
+    created = client.post("/api/tasks/from-message", json={
+        "group_id": 123, "msg_id": "task-source", "title": "从消息创建", "owner": "",
+    })
+    assert created.status_code == 200
+    assert created.json()["task"]["source_ids"] == ["task-source"]
+
+
+def test_desktop_settings_api_uses_local_bridge_after_login(web_client):
+    client, _, _ = web_client
+
+    class FakeBridge:
+        def get_settings(self):
+            return {"storage_path": "D:/data", "export_path": "D:/exports", "backup_path": "D:/backups", "auto_start": False, "packaged": True}
+
+        def choose_folder(self, kind):
+            return "D:/picked" if kind == "storage" else "D:/exports"
+
+        def migrate_storage(self, destination):
+            return {"path": destination, "restart_required": True}
+
+        def export_reports(self, destination, format):
+            return {"path": destination, "format": format, "reports": 1, "files": 2, "missing": 0}
+
+        def set_auto_start(self, enabled):
+            return {"auto_start": enabled}
+
+        def backup_data(self):
+            return {"path": "D:/backups/backup.zip"}
+
+        def set_backup_schedule(self, schedule):
+            return {"backup_schedule": schedule}
+
+        def choose_backup_file(self):
+            return "D:/backups/backup.zip"
+
+        def preview_restore(self, path):
+            return {"valid": True, "path": path, "sha256": "a" * 64, "messages": 3,
+                    "reports": 1, "knowledge_items": 2}
+
+        def restore_backup(self, path, destination, expected_sha256):
+            assert expected_sha256 == "a" * 64
+            return {"path": destination, "safety_backup": "D:/backups/safety.zip",
+                    "restart_required": True}
+
+        def open_folder(self, kind):
+            return {"path": "D:/" + kind}
+
+    assert client.get("/api/desktop-settings").status_code == 401
+    client.post("/login", data={"password": "password123"})
+    assert client.get("/api/desktop-settings").status_code == 503
+    client.app.state.desktop_bridge = FakeBridge()
+    assert client.get("/api/desktop-settings").json()["storage_path"] == "D:/data"
+    assert client.post("/api/desktop-settings/choose-folder", json={"kind": "storage"}).json() == {"path": "D:/picked"}
+    assert client.post("/api/desktop-settings/migrate", json={"destination": "D:/new"}).json()["restart_required"]
+    assert client.post("/api/desktop-settings/export", json={"destination": "D:/exports", "format": "both"}).json()["files"] == 2
+    assert client.post("/api/desktop-settings/auto-start", json={"enabled": True}).json()["auto_start"]
+    assert client.post("/api/desktop-settings/backup", json={}).json()["path"].endswith("backup.zip")
+    assert client.post("/api/desktop-settings/backup-schedule", json={"schedule": "weekly"}).json()["backup_schedule"] == "weekly"
+    assert client.post("/api/desktop-settings/choose-backup", json={}).json()["path"].endswith("backup.zip")
+    assert client.post("/api/desktop-settings/restore-preview", json={"path": "D:/backups/backup.zip"}).json()["messages"] == 3
+    assert client.post("/api/desktop-settings/restore", json={"path": "D:/backups/backup.zip", "destination": "D:/restored", "sha256": "a" * 64}).json()["restart_required"]
+    assert client.post("/api/desktop-settings/open-folder", json={"kind": "storage"}).json()["path"] == "D:/storage"
+
+
+def test_desktop_backup_returns_actionable_validation_error(web_client):
+    client, _, _ = web_client
+    class Bridge:
+        def backup_data(self):
+            raise ValueError("尚无消息数据库，无法生成可恢复的备份")
+    client.app.state.desktop_bridge = Bridge()
+    client.post("/login", data={"password": "password123"})
+    response = client.post("/api/desktop-settings/backup", json={})
+    assert response.status_code == 400
+    assert "消息数据库" in response.json()["detail"]
 
 
 def test_ask_report_requires_login_and_validates_input(web_client, tmp_path):
@@ -173,6 +364,8 @@ def test_ai_settings_page_saves_key_without_echoing_it(web_client, tmp_path):
     assert before == {
         "base_url": "https://api.example.com/v1",
         "model": "gpt-test",
+        "provider_priority": ["chatgpt_bridge", "compatible"],
+        "bridge_model": "",
         "key_configured": False,
     }
     assert saved.status_code == 200
@@ -307,6 +500,60 @@ def test_jobs_api_returns_bounded_failure_reason(web_client):
     assert len(job["error"]) == 500
 
 
+def test_health_flags_failed_daily_summary_after_successful_message_sync(web_client):
+    client, _, _ = web_client
+    archive = client.app.state.archive
+    daily = archive.start_job("daily_digest", target_date="2026-09-27")
+    archive.finish_job(daily, "failed", "API key temporarily unavailable")
+    sync = archive.start_job("message_sync")
+    archive.finish_job(sync, "success")
+    client.post("/login", data={"password": "password123"}, follow_redirects=False)
+
+    health = client.get("/api/health").json()
+    jobs = client.get("/api/jobs").json()["jobs"]
+
+    assert health["latest_job_status"] == "success"
+    assert health["latest_daily_status"] == "failed"
+    assert health["latest_daily_date"] == "2026-09-27"
+    assert jobs[1]["target_date"] == "2026-09-27"
+
+
+def test_health_shows_latest_report_date_after_older_catchup_finishes(web_client):
+    client, _, _ = web_client
+    archive = client.app.state.archive
+    recent = archive.start_job("daily_digest", target_date="2026-09-27")
+    archive.finish_job(recent, "failed", "newer report failed")
+    older = archive.start_job("daily_digest", target_date="2026-09-26")
+    archive.finish_job(older, "success")
+    client.post("/login", data={"password": "password123"}, follow_redirects=False)
+
+    health = client.get("/api/health").json()
+
+    assert health["latest_daily_date"] == "2026-09-27"
+    assert health["latest_daily_status"] == "failed"
+
+
+def test_scheduler_status_after_restart_uses_latest_report_date(web_client, tmp_path):
+    client, _, _ = web_client
+    archive = client.app.state.archive
+    recent = archive.start_job("daily_digest", target_date="2026-09-27")
+    archive.finish_job(recent, "failed", "newer report failed")
+    older = archive.start_job("daily_digest", target_date="2026-09-26")
+    archive.finish_job(older, "success")
+    app = create_app(
+        archive=archive,
+        candidates=CandidateService(archive),
+        knowledge=KnowledgeWriter(tmp_path / "knowledge"),
+        password_hash=PasswordHasher.hash("password123"),
+        session_secret="test-secret",
+        config=client.app.state.config,
+    )
+    restarted = TestClient(app)
+    restarted.post("/login", data={"password": "password123"}, follow_redirects=False)
+
+    assert restarted.get("/api/scheduler").json()["last_result"]["status"] == "failed"
+
+
 def test_dashboard_renders_job_errors_with_html_escaping(web_client):
     client, _, _ = web_client
     client.post("/login", data={"password": "password123"}, follow_redirects=False)
@@ -316,6 +563,7 @@ def test_dashboard_renders_job_errors_with_html_escaping(web_client):
     assert response.status_code == 200
     assert "job-error" in response.text
     assert "escapeHtml(job.error" in response.text
+    assert 'id="health-daily"' in response.text
 
 
 def test_stats_counts_daily_and_range_reports(web_client, tmp_path):
@@ -363,6 +611,299 @@ def test_groups_api_includes_archive_stats(web_client):
     assert "template" not in group
     assert group["keywords"] == []
     assert group["collection_window_days"] == 30
+
+
+def test_groups_api_exposes_sync_failure_for_repair(web_client):
+    client, _, _ = web_client
+    archive = client.app.state.archive
+    archive.mark_sync_failure(group_id=123, status="adapter_incompatible", error="消息库读取失败")
+    client.post("/login", data={"password": "password123"})
+
+    group = client.get("/api/groups").json()["groups"][0]
+
+    assert group["sync_status"] == "adapter_incompatible"
+    assert group["sync_error"] == "消息库读取失败"
+    assert group["last_sync_attempt"]
+    assert group["last_success_at"] is None
+
+
+def test_discovery_flags_source_message_missing_after_successful_sync(web_client, monkeypatch):
+    client, _, _ = web_client
+    config = client.app.state.config
+    config.ntqq.enabled = True
+    config.ntqq.db_dir = "unused-in-test"
+    source_time = datetime(2026, 9, 27, 12, tzinfo=ZoneInfo("Asia/Shanghai"))
+    archive = client.app.state.archive
+    archive.ingest([NormalizedMessage(
+        msg_id="older", group_id=123, sender_qq=1,
+        timestamp=source_time - timedelta(days=1), collected_at=source_time,
+        text="旧消息",
+    )])
+    archive.mark_sync(group_id=123, last_timestamp=source_time + timedelta(minutes=1))
+
+    class SourceCollector:
+        def __init__(self, **kwargs):
+            pass
+
+        def discover_groups(self):
+            return [{"group_id": 123, "name": "测试群", "message_count_30d": 2,
+                     "latest_message_at": source_time}]
+
+    monkeypatch.setattr("qq_digest.web.app.NTQQCollector", SourceCollector)
+    client.post("/login", data={"password": "password123"})
+
+    source = client.get("/api/discover-groups").json()["groups"][0]
+
+    assert source["suspected_gap"] is True
+    assert source["source_has_newer_messages"] is True
+    assert source["archive_latest_message_at"] is not None
+
+
+def test_manual_collect_failure_is_reported_and_keeps_previous_cursor(web_client, monkeypatch):
+    client, _, _ = web_client
+    config = client.app.state.config
+    config.ntqq.enabled = True
+    config.ntqq.db_dir = "unused-in-test"
+    archive = client.app.state.archive
+    prior = datetime(2026, 9, 27, 12, tzinfo=ZoneInfo("UTC"))
+    archive.mark_sync(group_id=123, last_timestamp=prior)
+
+    class BrokenCollector:
+        def __init__(self, **kwargs):
+            pass
+
+        def collect(self, group_id, start, end):
+            raise RuntimeError("消息表无法读取")
+
+    monkeypatch.setattr("qq_digest.web.app.NTQQCollector", BrokenCollector)
+    client.post("/login", data={"password": "password123"})
+
+    response = client.post("/api/collect", json={
+        "group_id": 123, "start": "2026-09-20", "end": "2026-09-21",
+    })
+
+    assert response.status_code == 503
+    assert "消息表无法读取" in response.json()["detail"]
+    state = archive.connection.execute(
+        "SELECT last_timestamp, last_success_at, status, error FROM sync_state WHERE group_id=123"
+    ).fetchone()
+    assert state["last_timestamp"] == prior.isoformat()
+    assert state["status"] == "manual_collect_failed"
+    assert state["error"] == "消息表无法读取"
+
+
+def test_repair_refreshes_source_before_collecting_old_range(web_client, monkeypatch):
+    client, _, _ = web_client
+    config = client.app.state.config
+    config.ntqq.enabled = True
+    config.ntqq.db_dir = "unused-in-test"
+    archive = client.app.state.archive
+    prior = datetime(2026, 9, 27, 12, tzinfo=ZoneInfo("UTC"))
+    archive.mark_sync(group_id=123, last_timestamp=prior)
+    archive.mark_sync_failure(group_id=123, status="manual_collect_failed", error="此前采集失败")
+    calls = []
+
+    def refresh_database(**kwargs):
+        calls.append("refresh")
+        return SimpleNamespace(success=True, message="已刷新")
+
+    class SourceCollector:
+        def __init__(self, **kwargs):
+            pass
+
+        def collect(self, group_id, start, end):
+            calls.append("collect")
+            return [NormalizedMessage(
+                msg_id="missed", group_id=group_id, sender_qq=1,
+                timestamp=datetime(2026, 9, 20, 12, tzinfo=ZoneInfo("Asia/Shanghai")),
+                collected_at=prior, text="遗漏消息",
+            )]
+
+    monkeypatch.setattr("qq_digest.refresh.refresh_database", refresh_database)
+    monkeypatch.setattr("qq_digest.web.app.NTQQCollector", SourceCollector)
+    client.post("/login", data={"password": "password123"})
+
+    response = client.post("/api/collect", json={
+        "group_id": 123, "start": "2026-09-20", "end": "2026-09-21", "refresh": True,
+    })
+
+    assert response.status_code == 200
+    assert response.json()["inserted"] == 1
+    assert response.json()["missing_days"] == [{"date": "2026-09-20", "count": 1}]
+    assert calls == ["refresh", "collect"]
+    assert archive.count_messages(123) == 1
+    state = archive.connection.execute(
+        "SELECT last_timestamp, last_success_at, status, error FROM sync_state WHERE group_id=123"
+    ).fetchone()
+    assert state["last_timestamp"] == prior.isoformat()
+    assert state["status"] == "manual_repair_completed"
+    assert state["error"] == ""
+    assert state["last_success_at"]
+
+    repeated = client.post("/api/collect", json={
+        "group_id": 123, "start": "2026-09-20", "end": "2026-09-21", "refresh": True,
+    })
+    assert repeated.status_code == 200
+    assert repeated.json()["inserted"] == 0
+    assert repeated.json()["missing_days"] == []
+
+
+def test_failed_repair_refresh_does_not_collect_stale_source(web_client, monkeypatch):
+    client, _, _ = web_client
+    config = client.app.state.config
+    config.ntqq.enabled = True
+    config.ntqq.db_dir = "unused-in-test"
+    called = []
+
+    def refresh_database(**kwargs):
+        return SimpleNamespace(success=False, message="QQ 未运行")
+
+    class SourceCollector:
+        def __init__(self, **kwargs):
+            pass
+
+        def collect(self, group_id, start, end):
+            called.append(True)
+            return []
+
+    monkeypatch.setattr("qq_digest.refresh.refresh_database", refresh_database)
+    monkeypatch.setattr("qq_digest.web.app.NTQQCollector", SourceCollector)
+    client.post("/login", data={"password": "password123"})
+
+    response = client.post("/api/collect", json={
+        "group_id": 123, "start": "2026-09-20", "end": "2026-09-21", "refresh": True,
+    })
+
+    assert response.status_code == 503
+    assert "QQ 未运行" in response.json()["detail"]
+    assert called == []
+
+
+def test_gap_check_reports_missing_days_without_changing_archive(web_client, monkeypatch):
+    client, _, _ = web_client
+    config = client.app.state.config
+    config.ntqq.enabled = True
+    config.ntqq.db_dir = "unused-in-test"
+    stamp = datetime(2026, 9, 20, 12, tzinfo=ZoneInfo("Asia/Shanghai"))
+
+    def refresh_database(**kwargs):
+        return SimpleNamespace(success=True, message="已刷新")
+
+    class SourceCollector:
+        def __init__(self, **kwargs):
+            pass
+
+        def collect(self, group_id, start, end):
+            return [NormalizedMessage(
+                msg_id="source-only", group_id=group_id, sender_qq=1,
+                timestamp=stamp, collected_at=stamp, text="尚未归档",
+            )]
+
+    monkeypatch.setattr("qq_digest.refresh.refresh_database", refresh_database)
+    monkeypatch.setattr("qq_digest.web.app.NTQQCollector", SourceCollector)
+    client.post("/login", data={"password": "password123"})
+
+    response = client.post("/api/collect", json={
+        "group_id": 123, "start": "2026-09-20", "end": "2026-09-21",
+        "refresh": True, "dry_run": True,
+    })
+
+    assert response.status_code == 200
+    assert response.json()["missing_days"] == [{"date": "2026-09-20", "count": 1}]
+    assert response.json()["inserted"] == 0
+    assert client.app.state.archive.count_messages(123) == 0
+    assert client.app.state.archive.connection.execute(
+        "SELECT 1 FROM sync_state WHERE group_id=123"
+    ).fetchone() is None
+
+
+def test_failed_gap_check_does_not_change_sync_state(web_client, monkeypatch):
+    client, _, _ = web_client
+    config = client.app.state.config
+    config.ntqq.enabled = True
+    config.ntqq.db_dir = "unused-in-test"
+    archive = client.app.state.archive
+    prior = datetime(2026, 9, 27, 12, tzinfo=ZoneInfo("UTC"))
+    archive.mark_sync(group_id=123, last_timestamp=prior)
+    before = dict(archive.connection.execute(
+        "SELECT * FROM sync_state WHERE group_id=123"
+    ).fetchone())
+    monkeypatch.setattr(
+        "qq_digest.refresh.refresh_database",
+        lambda **kwargs: SimpleNamespace(success=False, message="QQ 未运行"),
+    )
+    client.post("/login", data={"password": "password123"})
+
+    response = client.post("/api/collect", json={
+        "group_id": 123, "start": "2026-09-20", "end": "2026-09-21",
+        "refresh": True, "dry_run": True,
+    })
+
+    assert response.status_code == 503
+    assert dict(archive.connection.execute(
+        "SELECT * FROM sync_state WHERE group_id=123"
+    ).fetchone()) == before
+
+
+def test_first_manual_repair_records_success_without_creating_auto_cursor(web_client, monkeypatch):
+    client, _, _ = web_client
+    config = client.app.state.config
+    config.ntqq.enabled = True
+    config.ntqq.db_dir = "unused-in-test"
+
+    class EmptyCollector:
+        def __init__(self, **kwargs):
+            pass
+
+        def collect(self, group_id, start, end):
+            return []
+
+    monkeypatch.setattr("qq_digest.web.app.NTQQCollector", EmptyCollector)
+    client.post("/login", data={"password": "password123"})
+
+    response = client.post("/api/collect", json={
+        "group_id": 123, "start": "2026-09-20", "end": "2026-09-21",
+    })
+
+    assert response.status_code == 200
+    archive = client.app.state.archive
+    state = archive.connection.execute(
+        "SELECT last_timestamp, last_success_at, status FROM sync_state WHERE group_id=123"
+    ).fetchone()
+    assert state["last_timestamp"] is None
+    assert state["last_success_at"]
+    assert state["status"] == "manual_repair_completed"
+
+
+def test_manual_collect_does_not_advance_periodic_sync_cursor(web_client, monkeypatch):
+    client, _, _ = web_client
+    config = client.app.state.config
+    config.ntqq.enabled = True
+    config.ntqq.db_dir = "unused-in-test"
+    archive = client.app.state.archive
+    prior = datetime.now(ZoneInfo("Asia/Shanghai")) - timedelta(days=2)
+    archive.mark_sync(group_id=123, last_timestamp=prior)
+
+    class EmptyCollector:
+        def __init__(self, **kwargs):
+            pass
+
+        def collect(self, group_id, start, end):
+            return []
+
+    monkeypatch.setattr("qq_digest.web.app.NTQQCollector", EmptyCollector)
+    client.post("/login", data={"password": "password123"})
+    today = datetime.now(ZoneInfo("Asia/Shanghai")).date().isoformat()
+
+    response = client.post("/api/collect", json={
+        "group_id": 123, "start": today, "end": today,
+    })
+
+    assert response.status_code == 200
+    state = archive.connection.execute(
+        "SELECT last_timestamp FROM sync_state WHERE group_id=123"
+    ).fetchone()
+    assert state["last_timestamp"] == prior.astimezone(ZoneInfo("UTC")).isoformat()
 
 
 def test_summary_pages_do_not_expose_template_controls(web_client):
@@ -590,6 +1131,83 @@ def test_daily_report_list_omits_legacy_template_metadata(web_client, tmp_path):
     assert "effective_template" not in daily
 
 
+def test_report_claim_sources_open_only_cited_messages_in_report_scope(web_client, tmp_path):
+    client, _, _ = web_client
+    archive = client.app.state.archive
+    local_tz = ZoneInfo("Asia/Shanghai")
+    messages = [
+        NormalizedMessage(msg_id=msg_id, group_id=123, sender_qq=sender,
+                          timestamp=datetime(2026, 9, day, hour, minute, tzinfo=local_tz),
+                          collected_at=datetime(2026, 9, day, hour, minute, tzinfo=local_tz),
+                          text=text)
+        for msg_id, day, hour, minute, sender, text in [
+            ("before", 2, 11, 59, 1, "开始讨论"),
+            ("cited", 2, 12, 0, 2, "决定采用方案 A"),
+            ("after", 2, 12, 1, 3, "明天复查"),
+            ("other-day", 3, 12, 0, 4, "另一日内容"),
+        ]
+    ]
+    archive.ingest(messages)
+    markdown_path = tmp_path / "cited.md"
+    json_path = tmp_path / "cited.json"
+    markdown_path.write_text("# 测试群日报", encoding="utf-8")
+    json_path.write_text(json.dumps({
+        "evidence_version": 1,
+        "conclusions": [
+            {"text": "采用方案 A", "message_ids": ["cited"]},
+            {"text": "跨日伪引用", "message_ids": ["other-day"]},
+        ],
+    }), encoding="utf-8")
+    report_id = archive.record_report(
+        group_id=123, report_date="2026-09-02", markdown_path=markdown_path,
+        json_path=json_path, candidate_ids=[],
+    )
+    url = f"/api/reports/daily/{report_id}/sources/cited"
+    assert client.get(url).status_code == 401
+    client.post("/login", data={"password": "password123"})
+
+    detail = client.get(f"/api/reports/daily/{report_id}").json()
+    assert detail["evidence_status"] == "available"
+    assert detail["evidence_items"][0]["source_ids"] == ["cited"]
+    assert detail["evidence_items"][1]["source_ids"] == []
+    assert detail["evidence_items"][1]["status"] == "unverified"
+    context = client.get(url)
+    assert context.status_code == 200
+    assert [row["msg_id"] for row in context.json()["messages"]][:3] == [
+        "before", "cited", "after"
+    ]
+    assert client.get(f"/api/reports/daily/{report_id}/sources/before").status_code == 404
+    assert client.get(f"/api/reports/daily/{report_id}/sources/other-day").status_code == 404
+
+
+def test_legacy_report_detail_explains_missing_citations(web_client, tmp_path):
+    client, _, _ = web_client
+    markdown_path = tmp_path / "legacy.md"
+    markdown_path.write_text("# 旧日报", encoding="utf-8")
+    report_id = client.app.state.archive.record_report(
+        group_id=123, report_date="2026-09-02", markdown_path=markdown_path,
+        json_path=tmp_path / "missing.json", candidate_ids=[],
+    )
+    client.post("/login", data={"password": "password123"})
+
+    detail = client.get(f"/api/reports/daily/{report_id}").json()
+
+    assert detail["evidence_status"] == "legacy"
+    assert detail["evidence_items"] == []
+
+
+def test_report_page_has_per_claim_source_controls(web_client):
+    client, _, _ = web_client
+    client.post("/login", data={"password": "password123"})
+
+    page = client.get("/reports").text
+
+    assert 'id="report-evidence"' in page
+    assert 'id="report-source-context"' in page
+    assert "function openReportSource(" in page
+    assert "/sources/" in page
+
+
 def test_report_list_shows_messages_actually_used_for_daily_and_range_reports(web_client, tmp_path):
     client, _, _ = web_client
     archive = client.app.state.archive
@@ -815,7 +1433,7 @@ def test_operational_ui_contains_group_search_and_safe_render_helpers(web_client
     groups = client.get("/groups")
 
     assert dashboard.status_code == 200
-    assert "运行总览" in dashboard.text
+    assert "工作台总览" in dashboard.text
     assert "function escapeHtml" in dashboard.text
     assert "function dailyResultMessage" in dashboard.text
     assert "data.detail.message" in dashboard.text

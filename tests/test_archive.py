@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta, timezone
+import sqlite3
 from zoneinfo import ZoneInfo
 
 from qq_digest.archive import Archive
@@ -77,6 +78,62 @@ def test_archive_records_knowledge_item_idempotently(tmp_path):
         "SELECT COUNT(*) AS total FROM knowledge_items"
     ).fetchone()["total"]
     assert count == 1
+
+
+def test_sync_failure_keeps_cursor_and_repair_does_not_rewind_it(tmp_path):
+    archive = Archive.open(tmp_path / "archive.sqlite")
+    archive.upsert_groups([GroupConfig(group_id=123, name="测试群")])
+    newer = datetime(2026, 9, 27, 12, tzinfo=ZoneInfo("UTC"))
+    older = datetime(2026, 9, 20, 12, tzinfo=ZoneInfo("UTC"))
+
+    archive.mark_sync(group_id=123, last_timestamp=newer)
+    archive.mark_sync_failure(group_id=123, status="adapter_incompatible", error="消息库读取失败")
+    failed = archive.connection.execute(
+        "SELECT last_timestamp, status, error FROM sync_state WHERE group_id=123"
+    ).fetchone()
+    assert failed["last_timestamp"] == newer.isoformat()
+    assert failed["status"] == "adapter_incompatible"
+    assert failed["error"] == "消息库读取失败"
+
+    archive.mark_sync(group_id=123, last_timestamp=older)
+    repaired = archive.connection.execute(
+        "SELECT last_timestamp, status, error FROM sync_state WHERE group_id=123"
+    ).fetchone()
+    assert repaired["last_timestamp"] == newer.isoformat()
+    assert repaired["status"] == "active"
+    assert repaired["error"] == ""
+
+
+def test_legacy_sync_state_gains_last_success_time(tmp_path):
+    path = tmp_path / "archive.sqlite"
+    connection = sqlite3.connect(path)
+    connection.execute(
+        """CREATE TABLE sync_state (
+            group_id INTEGER PRIMARY KEY, last_timestamp TEXT,
+            backfill_completed_at TEXT, status TEXT NOT NULL,
+            updated_at TEXT NOT NULL, error TEXT NOT NULL DEFAULT ''
+        )"""
+    )
+    connection.execute(
+        "INSERT INTO sync_state(group_id,last_timestamp,status,updated_at) VALUES (1,?,?,?)",
+        ("2026-09-20T12:00:00+00:00", "active", "2026-09-21T12:00:00+00:00"),
+    )
+    connection.execute(
+        "INSERT INTO sync_state(group_id,last_timestamp,status,updated_at,error) VALUES (2,?,?,?,?)",
+        ("2026-09-19T12:00:00+00:00", "adapter_incompatible", "2026-09-22T12:00:00+00:00", "failed"),
+    )
+    connection.commit()
+    connection.close()
+
+    archive = Archive.open(path)
+    rows = archive.connection.execute(
+        "SELECT group_id,last_success_at FROM sync_state ORDER BY group_id"
+    ).fetchall()
+    assert [row["last_success_at"] for row in rows] == [
+        "2026-09-21T12:00:00+00:00",
+        "2026-09-19T12:00:00+00:00",
+    ]
+    archive.close()
 
 
 def test_delete_group_purges_all_related_database_records(tmp_path):

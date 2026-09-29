@@ -22,14 +22,15 @@ FORMAT_ADAPTIVE = """\
 输出 JSON，字段如下：
 - group_id: 整数，群的 group_id
 - overview: 今日概览字符串，直接说明当天最值得知道的事，通常 1 至 2 句
-- main_topics: 数组，不设最低数量；每条含 topic 和 summary
-- conclusions: 字符串数组，只记录讨论后明确形成的决定或经过验证的结果，不复述话题
-- resources: 数组，每条含 title、url、description
-- tasks: 数组，只记录明确承诺的未来行动；每条含 owner、description、deadline（可选）
-- open_questions: 字符串数组，只记录有后续价值的未解决问题或争议
+- overview_message_ids: 支撑概览的原始消息 ID 数组
+- main_topics: 数组，不设最低数量；每条含 topic、summary、message_ids
+- conclusions: 对象数组，每条含 text、message_ids；只记录讨论后明确形成的决定或经过验证的结果，不复述话题
+- resources: 数组，每条含 title、url、description、message_ids
+- tasks: 数组，只记录明确承诺的未来行动；每条含 owner、description、deadline（可选）、message_ids
+- open_questions: 对象数组，每条含 text、message_ids；只记录有后续价值的未解决问题或争议
 - candidates: 数组，每条含 title、reason、type（resource 或 experience）、content、link、message_ids
 
-conclusions 和 open_questions 的每个元素必须是 JSON 字符串，不能用对象包裹。
+每条重要内容的 message_ids 最多 3 个，只能引用下方消息行首方括号中的真实 ID；不得编造消息 ID。没有足够原消息证据时留空数组，并在内容中明确说“待核实”，不得把推测写成事实。
 
 main_topics 的 summary 只写理解话题所需的事实、不同观点和当前状态，不设固定字数；一句能说清就只写一句。参与者归属明确时可以注明，不得猜测。"""
 

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import re
+import os
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Mapping
@@ -66,6 +68,34 @@ def write_item(path: Path, item: KnowledgeItem) -> None:
         handle.write("\n".join(lines))
 
 
+def remove_item(path: Path, item_id: str) -> str:
+    """Remove one generated entry and return the original file text for rollback."""
+    path = Path(path)
+    original = path.read_text(encoding="utf-8")
+    lines = original.splitlines(keepends=True)
+    marker = f"条目 ID：{_single_line(item_id)}"
+    positions = [index for index, line in enumerate(lines) if line.rstrip("\r\n") == marker]
+    if len(positions) != 1:
+        raise ValueError("知识库中找不到唯一的对应条目")
+    end = positions[0] + 1
+    start = positions[0]
+    while start > 0 and not lines[start].startswith("## "):
+        start -= 1
+    if not lines[start].startswith("## "):
+        raise ValueError("知识库条目格式无法识别")
+    if end < len(lines) and not lines[end].strip():
+        end += 1
+    updated = "".join(lines[:start] + lines[end:])
+    with tempfile.NamedTemporaryFile("w", encoding="utf-8", newline="\n", dir=path.parent, delete=False) as handle:
+        temporary = Path(handle.name)
+        handle.write(updated)
+    try:
+        os.replace(temporary, path)
+    finally:
+        temporary.unlink(missing_ok=True)
+    return original
+
+
 class KnowledgeWriter:
     filenames = {
         "resource": "resources.md",
@@ -96,3 +126,6 @@ class KnowledgeWriter:
         path = self.path_for(item_type)
         write_item(path, item)
         return path
+
+    def remove(self, item_id: str, item_type: str) -> str:
+        return remove_item(self.path_for(item_type), item_id)

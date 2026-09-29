@@ -3,6 +3,7 @@ from zoneinfo import ZoneInfo
 import sqlite3
 
 from qq_digest.scheduler import daily_retry_state, summary_window
+from qq_digest.archive import Archive
 
 
 def test_summary_window_today():
@@ -98,8 +99,8 @@ def test_daily_retry_stops_after_success_or_attempt_limit():
 
     assert limited.due is False
     assert limited.attempts == 3
-    assert successful.due is False
-    assert successful.succeeded is True
+    assert successful.due is True
+    assert successful.succeeded is False
 
 
 def test_daily_retry_retries_partial_success_after_interval():
@@ -135,3 +136,128 @@ def test_daily_retry_retries_partial_success_after_interval():
     assert waiting.due is False
     assert due.due is True
     assert due.succeeded is False
+
+
+def test_catchup_job_does_not_consume_todays_scheduled_attempt(tmp_path):
+    archive = Archive.open(tmp_path / "archive.sqlite")
+    archive.connection.execute(
+        """INSERT INTO jobs(job_type,status,started_at,finished_at,target_date)
+           VALUES ('daily_digest','success','2026-09-28T05:00:00+00:00',
+                   '2026-09-28T05:01:00+00:00','2026-09-27')"""
+    )
+
+    state = daily_retry_state(
+        archive.connection,
+        datetime(2026, 9, 28, 22, 5, tzinfo=ZoneInfo("Asia/Shanghai")),
+        target_hour=22,
+        target_minute=0,
+        max_attempts=3,
+        retry_interval_minutes=15,
+        target_date="2026-09-28",
+    )
+
+    assert state.due is True
+    assert state.attempts == 0
+    archive.close()
+
+
+def test_catchup_finds_previous_failed_day_and_skips_success(tmp_path):
+    from qq_digest.scheduler import pending_catchup_date
+
+    archive = Archive.open(tmp_path / "archive.sqlite")
+    failed = archive.start_job("daily_digest", target_date="2026-09-27")
+    archive.finish_job(failed, "failed", "temporary key error")
+    archive.connection.execute(
+        """UPDATE jobs SET started_at='2026-09-27T14:53:00+00:00',
+               finished_at='2026-09-27T14:53:01+00:00' WHERE job_id=?""",
+        (failed,),
+    )
+    now = datetime(2026, 9, 28, 13, 0, tzinfo=ZoneInfo("Asia/Shanghai"))
+
+    assert pending_catchup_date(
+        archive.connection, now, mode="today", max_attempts=3,
+        retry_interval_minutes=15,
+    ).isoformat() == "2026-09-27"
+
+    successful = archive.start_job("daily_digest", target_date="2026-09-27")
+    archive.finish_job(successful, "success")
+    assert pending_catchup_date(
+        archive.connection, now, mode="today", max_attempts=3,
+        retry_interval_minutes=15,
+    ).isoformat() == "2026-09-26"
+    archive.close()
+
+
+def test_catchup_recognizes_failed_job_from_before_target_date_migration(tmp_path):
+    from qq_digest.scheduler import pending_catchup_date
+
+    archive = Archive.open(tmp_path / "archive.sqlite")
+    archive.connection.execute(
+        """INSERT INTO jobs(job_type,status,started_at,finished_at,error)
+           VALUES ('daily_digest','failed','2026-09-27T14:53:00+00:00',
+                   '2026-09-27T14:53:01+00:00','old key file failure')"""
+    )
+    now = datetime(2026, 9, 28, 13, tzinfo=ZoneInfo("Asia/Shanghai"))
+
+    assert pending_catchup_date(
+        archive.connection, now, mode="today", max_attempts=3,
+        retry_interval_minutes=15,
+    ).isoformat() == "2026-09-27"
+    archive.close()
+
+
+def test_catchup_run_at_covers_the_complete_historical_day():
+    from datetime import date
+    from qq_digest.scheduler import run_at_for_report_date
+
+    timezone = ZoneInfo("Asia/Shanghai")
+    target = date(2026, 9, 27)
+    today_run = run_at_for_report_date(target, "today", timezone)
+    previous_day_run = run_at_for_report_date(target, "previous_day", timezone)
+
+    assert summary_window(today_run, "today", timezone)[0].date() == target
+    assert today_run.hour == 23 and today_run.minute == 59
+    assert summary_window(previous_day_run, "previous_day", timezone)[0].date() == target
+
+
+def test_catchup_retries_when_a_later_attempt_is_partial(tmp_path):
+    from qq_digest.scheduler import pending_catchup_date
+
+    archive = Archive.open(tmp_path / "archive.sqlite")
+    first = archive.start_job("daily_digest", target_date="2026-09-27")
+    archive.finish_job(first, "success")
+    second = archive.start_job("daily_digest", target_date="2026-09-27")
+    archive.finish_job(second, "partial_success")
+    archive.connection.execute(
+        """UPDATE jobs SET started_at='2026-09-27T14:53:00+00:00',
+               finished_at='2026-09-27T14:54:00+00:00'"""
+    )
+    now = datetime(2026, 9, 28, 13, tzinfo=ZoneInfo("Asia/Shanghai"))
+
+    assert pending_catchup_date(
+        archive.connection, now, mode="today", max_attempts=3,
+        retry_interval_minutes=15,
+    ).isoformat() == "2026-09-27"
+    archive.close()
+
+
+def test_catchup_includes_all_unattempted_days_in_lookback(tmp_path):
+    from qq_digest.scheduler import pending_catchup_date
+
+    archive = Archive.open(tmp_path / "archive.sqlite")
+    now = datetime(2026, 9, 28, 13, tzinfo=ZoneInfo("Asia/Shanghai"))
+
+    for expected in ("2026-09-27", "2026-09-26", "2026-09-25"):
+        candidate = pending_catchup_date(
+            archive.connection, now, mode="today", max_attempts=3,
+            retry_interval_minutes=15,
+        )
+        assert candidate.isoformat() == expected
+        completed = archive.start_job("daily_digest", target_date=expected)
+        archive.finish_job(completed, "success")
+
+    assert pending_catchup_date(
+        archive.connection, now, mode="today", max_attempts=3,
+        retry_interval_minutes=15,
+    ) is None
+    archive.close()
