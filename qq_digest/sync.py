@@ -28,13 +28,15 @@ def run_message_sync(
     now: datetime | None = None,
     refresh: bool = True,
     collector=None,
+    retry_of_job_id: int | None = None,
 ) -> MessageSyncResult:
     """Refresh NTQQ and incrementally archive every enabled group."""
     timezone = ZoneInfo(config.summary.timezone)
     current = (now or datetime.now(timezone)).astimezone(timezone)
     archive = Archive.open(config.archive_path)
-    job_id = archive.start_job("message_sync")
+    job_id = archive.start_job("message_sync", retry_of_job_id=retry_of_job_id)
     result = MessageSyncResult(success=False)
+    group_outcomes: dict[int, str] = {}
     try:
         if not config.ntqq.enabled or not config.ntqq.db_dir:
             raise RuntimeError("NTQQ 未启用")
@@ -74,6 +76,7 @@ def run_message_sync(
                 messages = list(active_collector.collect(group.group_id, start, current))
                 ingest = archive.ingest(messages)
                 archive.mark_sync(group_id=group.group_id, last_timestamp=current)
+                group_outcomes[group.group_id] = "success"
                 result.groups_succeeded += 1
                 result.messages_inserted += ingest.inserted
                 result.messages_skipped += ingest.skipped
@@ -84,17 +87,19 @@ def run_message_sync(
                     error=str(exc),
                 )
                 result.errors.append(f"{group.name}: {exc}")
+                group_outcomes[group.group_id] = "failed"
 
         result.success = not result.errors
         archive.finish_job(
             job_id,
             "success" if result.success else "failed",
             "\n".join(result.errors),
+            group_outcomes=group_outcomes,
         )
         return result
     except Exception as exc:
         result.errors.append(str(exc))
-        archive.finish_job(job_id, "failed", str(exc))
+        archive.finish_job(job_id, "failed", str(exc), group_outcomes=group_outcomes)
         return result
     finally:
         archive.close()

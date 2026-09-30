@@ -14,6 +14,7 @@
 <nav class="overview-links" aria-label="常用操作">
   <a href="/catchup"><span><strong>跨群补看</strong><small>一次看完各群日报要点</small></span><span aria-hidden="true">↗</span></a>
   <a href="/tasks"><span><strong>待办收件箱</strong><small id="task-reminder">确认任务并跟踪截止日期</small></span><span aria-hidden="true">↗</span></a>
+  <a href="/failures"><span><strong>失败处理</strong><small>查看原因、重试并追踪结果</small></span><span aria-hidden="true">↗</span></a>
   <a href="/search"><span><strong>搜索归档</strong><small>查找消息、摘要与知识</small></span><span aria-hidden="true">↗</span></a>
   <a href="/reports"><span><strong>查看摘要</strong><small>浏览已生成的群聊简报</small></span><span aria-hidden="true">↗</span></a>
   <a href="/candidates"><span><strong>处理审核</strong><small>整理待确认的重点信息</small></span><span aria-hidden="true">↗</span></a>
@@ -45,7 +46,7 @@
 </div>
 
 <style>
-  .overview-links { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; margin-bottom: 16px; }
+  .overview-links { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-bottom: 16px; }
   .overview-links a { min-width: 0; min-height: 76px; padding: 15px 18px; display: flex; align-items: center; justify-content: space-between; gap: 16px; border: 1px solid #dbe8df; border-radius: 13px; background: #edf5ef; color: var(--text); text-decoration: none; transition: background 160ms ease, border-color 160ms ease, transform 120ms ease; }
   .overview-links a:hover { background: #e4f0e8; border-color: #bfd6c6; }
   .overview-links a:active { transform: translateY(1px); }

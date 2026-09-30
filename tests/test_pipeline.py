@@ -258,6 +258,25 @@ def test_run_daily_skips_ai_and_report_when_group_has_no_messages(tmp_path):
     assert archive.report_for(123, "2026-08-24") is None
 
 
+def test_run_daily_records_retry_origin(tmp_path):
+    now = datetime(2026, 8, 24, 22, 0, tzinfo=ZoneInfo("Asia/Shanghai"))
+    archive = Archive.open(tmp_path / "archive.sqlite")
+    archive.upsert_groups([GroupConfig(group_id=123, name="空群")])
+    original = archive.start_job("daily_digest", target_date="2026-08-24")
+    archive.finish_job(original, "failed", "AI 超时")
+    pipeline = DailyPipeline(
+        archive=archive, collector=EmptyCollector(), ai_client=CountingAI(),
+        report_dir=tmp_path / "reports", max_context_chars=1000,
+        timezone_name="Asia/Shanghai",
+    )
+    pipeline.run_daily(now, retry_of_job_id=original)
+    row = archive.connection.execute(
+        "SELECT retry_of_job_id,status FROM jobs ORDER BY job_id DESC LIMIT 1"
+    ).fetchone()
+    assert row["retry_of_job_id"] == original
+    assert row["status"] == "success"
+
+
 def test_run_daily_is_idempotent(tmp_path):
     now = datetime(2026, 8, 24, 22, 0, tzinfo=ZoneInfo("Asia/Shanghai"))
     pipeline, archive = make_pipeline(tmp_path, now)
@@ -303,13 +322,14 @@ def test_collection_failure_creates_visible_sync_state_without_advancing_cursor(
     result = pipeline.run_daily(now)
 
     state = archive.connection.execute(
-        "SELECT status, last_timestamp FROM sync_state WHERE group_id=123"
+        "SELECT status, last_timestamp, error FROM sync_state WHERE group_id=123"
     ).fetchone()
     assert result.groups_processed == 0
     assert result.status == "partial_success"
     assert result.failed_groups[0].stage == "collection"
     assert state["status"] == "adapter_incompatible"
     assert state["last_timestamp"] is None
+    assert state["error"]
 
 
 def test_same_day_report_regenerates_when_new_messages_arrive(tmp_path):

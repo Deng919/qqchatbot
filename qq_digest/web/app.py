@@ -21,6 +21,7 @@ from ..ai.client import AIClient, AIError
 from ..ai.key_store import save_ui_api_key, ui_api_key_exists
 from ..candidates import CandidateService
 from ..catchup import CatchupService
+from ..failure_center import FailureCenterService
 from ..task_inbox import TaskInboxService
 from ..candidate_context import candidate_source_context
 from ..collector.ntqq import NTQQCollector
@@ -298,7 +299,9 @@ def create_app(
                 "error": latest_sync_job["error"] or "",
             }
 
-    def _run_daily_task(cfg, run_at: datetime | None = None):
+    def _run_daily_task(
+        cfg, run_at: datetime | None = None, retry_of_job_id: int | None = None
+    ):
         """Synchronous daily pipeline: refresh DB then run summaries."""
         import logging
         scheduler_logger = logging.getLogger("qq_digest.scheduler")
@@ -314,7 +317,8 @@ def create_app(
             failure_archive = Archive.open(cfg.archive_path)
             try:
                 job_id = failure_archive.start_job(
-                    "daily_digest", target_date=target_date
+                    "daily_digest", target_date=target_date,
+                    retry_of_job_id=retry_of_job_id,
                 )
                 failure_archive.finish_job(job_id, "failed", error)
             finally:
@@ -384,7 +388,9 @@ def create_app(
                 ),
             )
             pipeline_started = True
-            result = pipeline.run_daily(scheduled_at)
+            result = pipeline.run_daily(
+                scheduled_at, retry_of_job_id=retry_of_job_id
+            )
             scheduler_logger.info(
                 "定时任务完成: %d 群, %d 消息, %d 报告, %d 候选",
                 result.groups_processed, result.messages_inserted,
@@ -760,6 +766,111 @@ def create_app(
         if not cookie.verify(request.cookies.get("qq_digest_session")):
             return RedirectResponse("/login", status_code=303)
         return templates.TemplateResponse(request, "tasks.html", {})
+
+    @app.get("/failures")
+    async def failure_center_page(request: Request):
+        if not cookie.verify(request.cookies.get("qq_digest_session")):
+            return RedirectResponse("/login", status_code=303)
+        return templates.TemplateResponse(request, "failures.html", {})
+
+    @app.get("/api/failures")
+    async def api_failures(request: Request):
+        require_login(request)
+        return FailureCenterService(_archive(request)).list_items()
+
+    @app.post("/api/failures/jobs/{job_id}/retry")
+    async def api_retry_failed_job(request: Request, job_id: int):
+        require_login(request)
+        cfg = _config(request)
+        if cfg is None:
+            raise HTTPException(status_code=503, detail="桌面配置不可用")
+        row = _archive(request).connection.execute(
+            "SELECT job_type,status,target_date FROM jobs WHERE job_id=?",
+            (job_id,),
+        ).fetchone()
+        if row is None:
+            raise HTTPException(status_code=404, detail="失败任务不存在")
+        if row["status"] not in {"failed", "partial_success"}:
+            raise HTTPException(status_code=409, detail="该任务当前不需要重试")
+        kind = row["job_type"]
+        if kind not in {"daily_digest", "message_sync"}:
+            raise HTTPException(status_code=400, detail="此任务暂无直接重试方式")
+        if kind == "message_sync" and not cfg.ntqq.enabled:
+            raise HTTPException(status_code=503, detail="NTQQ 采集未启用")
+        run_at = None
+        if kind == "daily_digest":
+            try:
+                target = date.fromisoformat(row["target_date"] or "")
+            except ValueError as exc:
+                raise HTTPException(status_code=400, detail="旧任务缺少有效报告日期") from exc
+            now = datetime.now(ZoneInfo(cfg.summary.timezone))
+            if target > now.date():
+                raise HTTPException(status_code=400, detail="不能重试未来日期")
+            if target == now.date() and cfg.summary.window_mode == "today":
+                run_at = now
+            else:
+                run_at = run_at_for_report_date(
+                    target, cfg.summary.window_mode, ZoneInfo(cfg.summary.timezone)
+                )
+                if run_at > now:
+                    raise HTTPException(status_code=400, detail="报告日期的完整窗口尚未结束")
+        try:
+            with operations.claim("daily" if kind == "daily_digest" else "sync"):
+                current = _archive(request).connection.execute(
+                    "SELECT * FROM jobs WHERE job_id=?", (job_id,)
+                ).fetchone()
+                if (current is None or current["status"] not in {"failed", "partial_success"}
+                        or FailureCenterService(_archive(request)).job_is_recovered(current)):
+                    raise HTTPException(status_code=409, detail="该失败已恢复或任务状态已变化")
+                if kind == "daily_digest":
+                    scheduler_state["running"] = True
+                    try:
+                        result = await asyncio.to_thread(
+                            _run_daily_task, cfg, run_at, job_id
+                        )
+                    finally:
+                        scheduler_state["running"] = False
+                    status = result.get("status", "failed")
+                else:
+                    from ..sync import run_message_sync
+                    sync_scheduler_state["running"] = True
+                    try:
+                        result = await asyncio.to_thread(
+                            run_message_sync, config=cfg, retry_of_job_id=job_id
+                        )
+                    finally:
+                        sync_scheduler_state["running"] = False
+                    status = "success" if result.success else "failed"
+        except OperationBusy as exc:
+            raise HTTPException(
+                status_code=409,
+                detail={"message": "已有冲突任务在运行", "active": exc.active},
+            ) from exc
+        retry = _archive(request).connection.execute(
+            "SELECT job_id,status FROM jobs WHERE retry_of_job_id=? ORDER BY job_id DESC LIMIT 1",
+            (job_id,),
+        ).fetchone()
+        return {
+            "status": retry["status"] if retry else status,
+            "retry_job_id": retry["job_id"] if retry else None,
+        }
+
+    @app.post("/api/failures/notifications/{send_id}/retry")
+    async def api_retry_failed_notification(request: Request, send_id: int):
+        require_login(request)
+        row = _archive(request).connection.execute(
+            "SELECT status FROM send_log WHERE send_id=?", (send_id,)
+        ).fetchone()
+        if row is None:
+            raise HTTPException(status_code=404, detail="通知记录不存在")
+        if row["status"] != "failed":
+            raise HTTPException(status_code=409, detail="通知已在队列中或已发送")
+        cfg = _config(request)
+        if cfg is None or not cfg.qq_bot.enabled or not cfg.qq_bot.app_id:
+            raise HTTPException(status_code=503, detail="请先启用 QQ Bot 通知")
+        if not _archive(request).retry_failed_notification(send_id):
+            raise HTTPException(status_code=409, detail="通知状态已改变，请刷新页面")
+        return {"status": "pending_send", "send_id": send_id}
 
     def task_inbox_service() -> TaskInboxService:
         return TaskInboxService(archive, timezone_name=(

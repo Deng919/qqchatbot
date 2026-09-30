@@ -139,16 +139,24 @@ class DailyPipeline:
             retry_base_seconds=self.notifier.config.retry_base_seconds,
         ).process_due()
 
-    def run_daily(self, now: datetime) -> DailyRunResult:
+    def run_daily(
+        self, now: datetime, *, retry_of_job_id: int | None = None
+    ) -> DailyRunResult:
         start, _ = summary_window(now, self.window_mode, self.timezone)
         job_id = self.archive.start_job(
-            "daily_digest", target_date=start.date().isoformat()
+            "daily_digest", target_date=start.date().isoformat(),
+            retry_of_job_id=retry_of_job_id,
         )
         try:
             result = self._run_without_job_tracking(now)
         except Exception as exc:
             self.archive.finish_job(job_id, "failed", str(exc))
             raise
+        group_outcomes = {
+            **{group_id: "skipped" for group_id in result.skipped_groups},
+            **{group_id: "success" for group_id in result.succeeded_groups},
+            **{failure.group_id: "failed" for failure in result.failed_groups},
+        }
         self.archive.finish_job(
             job_id,
             result.status,
@@ -157,6 +165,7 @@ class DailyPipeline:
             )
             if result.failed_groups
             else "",
+            group_outcomes=group_outcomes,
         )
         return result
 
@@ -183,6 +192,7 @@ class DailyPipeline:
                 self.archive.mark_sync_failure(
                     group_id=group.group_id,
                     status="adapter_incompatible",
+                    error=_group_failure(group, "collection", exc).error,
                 )
                 result.failed_groups.append(_group_failure(group, "collection", exc))
                 continue

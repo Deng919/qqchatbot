@@ -24,7 +24,7 @@ from .knowledge import KnowledgeWriter
 from .web.app import create_app
 
 
-DESKTOP_BACKEND_ID = "2026-09-29-task-inbox-r2"
+DESKTOP_BACKEND_ID = "2026-09-30-failure-center"
 
 
 def resolve_config_path(install_dir: Path) -> Path:

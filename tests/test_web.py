@@ -74,6 +74,105 @@ def test_ai_settings_requires_login(web_client):
     assert client.post("/api/ai-settings/test").status_code == 401
 
 
+def test_failure_center_requires_login_and_shows_persisted_error(web_client):
+    client, _, _ = web_client
+    archive = client.app.state.archive
+    job_id = archive.start_job("daily_digest", target_date="2026-09-29")
+    archive.finish_job(job_id, "failed", "AI 请求失败")
+    assert client.get("/failures", follow_redirects=False).status_code == 303
+    assert client.get("/api/failures").status_code == 401
+    assert client.post(f"/api/failures/jobs/{job_id}/retry").status_code == 401
+    assert client.post("/api/failures/notifications/1/retry").status_code == 401
+    client.post("/login", data={"password": "password123"})
+    assert "失败处理中心" in client.get("/failures").text
+    item = client.get("/api/failures").json()["items"][0]
+    assert item["job_id"] == job_id
+    assert item["error"] == "AI 请求失败"
+
+
+def test_failure_center_rejects_invalid_retry_and_requeues_notification(web_client):
+    client, _, _ = web_client
+    archive = client.app.state.archive
+    client.post("/login", data={"password": "password123"})
+    assert client.post("/api/failures/jobs/999/retry").status_code == 404
+    assert client.post("/api/failures/notifications/999/retry").status_code == 404
+    send_id = archive.enqueue_notification(
+        report_id=None, channel="qq_bot_private", recipient="openid-1", payload={}
+    )
+    archive.mark_notification_retry(
+        send_id, error="429", next_attempt_at=datetime.now(ZoneInfo("UTC")),
+        max_attempts=1,
+    )
+    # A disabled bot must not imply that a queued notification can be sent.
+    assert client.post(f"/api/failures/notifications/{send_id}/retry").status_code == 503
+
+    client.app.state.config.qq_bot.enabled = True
+    client.app.state.config.qq_bot.app_id = "test-app"
+    response = client.post(f"/api/failures/notifications/{send_id}/retry")
+    assert response.status_code == 200
+    assert response.json()["status"] == "pending_send"
+    assert client.post(f"/api/failures/notifications/{send_id}/retry").status_code == 409
+    assert archive.connection.execute(
+        "SELECT manual_retry_count FROM send_log WHERE send_id=?", (send_id,)
+    ).fetchone()[0] == 1
+
+
+def test_failure_center_daily_retry_uses_original_date_and_links_result(web_client, monkeypatch):
+    client, _, _ = web_client
+    archive = client.app.state.archive
+    job_id = archive.start_job("daily_digest", target_date="2026-09-29")
+    archive.finish_job(job_id, "failed", "AI 请求失败")
+    class QuietAI:
+        def close(self):
+            pass
+    monkeypatch.setattr("qq_digest.ai.factory.build_ai_client", lambda cfg: QuietAI())
+    client.post("/login", data={"password": "password123"})
+    response = client.post(f"/api/failures/jobs/{job_id}/retry")
+    assert response.status_code == 200
+    assert response.json()["status"] == "success"
+    retry_id = response.json()["retry_job_id"]
+    row = archive.connection.execute(
+        "SELECT target_date,retry_of_job_id FROM jobs WHERE job_id=?", (retry_id,)
+    ).fetchone()
+    assert row["target_date"] == "2026-09-29"
+    assert row["retry_of_job_id"] == job_id
+    original = next(item for item in client.get("/api/failures").json()["items"]
+                    if item["job_id"] == job_id)
+    assert original["status"] == "recovered"
+    assert original["retry_job_id"] == retry_id
+
+
+def test_failure_center_rejects_retry_of_already_recovered_group(web_client):
+    client, _, _ = web_client
+    archive = client.app.state.archive
+    original = archive.start_job("daily_digest", target_date="2026-09-29")
+    archive.finish_job(original, "partial_success", json.dumps([{
+        "group_id": 123, "group_name": "测试群", "stage": "summary", "error": "超时",
+    }], ensure_ascii=False))
+    later = archive.start_job("daily_digest", target_date="2026-09-29")
+    archive.finish_job(later, "success", group_outcomes={123: "success"})
+    client.post("/login", data={"password": "password123"})
+    assert client.post(f"/api/failures/jobs/{original}/retry").status_code == 409
+
+
+def test_failure_center_rejects_duplicate_notification_retry(web_client):
+    client, _, _ = web_client
+    archive = client.app.state.archive
+    old = archive.enqueue_notification(
+        report_id=None, channel="qq_bot_private", recipient="same-recipient", payload={}
+    )
+    archive.mark_notification_retry(
+        old, error="429", next_attempt_at=datetime.now(ZoneInfo("UTC")), max_attempts=1,
+    )
+    archive.enqueue_notification(
+        report_id=None, channel="qq_bot_private", recipient="same-recipient", payload={}
+    )
+    client.app.state.config.qq_bot.enabled = True
+    client.app.state.config.qq_bot.app_id = "test-app"
+    client.post("/login", data={"password": "password123"})
+    assert client.post(f"/api/failures/notifications/{old}/retry").status_code == 409
+
+
 def test_desktop_settings_page_requires_login_and_renders(web_client):
     client, _, _ = web_client
     assert client.get("/settings", follow_redirects=False).status_code == 303

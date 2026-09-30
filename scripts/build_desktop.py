@@ -15,7 +15,7 @@ CACHE = Path(r"D:\Cache\QQDigestDesktop")
 RELEASE = Path(r"D:\Apps\QQDigestDesktop")
 TEMPLATES = (
     "ai_settings.html", "base.html", "candidates.html", "collect.html",
-    "catchup.html", "dashboard.html", "groups.html", "login.html", "reports.html", "search.html", "tasks.html",
+    "catchup.html", "dashboard.html", "failures.html", "groups.html", "login.html", "reports.html", "search.html", "tasks.html",
     "settings.html",
 )
 

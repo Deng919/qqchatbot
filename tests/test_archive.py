@@ -257,6 +257,82 @@ def test_notification_queue_stops_at_attempt_limit(tmp_path):
     assert archive.due_notifications(now=now) == []
 
 
+def test_failure_retry_columns_migrate_and_notification_requeue_is_atomic(tmp_path):
+    path = tmp_path / "archive.sqlite"
+    archive = Archive.open(path)
+    send_id = archive.enqueue_notification(
+        report_id=None, channel="qq_bot_private", recipient="openid-1", payload={}
+    )
+    archive.mark_notification_retry(
+        send_id, error="网络错误", next_attempt_at=datetime.now(timezone.utc),
+        max_attempts=1,
+    )
+    job_id = archive.start_job("daily_digest", target_date="2026-09-29")
+    archive.finish_job(job_id, "failed", "AI 超时")
+    archive.close()
+
+    archive = Archive.open(path)
+    retry_id = archive.start_job(
+        "daily_digest", target_date="2026-09-29", retry_of_job_id=job_id
+    )
+    assert archive.connection.execute(
+        "SELECT retry_of_job_id FROM jobs WHERE job_id=?", (retry_id,)
+    ).fetchone()[0] == job_id
+    assert archive.retry_failed_notification(send_id) is True
+    assert archive.retry_failed_notification(send_id) is False
+    row = archive.connection.execute(
+        "SELECT status,retry_count,manual_retry_count FROM send_log WHERE send_id=?",
+        (send_id,),
+    ).fetchone()
+    assert (row["status"], row["retry_count"], row["manual_retry_count"]) == (
+        "pending_send", 0, 1,
+    )
+
+
+def test_existing_jobs_and_send_log_gain_failure_center_columns(tmp_path):
+    path = tmp_path / "archive.sqlite"
+    connection = sqlite3.connect(path)
+    connection.execute(
+        """CREATE TABLE jobs(job_id INTEGER PRIMARY KEY, job_type TEXT NOT NULL,
+           status TEXT NOT NULL, started_at TEXT, finished_at TEXT,
+           error TEXT NOT NULL DEFAULT '', target_date TEXT)"""
+    )
+    connection.execute(
+        """CREATE TABLE send_log(send_id INTEGER PRIMARY KEY,
+           report_id INTEGER, channel TEXT NOT NULL, status TEXT NOT NULL,
+           error TEXT NOT NULL DEFAULT '', attempted_at TEXT NOT NULL,
+           recipient TEXT NOT NULL DEFAULT '', payload_json TEXT NOT NULL DEFAULT '{}',
+           retry_count INTEGER NOT NULL DEFAULT 0, next_attempt_at TEXT,
+           updated_at TEXT NOT NULL DEFAULT '')"""
+    )
+    connection.commit()
+    connection.close()
+    archive = Archive.open(path)
+    job_columns = {row["name"] for row in archive.connection.execute("PRAGMA table_info(jobs)")}
+    send_columns = {row["name"] for row in archive.connection.execute("PRAGMA table_info(send_log)")}
+    assert "retry_of_job_id" in job_columns
+    assert "manual_retry_count" in send_columns
+    assert archive.connection.execute(
+        "SELECT name FROM sqlite_master WHERE name='job_group_results'"
+    ).fetchone() is not None
+
+
+def test_failed_notification_cannot_requeue_when_equivalent_send_is_due(tmp_path):
+    archive = Archive.open(tmp_path / "archive.sqlite")
+    old = archive.enqueue_notification(
+        report_id=None, channel="qq_bot_private", recipient="same-recipient", payload={}
+    )
+    archive.mark_notification_retry(
+        old, error="429", next_attempt_at=datetime.now(timezone.utc), max_attempts=1,
+    )
+    newer = archive.enqueue_notification(
+        report_id=None, channel="qq_bot_private", recipient="same-recipient", payload={}
+    )
+    assert newer != old
+    assert archive.retry_failed_notification(old) is False
+    assert [item.send_id for item in archive.due_notifications()] == [newer]
+
+
 def test_notification_claim_is_atomic_and_recovers_expired_lease(tmp_path):
     archive = Archive.open(tmp_path / "archive.sqlite")
     now = datetime(2026, 8, 24, 14, 0, tzinfo=timezone.utc)

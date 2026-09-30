@@ -165,6 +165,7 @@ class Archive:
                     recipient TEXT NOT NULL DEFAULT '',
                     payload_json TEXT NOT NULL DEFAULT '{}',
                     retry_count INTEGER NOT NULL DEFAULT 0,
+                    manual_retry_count INTEGER NOT NULL DEFAULT 0,
                     next_attempt_at TEXT,
                     updated_at TEXT NOT NULL DEFAULT ''
                 );
@@ -175,8 +176,23 @@ class Archive:
                     started_at TEXT,
                     finished_at TEXT,
                     error TEXT NOT NULL DEFAULT '',
-                    target_date TEXT
+                    target_date TEXT,
+                    retry_of_job_id INTEGER REFERENCES jobs(job_id)
                 );
+                CREATE TABLE IF NOT EXISTS job_group_results (
+                    job_id INTEGER NOT NULL REFERENCES jobs(job_id) ON DELETE CASCADE,
+                    group_id INTEGER NOT NULL,
+                    status TEXT NOT NULL CHECK(status IN ('success','skipped','failed')),
+                    PRIMARY KEY(job_id, group_id)
+                );
+                CREATE INDEX IF NOT EXISTS idx_job_group_results_group
+                    ON job_group_results(group_id, job_id);
+                CREATE INDEX IF NOT EXISTS idx_jobs_status_id
+                    ON jobs(status, job_id);
+                CREATE INDEX IF NOT EXISTS idx_send_log_active_failures
+                    ON send_log(send_id DESC)
+                    WHERE status='failed' OR
+                          (status IN ('pending_send','sending') AND error<>'');
                 CREATE TABLE IF NOT EXISTS catchup_state (
                     state_id INTEGER PRIMARY KEY CHECK (state_id=1),
                     last_viewed_at TEXT NOT NULL
@@ -225,11 +241,13 @@ class Archive:
                 "ALTER TABLE send_log ADD COLUMN recipient TEXT NOT NULL DEFAULT ''",
                 "ALTER TABLE send_log ADD COLUMN payload_json TEXT NOT NULL DEFAULT '{}'",
                 "ALTER TABLE send_log ADD COLUMN retry_count INTEGER NOT NULL DEFAULT 0",
+                "ALTER TABLE send_log ADD COLUMN manual_retry_count INTEGER NOT NULL DEFAULT 0",
                 "ALTER TABLE send_log ADD COLUMN next_attempt_at TEXT",
                 "ALTER TABLE send_log ADD COLUMN updated_at TEXT NOT NULL DEFAULT ''",
                 "ALTER TABLE sync_state ADD COLUMN error TEXT NOT NULL DEFAULT ''",
                 "ALTER TABLE sync_state ADD COLUMN last_success_at TEXT",
                 "ALTER TABLE jobs ADD COLUMN target_date TEXT",
+                "ALTER TABLE jobs ADD COLUMN retry_of_job_id INTEGER REFERENCES jobs(job_id)",
             ):
                 try:
                     self.connection.execute(statement)
@@ -242,6 +260,14 @@ class Archive:
                        ELSE last_timestamp
                    END
                    WHERE last_success_at IS NULL AND last_timestamp IS NOT NULL"""
+            )
+            self.connection.execute(
+                "CREATE INDEX IF NOT EXISTS idx_jobs_retry_of ON jobs(retry_of_job_id, job_id)"
+            )
+            self.connection.execute(
+                """CREATE INDEX IF NOT EXISTS idx_send_log_recovered_failures
+                   ON send_log(send_id DESC)
+                   WHERE status='success' AND (retry_count>0 OR manual_retry_count>0)"""
             )
 
     def enqueue_notification(
@@ -360,6 +386,27 @@ class Archive:
                 """,
                 (timestamp, timestamp, send_id),
             )
+
+    def retry_failed_notification(
+        self, send_id: int, *, now: datetime | None = None
+    ) -> bool:
+        timestamp = self._utc_timestamp(now or datetime.now(timezone.utc))
+        with self.transaction():
+            cursor = self.connection.execute(
+                """UPDATE send_log SET status='pending_send', retry_count=0,
+                   manual_retry_count=manual_retry_count+1, next_attempt_at=?,
+                   updated_at=? WHERE send_id=? AND status='failed'
+                   AND NOT EXISTS (
+                       SELECT 1 FROM send_log AS other
+                       WHERE other.send_id<>send_log.send_id
+                         AND other.report_id IS send_log.report_id
+                         AND other.channel=send_log.channel
+                         AND other.recipient=send_log.recipient
+                         AND other.status IN ('pending_send','sending','success')
+                   )""",
+                (timestamp, timestamp, send_id),
+            )
+        return bool(cursor.rowcount)
 
     def mark_notification_retry(
         self,
@@ -913,21 +960,29 @@ class Archive:
             raise RuntimeError("范围报告写入后无法读取")
         return int(row["manual_report_id"])
 
-    def start_job(self, job_type: str, *, target_date: str | None = None) -> int:
+    def start_job(
+        self, job_type: str, *, target_date: str | None = None,
+        retry_of_job_id: int | None = None,
+    ) -> int:
         now = datetime.now(timezone.utc).isoformat()
         with self.transaction():
             cursor = self.connection.execute(
-                "INSERT INTO jobs(job_type, status, started_at, target_date) VALUES (?, 'running', ?, ?)",
-                (job_type, now, target_date),
+                """INSERT INTO jobs(job_type, status, started_at, target_date, retry_of_job_id)
+                   VALUES (?, 'running', ?, ?, ?)""",
+                (job_type, now, target_date, retry_of_job_id),
             )
         return int(cursor.lastrowid)
 
     def finish_job(
-        self, job_id: int, status: str, error: str = ""
+        self, job_id: int, status: str, error: str = "", *,
+        group_outcomes: dict[int, str] | None = None,
     ) -> None:
         if status not in {"success", "partial_success", "failed"}:
             raise ValueError("job status 只支持 success、partial_success 或 failed")
         now = datetime.now(timezone.utc).isoformat()
+        outcomes = group_outcomes or {}
+        if any(value not in {"success", "skipped", "failed"} for value in outcomes.values()):
+            raise ValueError("群任务状态无效")
         with self.transaction():
             self.connection.execute(
                 """
@@ -935,6 +990,11 @@ class Archive:
                 WHERE job_id=?
                 """,
                 (status, now, error, job_id),
+            )
+            self.connection.executemany(
+                """INSERT OR REPLACE INTO job_group_results(job_id,group_id,status)
+                   VALUES (?,?,?)""",
+                [(job_id, group_id, outcome) for group_id, outcome in outcomes.items()],
             )
 
     def close(self) -> None:
