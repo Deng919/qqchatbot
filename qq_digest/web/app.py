@@ -22,6 +22,7 @@ from ..ai.key_store import save_ui_api_key, ui_api_key_exists
 from ..candidates import CandidateService
 from ..catchup import CatchupService
 from ..failure_center import FailureCenterService
+from ..report_completeness import ReportCompletenessService
 from ..task_inbox import TaskInboxService
 from ..candidate_context import candidate_source_context
 from ..collector.ntqq import NTQQCollector
@@ -1134,6 +1135,7 @@ def create_app(
             "latest_daily_status": latest_daily["status"] if latest_daily else "",
             "latest_daily_date": latest_daily_date or "",
             "failed_notifications": failed_notifications,
+            "daily_coverage": ReportCompletenessService(ar).daily(latest_daily_date or ""),
         }
 
     @app.get("/api/search")
@@ -1638,6 +1640,7 @@ def create_app(
             + " LIMIT ? OFFSET ?",
             [*params, page_size, (page - 1) * page_size],
         ).fetchall()
+        completeness = ReportCompletenessService(ar)
         reports = [
             {
                 "report_kind": row["report_kind"],
@@ -1651,6 +1654,9 @@ def create_app(
                 "candidate_count": len(json.loads(row["candidate_ids"])),
                 "created_at": _utc(row["created_at"]),
                 "reference_message_count": _reference_message_count(row["json_path"]),
+                "completeness": completeness.report(
+                    row["json_path"], row["report_kind"], row["window_end_date"]
+                ),
             }
             for row in rows
         ]
@@ -1689,7 +1695,9 @@ def create_app(
             raise HTTPException(status_code=404, detail="报告不存在")
         md_path = Path(row["markdown_path"])
         markdown = md_path.read_text(encoding="utf-8") if md_path.exists() else "报告文件不存在"
-        return {"markdown": markdown, "report_date": row["report_date"]}
+        return {"markdown": markdown, "report_date": row["report_date"],
+                "completeness": ReportCompletenessService(ar).report(
+                    row["json_path"], "daily", row["report_date"])}
 
     @app.get("/api/reports/{report_kind}/{report_id}")
     async def api_typed_report_detail(
@@ -1735,6 +1743,9 @@ def create_app(
             "window_end_date": end_date,
             "evidence_status": "available" if evidence_items is not None else "legacy",
             "evidence_items": evidence_items or [],
+            "completeness": ReportCompletenessService(ar).report(
+                row["json_path"], report_kind, end_date
+            ),
         }
 
     @app.get("/api/reports/{report_kind}/{report_id}/sources/{msg_id}")

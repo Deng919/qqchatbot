@@ -24,7 +24,7 @@ from .knowledge import KnowledgeWriter
 from .web.app import create_app
 
 
-DESKTOP_BACKEND_ID = "2026-09-30-failure-center"
+DESKTOP_BACKEND_ID = "2026-09-30-report-completeness"
 
 
 def resolve_config_path(install_dir: Path) -> Path:

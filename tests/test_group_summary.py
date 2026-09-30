@@ -85,6 +85,7 @@ def test_group_summary_builder_builds_range_content_and_candidate_draft():
     assert "# 测试群范围摘要" in artifact.markdown
     assert "## 今日概览\n待核实：群内确认了工具回退方案。" in artifact.markdown
     assert artifact.payload["evidence_version"] == 1
+    assert artifact.payload["coverage"]["status"] == "limited"
     assert "template" not in summarizer.last_kwargs
     assert "- 日期范围：2026-09-01 至 2026-09-07" in artifact.markdown
     assert "## 数据范围" in artifact.markdown
@@ -195,3 +196,17 @@ def test_summary_fingerprint_tracks_report_format_version(monkeypatch):
     )
 
     assert summary_input_fingerprint(**kwargs) != original
+
+
+def test_archive_mismatch_changes_reuse_key_and_persists_warning():
+    kwargs = dict(group=GroupConfig(group_id=123, name="测试群"), report_kind="daily",
+                  messages=[make_message()], timezone=ZoneInfo("Asia/Shanghai"),
+                  knowledge_base="", max_context_chars=1000)
+    assert summary_input_fingerprint(**kwargs) != summary_input_fingerprint(**kwargs, archive_mismatch=True)
+    start = datetime(2026, 9, 1, tzinfo=kwargs["timezone"])
+    kwargs.pop("max_context_chars")
+    artifact = GroupSummaryBuilder(StubSummarizer()).build(**kwargs, window_start=start,
+        window_end=start.replace(hour=22), report_date="2026-09-01",
+        candidate_date="2026-09-01", archive_mismatch=True)
+    assert artifact.payload["coverage"]["archive_mismatch"] is True
+    assert "归档量" in artifact.markdown

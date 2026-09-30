@@ -65,6 +65,49 @@ def test_candidates_requires_login(web_client):
     assert response.headers["location"] == "/login"
 
 
+def test_report_completeness_is_exposed_in_list_detail_and_health(web_client, tmp_path):
+    client, _, _ = web_client
+    archive = client.app.state.archive
+    md, js = tmp_path / "coverage.md", tmp_path / "coverage.json"
+    md.write_text("# 简报", encoding="utf-8")
+    js.write_text(json.dumps({"diagnostics": {"source_messages": 30,
+        "included_messages": 3, "context_truncated": True}}), encoding="utf-8")
+    report_id = archive.record_report(group_id=123, report_date="2026-09-29",
+        markdown_path=md, json_path=js, candidate_ids=[])
+    job_id = archive.start_job("daily_digest", target_date="2026-09-29")
+    archive.finish_job(job_id, "success", group_outcomes={123: "success"})
+    assert client.get("/api/health").status_code == 401
+    assert client.get(f"/api/reports/daily/{report_id}").status_code == 401
+    client.post("/login", data={"password": "password123"})
+    item = client.get("/api/reports").json()["reports"][0]
+    assert item["completeness"]["status"] == "limited"
+    assert item["completeness"]["included_messages"] == 3
+    detail = client.get(f"/api/reports/daily/{report_id}").json()
+    assert detail["completeness"] == item["completeness"]
+    assert client.get(f"/api/reports/{report_id}").json()["completeness"] == item["completeness"]
+    day = client.get("/api/health").json()["daily_coverage"]
+    assert day["status"] == "limited"
+    assert day["limited_input_groups"] == 1
+    assert "report-completeness" in client.get("/reports").text
+    assert "daily-coverage" in client.get("/").text
+
+
+@pytest.mark.parametrize("contents", ["broken", "[]", "{}"])
+def test_broken_or_legacy_json_is_readable_with_unknown_scope(web_client, tmp_path, contents):
+    client, _, _ = web_client
+    archive = client.app.state.archive
+    md, js = tmp_path / "legacy.md", tmp_path / "legacy.json"
+    md.write_text("# 旧摘要", encoding="utf-8")
+    js.write_text(contents, encoding="utf-8")
+    report_id = archive.record_report(group_id=123, report_date="2026-09-29",
+        markdown_path=md, json_path=js, candidate_ids=[])
+    client.post("/login", data={"password": "password123"})
+    assert client.get("/api/reports").json()["reports"][0]["completeness"]["status"] == "unknown"
+    detail = client.get(f"/api/reports/daily/{report_id}").json()
+    assert detail["markdown"] == "# 旧摘要"
+    assert detail["completeness"]["status"] == "unknown"
+
+
 def test_ai_settings_requires_login(web_client):
     client, _, _ = web_client
 

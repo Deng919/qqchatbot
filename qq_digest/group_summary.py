@@ -10,6 +10,7 @@ from .models import GroupConfig, NormalizedMessage
 from .reports import render_markdown
 from .prompt_builder import build_system_prompt
 from .summary import Summarizer
+from .report_completeness import input_coverage
 
 
 # Bump when report rendering changes without a prompt/schema change.
@@ -40,6 +41,7 @@ class GroupSummaryBuilder:
         timezone: ZoneInfo,
         knowledge_base: str,
         report_kind: str,
+        archive_mismatch: bool = False,
     ) -> GroupSummaryArtifact:
         if report_kind not in {"daily", "range"}:
             raise ValueError("report_kind 只支持 daily 或 range")
@@ -54,11 +56,6 @@ class GroupSummaryBuilder:
             timezone=timezone,
             knowledge_base=knowledge_base,
         )
-        quality_note = (
-            f"仅总结实际纳入的 {summary.included_messages} 条消息，部分消息因长度限制未包含。"
-            if summary.context_truncated
-            else ""
-        )
         diagnostics = {
             "source_messages": summary.source_messages,
             "included_messages": summary.included_messages,
@@ -67,6 +64,8 @@ class GroupSummaryBuilder:
             "context_chars": summary.context_chars,
             "extracted": summary.deterministic,
         }
+        coverage = input_coverage(diagnostics, archive_mismatch=archive_mismatch)
+        quality_note = "\n\n".join(coverage["notes"])
         markdown = render_markdown(
             group_name=group.name,
             report_date=report_date,
@@ -128,7 +127,8 @@ class GroupSummaryBuilder:
         )
         return GroupSummaryArtifact(
             markdown=markdown,
-            payload={**summary.response.model_dump(), "evidence_version": 1, "diagnostics": diagnostics},
+            payload={**summary.response.model_dump(), "evidence_version": 1,
+                     "diagnostics": diagnostics, "coverage": coverage},
             candidate_kwargs=candidate_kwargs,
             source_message_count=len(messages),
         )
@@ -138,6 +138,7 @@ def summary_input_fingerprint(
     *, group: GroupConfig, report_kind: str,
     messages: list[NormalizedMessage], timezone: ZoneInfo,
     knowledge_base: str, max_context_chars: int,
+    archive_mismatch: bool = False,
 ) -> str:
     """Hash every input that can materially change generated report content."""
     value = {
@@ -150,6 +151,8 @@ def summary_input_fingerprint(
         "system_prompt": build_system_prompt(group.category),
         "messages": [message.model_dump(mode="json") for message in messages],
     }
+    if archive_mismatch:
+        value["archive_mismatch"] = True
     encoded = json.dumps(
         value, ensure_ascii=False, sort_keys=True, separators=(",", ":")
     ).encode("utf-8")

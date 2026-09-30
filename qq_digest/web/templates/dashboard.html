@@ -21,6 +21,10 @@
 </nav>
 <section class="health-strip" aria-live="polite"><span class="health-dot" id="health-dot"></span><strong id="health-service">服务状态读取中</strong><span id="health-sync">最近同步：读取中</span><span id="health-daily">日报：读取中</span><span id="health-job">最近任务：读取中</span><span id="health-send">发送失败：读取中</span></section>
 
+<section id="daily-coverage" class="daily-coverage" aria-label="日报覆盖范围" aria-live="polite">
+  <div class="daily-coverage-heading"><strong id="daily-coverage-title">日报覆盖范围读取中</strong><a href="/reports">查看报告 ↗</a></div>
+  <p id="daily-coverage-counts"></p><ul id="daily-coverage-notes"></ul><p id="daily-coverage-scope" class="header-meta"></p>
+</section>
 <div class="dashboard-grid">
   <section class="card">
     <div class="card-header"><span>自动任务</span><span class="header-meta" id="scheduler-info">读取中...</span></div>
@@ -46,6 +50,13 @@
 </div>
 
 <style>
+  .daily-coverage { margin-bottom: 20px; padding: 18px 20px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); overflow-wrap: anywhere; }
+  .daily-coverage[data-status="limited"] { border-color: #e9cf9a; background: #fffaef; }
+  .daily-coverage-heading { display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 8px; }
+  .daily-coverage-heading a { font-size: 13px; }
+  .daily-coverage p { margin: 8px 0 0; font-size: 13px; line-height: 1.7; }
+  .daily-coverage ul { padding-left: 20px; font-size: 13px; line-height: 1.7; }
+  .daily-coverage ul:empty { display: none; }
   .overview-links { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-bottom: 16px; }
   .overview-links a { min-width: 0; min-height: 76px; padding: 15px 18px; display: flex; align-items: center; justify-content: space-between; gap: 16px; border: 1px solid #dbe8df; border-radius: 13px; background: #edf5ef; color: var(--text); text-decoration: none; transition: background 160ms ease, border-color 160ms ease, transform 120ms ease; }
   .overview-links a:hover { background: #e4f0e8; border-color: #bfd6c6; }
@@ -75,14 +86,25 @@
   function loadHealth() {
     api('GET', '/api/health').then(function(data) {
       var dailyWarning = data.latest_daily_status === 'failed' || data.latest_daily_status === 'partial_success';
-      var warning = data.latest_job_status === 'failed' || dailyWarning || data.failed_notifications > 0;
+      var warning = data.latest_job_status === 'failed' || dailyWarning || data.failed_notifications > 0 || (data.daily_coverage && data.daily_coverage.status === 'limited');
       document.getElementById('health-dot').className = 'health-dot ' + (warning ? 'is-warning' : 'is-healthy');
       document.getElementById('health-service').textContent = warning ? '服务运行中 · 有待处理异常' : '服务运行正常';
       document.getElementById('health-sync').textContent = '最近同步：' + (data.last_sync_at ? data.last_sync_at.slice(0, 19).replace('T', ' ') : '尚未同步');
       document.getElementById('health-daily').textContent = '日报：' + (data.latest_daily_date || '尚未执行') + (data.latest_daily_status ? ' · ' + (statusLabels[data.latest_daily_status] || data.latest_daily_status) : '');
       document.getElementById('health-job').textContent = '最近任务：' + (statusLabels[data.latest_job_status] || '尚未执行');
       document.getElementById('health-send').textContent = '发送失败：' + formatNumber(data.failed_notifications);
-    }).catch(function() { document.getElementById('health-service').textContent = '状态读取失败'; document.getElementById('health-dot').className = 'health-dot is-warning'; });
+      renderDailyCoverage(data.daily_coverage);
+    }).catch(function() { document.getElementById('health-service').textContent = '状态读取失败'; document.getElementById('health-dot').className = 'health-dot is-warning'; document.getElementById('daily-coverage-title').textContent = '覆盖范围读取失败，请刷新重试'; });
+  }
+  function renderDailyCoverage(data) {
+    data = data || {};
+    document.getElementById('daily-coverage').dataset.status = data.status || 'unknown';
+    document.getElementById('daily-coverage-title').textContent = (data.report_date || '尚未执行日报') + ' · ' + (data.label || '范围无法确认');
+    document.getElementById('daily-coverage-counts').textContent = data.participating_groups
+      ? '参与 ' + data.participating_groups + ' 个群 · 可读取报告 ' + data.report_groups + ' 个群 · 失败 ' + data.failed_groups + ' 个群 · 无消息跳过 ' + data.no_message_groups + ' 个群' : '尚无可确认的逐群覆盖结果';
+    var list = document.getElementById('daily-coverage-notes'); list.textContent = '';
+    (data.notes || []).forEach(function(note) { var li = document.createElement('li'); li.textContent = note; list.appendChild(li); });
+    document.getElementById('daily-coverage-scope').textContent = data.scope || '';
   }
 
   function loadStats() {
@@ -147,10 +169,11 @@
         dailyResultMessage(data),
         data.status === 'partial_success' ? 'error' : 'success'
       );
-      loadStats(); loadJobs(); loadGroupStats(); loadScheduler();
+      loadStats(); loadJobs(); loadGroupStats(); loadScheduler(); loadHealth();
     }).catch(function(error) {
       toast('摘要任务失败：' + error.message, 'error');
       button.disabled = false; button.textContent = '立即生成摘要';
+      loadHealth(); loadJobs();
     });
   }
   loadStats(); loadJobs(); loadGroupStats(); loadScheduler(); loadHealth();

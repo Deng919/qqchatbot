@@ -28,6 +28,7 @@
   <section class="card report-detail" id="report-detail" hidden>
     <div class="card-header">报告详情 <span><button class="btn btn-sm" id="report-qa-open" type="button" onclick="openReportQA()">问 DeepSeek</button> <button class="btn btn-sm" aria-label="关闭报告详情" type="button" onclick="closeReport()">关闭</button></span></div>
     <div class="report-detail-scroll">
+      <section id="report-completeness" class="coverage-notice" aria-label="报告覆盖范围" aria-live="polite"></section>
       <div id="report-content" class="report-content"></div>
       <section id="report-evidence" class="report-evidence" aria-label="逐条来源"></section>
       <section id="report-source-context" class="report-source-context" aria-label="原消息与上下文" hidden></section>
@@ -67,6 +68,11 @@
 </aside>
 
 <style>
+  .coverage-notice { margin: 18px; padding: 16px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); overflow-wrap: anywhere; }
+  .coverage-notice[data-status="limited"] { border-color: #e9cf9a; background: #fffaef; }
+  .coverage-notice p { margin: 8px 0 0; font-size: 13px; line-height: 1.7; }
+  .coverage-notice ul { padding-left: 20px; font-size: 13px; line-height: 1.7; }
+  .report-coverage-badge { display: block; margin-top: 6px; width: fit-content; white-space: nowrap; }
   .report-filters { grid-template-columns: repeat(4, minmax(130px, 1fr)) auto; align-items: end; }
   .report-pages { display: flex; gap: 12px; align-items: center; justify-content: flex-end; margin-top: 15px; color: var(--text-soft); font-size: 12px; }
   .report-layout { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; }
@@ -116,7 +122,7 @@
   #report-qa-form { display: grid; gap: 8px; }
   #report-qa-question { width: 100%; resize: vertical; min-height: 76px; }
   #report-qa-submit { justify-self: end; }
-  @media (max-width: 1040px) { .report-layout.has-detail { grid-template-columns: 1fr; } }
+  @media (max-width: 1400px) { .report-layout.has-detail { grid-template-columns: 1fr; } }
   @media (max-width: 700px) { .report-filters { grid-template-columns: repeat(2, minmax(0, 1fr)); } .report-filters button { grid-column: 1 / -1; } .report-table { min-width: 0; } .range-summary-panel, .report-qa-dialog { inset: 104px 10px 10px; width: auto; padding: 15px; } .range-panel-footer { bottom: -15px; margin: 16px -15px -15px; padding: 11px 15px; } }
   @media (max-width: 430px) { .range-date-grid { grid-template-columns: 1fr; } }
 </style>
@@ -143,7 +149,7 @@
         var kind = r.report_kind === 'range' ? 'range' : 'daily', reportId = Number(r.report_id);
         var windowLabel = r.window_start_date === r.window_end_date ? r.window_start_date : r.window_start_date + ' 至 ' + r.window_end_date;
         return '<tr><td data-label="类型"><span class="badge ' + (kind === 'range' ? 'badge-blue' : 'badge-dim') + '">' + (kind === 'range' ? '范围' : '日报') + '</span></td>'
-          + '<td data-label="日期范围">' + escapeHtml(windowLabel) + '</td><td data-label="群名">' + escapeHtml(r.group_name) + '</td>'
+          + '<td data-label="日期范围">' + escapeHtml(windowLabel) + '</td><td data-label="群名"><span>' + escapeHtml(r.group_name) + coverageBadge(r.completeness) + '</span></td>'
           + '<td data-label="参考消息数" class="number">' + (Number.isInteger(r.reference_message_count) && r.reference_message_count >= 0 ? formatNumber(r.reference_message_count) : '—') + '</td>'
           + '<td data-label="候选数" class="number">' + formatNumber(r.candidate_count) + '</td><td data-label="更新时间">' + escapeHtml((r.created_at || '').slice(0, 19)) + '</td>'
           + '<td data-label="操作"><button class="btn btn-sm" type="button" onclick="viewReport(\'' + kind + '\',' + reportId + ')">查看</button></td></tr>';
@@ -159,9 +165,29 @@
       qaReport = {kind: kind, id: Number(reportId), group_name: d.group_name, start: d.window_start_date, end: d.window_end_date};
       document.getElementById('report-detail').hidden = false; document.getElementById('report-layout').classList.add('has-detail'); document.getElementById('report-content').textContent = d.markdown;
       renderReportEvidence(d);
+      renderReportCompleteness(d.completeness);
     }).catch(function(e) { if (selectionToken === reportSelectionToken) toast('加载失败: ' + e.message, 'error'); });
   }
   function closeReport() { reportSelectionToken += 1; sourceRequestToken += 1; closeReportQA(); qaReport = null; document.getElementById('report-detail').hidden = true; document.getElementById('report-layout').classList.remove('has-detail'); document.getElementById('report-source-context').hidden = true; }
+  function coverageBadge(data) {
+    data = data || {};
+    var color = data.status === 'normal' ? 'badge-green' : data.status === 'limited' ? 'badge-orange' : 'badge-dim';
+    return '<span class="badge report-coverage-badge ' + color + '">' + escapeHtml(data.label || '范围无法确认') + '</span>';
+  }
+  function renderReportCompleteness(data) {
+    data = data || {};
+    var host = document.getElementById('report-completeness'); host.textContent = ''; host.dataset.status = data.status || 'unknown';
+    var title = document.createElement('strong'); title.textContent = '覆盖范围 · ' + (data.label || '无法确认'); host.appendChild(title);
+    var counts = document.createElement('p'); counts.textContent = Number.isInteger(data.source_messages) && Number.isInteger(data.included_messages)
+      ? '归档输入 ' + data.source_messages + ' 条 · 实际纳入 ' + data.included_messages + ' 条' : '未记录有效的消息输入统计'; host.appendChild(counts);
+    if (data.daily && data.daily.participating_groups) {
+      var day = document.createElement('p'); day.textContent = '当日最新任务：参与 ' + data.daily.participating_groups + ' 个群 · 可读取报告 ' + data.daily.report_groups + ' 个群 · 失败 ' + data.daily.failed_groups + ' 个群'; host.appendChild(day);
+    }
+    if ((data.notes || []).length) {
+      var list = document.createElement('ul'); data.notes.forEach(function(note) { var li = document.createElement('li'); li.textContent = note; list.appendChild(li); }); host.appendChild(list);
+    }
+    var scope = document.createElement('p'); scope.className = 'header-meta'; scope.textContent = data.scope || '仅基于本地归档消息。'; host.appendChild(scope);
+  }
   function renderReportEvidence(data) {
     var host = document.getElementById('report-evidence'); host.textContent = '';
     var title = document.createElement('h3'); title.textContent = '逐条来源'; host.appendChild(title);

@@ -212,6 +212,7 @@ class DailyPipeline:
                 timezone=self.timezone,
                 knowledge_base=knowledge_base,
                 max_context_chars=self.max_context_chars,
+                archive_mismatch=len(messages) * 2 < len(raw_msgs),
             )
             existing_report = self.archive.report_for(group.group_id, report_date)
             if (
@@ -237,7 +238,7 @@ class DailyPipeline:
         # messages disappear from the archive and collection UI.
         for group, raw_msgs, messages, input_fingerprint, existing_report in prepared_groups:
             try:
-                if len(messages) < len(raw_msgs) // 2:
+                if len(messages) * 2 < len(raw_msgs):
                     logger.warning(
                         "群 %s 归档消息数异常低: 采集 %d, 归档 %d",
                         group.name,
@@ -254,6 +255,7 @@ class DailyPipeline:
                     timezone=self.timezone,
                     knowledge_base=knowledge_base,
                     report_kind="daily",
+                    archive_mismatch=len(messages) * 2 < len(raw_msgs),
                 )
                 prepared = self.report_writer.prepare_named(
                     f"{report_date}__{group.group_id}",
