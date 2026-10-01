@@ -38,6 +38,7 @@ from ..report_qa import (
 from ..report_sources import load_verified_report_sources
 from .auth import PasswordHasher, SessionCookie
 from .operations import OperationBusy, OperationCoordinator
+from .history_inspection import add_history_inspection_routes, history_inspection_loop
 
 templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
 
@@ -633,6 +634,7 @@ def create_app(
         sync_scheduler_state["task"] = asyncio.get_event_loop().create_task(
             _message_sync_loop()
         )
+        inspection_task = asyncio.create_task(history_inspection_loop(config, operations))
 
         yield
 
@@ -646,6 +648,7 @@ def create_app(
                 notification_state["task"],
                 scheduler_state["task"],
                 sync_scheduler_state["task"],
+                inspection_task,
             )
             if task is not None
         ]
@@ -664,6 +667,8 @@ def create_app(
     app.state.config = config
     app.state.operations = operations
     app.state.desktop_bridge = None
+    add_history_inspection_routes(app, archive=archive, config=config,
+                                  operations=operations, require_login=require_login)
 
     @app.get("/healthz")
     async def healthz():

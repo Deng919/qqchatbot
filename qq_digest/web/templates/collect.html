@@ -3,8 +3,30 @@
 {% block page_title %}消息采集{% endblock %}
 {% block page_description %}按群组和日期查看消息，也可以刷新本地数据库。{% endblock %}
 {% block content %}
+<section class="card history-inspection" id="history-inspection" aria-label="多群历史缺口巡检">
+  <div class="card-header"><span>历史缺口巡检 <small class="header-meta">全部已启用群</small></span><button class="btn btn-sm" id="inspection-run" type="button" onclick="runHistoryInspection()">立即巡检</button></div>
+  <div class="inspection-body">
+    <p id="inspection-status" role="status">正在读取巡检记录...</p>
+    <p class="inspection-note">比对已解密源库和归档中的消息 ID，检查最近的完整自然日。结果是检查时的快照，补采后请重新巡检确认；源库本身未保留或无法读取的消息不能据此核实。</p>
+    <details><summary>巡检设置</summary>
+      <form id="inspection-settings" class="inspection-settings" onsubmit="saveInspectionSettings(event)" oninput="inspectionSettingsDirty = true">
+        <label class="inspection-check"><input type="checkbox" id="inspection-enabled"> 程序运行时自动巡检</label>
+        <div class="field"><label for="inspection-days">检查最近几天</label><input class="input" type="number" id="inspection-days" min="1" max="31" value="7" required></div>
+        <div class="field"><label for="inspection-interval">巡检间隔（小时）</label><input class="input" type="number" id="inspection-interval" min="1" max="168" value="24" required></div>
+        <button class="btn" id="inspection-save" type="submit">保存设置</button>
+      </form>
+      <p class="inspection-note">自动巡检读取当前源库，不会自动补采。需要更新源数据时，可先刷新数据库。</p>
+    </details>
+    <label class="inspection-check"><input type="checkbox" id="inspection-refresh"> 本次巡检前刷新源库（较慢，需要 QQ 正在运行）</label>
+  </div>
+  <div class="table-wrap"><table class="table responsive-table inspection-table">
+    <thead><tr><th>群</th><th>状态</th><th>检查范围</th><th>待补日期与数量</th></tr></thead>
+    <tbody id="inspection-list"><tr><td class="empty" colspan="4">读取中...</td></tr></tbody>
+  </table></div>
+  <div class="inspection-pages" id="inspection-pages" hidden><button class="btn btn-sm" id="inspection-prev" onclick="changeInspectionPage(-1)">上一页</button><span id="inspection-page-label"></span><button class="btn btn-sm" id="inspection-next" onclick="changeInspectionPage(1)">下一页</button></div>
+</section>
 <div class="status-line" id="repair-hint" hidden>已预填补采范围。点击“刷新并补采”会先读取 QQ 最新数据库，再补齐所选日期的消息。</div>
-<section class="filter-toolbar collect-toolbar" aria-label="采集条件">
+<section class="filter-toolbar collect-toolbar" id="manual-collect-controls" aria-label="采集条件">
   <div class="field group-field"><label for="collect-group">群聊</label><select id="collect-group" class="input"><option value="">选择群...</option></select></div>
   <div class="field"><label for="collect-start">开始日期</label><input type="date" id="collect-start" class="input"></div>
   <div class="field"><label for="collect-end">结束日期</label><input type="date" id="collect-end" class="input"></div>
@@ -19,7 +41,84 @@
     <div class="empty" id="collect-empty">选择群和日期范围后点击采集</div>
   </div>
 </section>
+<style>
+  .history-inspection { margin-bottom: 24px; }
+  .inspection-body { padding: 4px 20px 18px; }
+  .inspection-body > p { font-size: 13px; line-height: 1.7; }
+  .inspection-note { color: var(--text-soft); font-size: 12px; line-height: 1.7; overflow-wrap: anywhere; }
+  .inspection-body details { margin: 12px 0; }
+  .inspection-body summary { cursor: pointer; font-size: 13px; font-weight: 600; }
+  .inspection-settings { display: grid; grid-template-columns: minmax(180px,1.5fr) minmax(120px,1fr) minmax(150px,1fr) auto; align-items: end; gap: 14px; margin-top: 14px; }
+  .inspection-check { display: flex; align-items: center; gap: 7px; font-size: 13px; line-height: 1.7; }
+  .inspection-check input { flex-shrink: 0; }
+  .inspection-table td { vertical-align: top; }
+  .inspection-days { display: flex; flex-wrap: wrap; gap: 7px; }
+  .inspection-days a { display: inline-block; border: 1px solid #dbe8df; border-radius: 7px; padding: 4px 8px; color: var(--primary); text-decoration: none; background: #edf5ef; font-size: 12px; }
+  .inspection-error { color: #9b3835; max-width: 360px; }
+  .inspection-pages { display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 12px; padding: 16px; }
+  .inspection-pages[hidden] { display: none; }
+  @media (max-width: 700px) { .inspection-settings { grid-template-columns: repeat(2,minmax(0,1fr)); } .inspection-check, .inspection-settings button { grid-column: 1 / -1; } .inspection-body { padding: 4px 15px 15px; } }
+</style>
 <script>
+  var inspectionPage = 1, inspectionLoadToken = 0, inspectionBusy = false, inspectionSettingsDirty = false, inspectionInitialized = false;
+  function changeInspectionPage(step) { inspectionPage += step; loadHistoryInspection(); }
+  function inspectionTime(value) { return value ? new Date(value).toLocaleString('zh-CN') : '尚无记录'; }
+  function loadHistoryInspection() {
+    var token = ++inspectionLoadToken;
+    return api('GET', '/api/history-inspection?page=' + inspectionPage).then(function(data) {
+      if (token !== inspectionLoadToken) return;
+      inspectionPage = data.page;
+      var last = data.latest_run, statuses = {success:'检查完成',partial_success:'部分群无法检查',failed:'检查失败',running:'上次检查中断，请重新巡检'};
+      document.getElementById('inspection-status').textContent = data.running ? '正在巡检全部已启用群...' : !data.source_available
+        ? '请先配置并启用 NTQQ 数据源，再进行巡检。' : last
+        ? '最近执行：' + inspectionTime(last.finished_at || last.started_at) + ' · ' + (statuses[last.status] || last.status) + (last.error ? ' · ' + last.error : '')
+        : '尚未巡检。自动检查将在程序运行时执行，也可点击“立即巡检”。';
+      document.getElementById('inspection-run').disabled = inspectionBusy || data.running || !data.source_available;
+      document.getElementById('inspection-run').textContent = inspectionBusy || data.running ? '巡检中...' : '立即巡检';
+      document.getElementById('inspection-save').disabled = inspectionBusy || data.running;
+      if (!inspectionInitialized || !inspectionSettingsDirty) {
+        document.getElementById('inspection-enabled').checked = data.settings.enabled;
+        document.getElementById('inspection-days').value = data.settings.lookback_days;
+        document.getElementById('inspection-interval').value = data.settings.interval_hours;
+        inspectionInitialized = true;
+      }
+      document.getElementById('inspection-pages').hidden = data.total <= data.page_size;
+      document.getElementById('inspection-page-label').textContent = '第 ' + data.page + ' / ' + Math.max(1,Math.ceil(data.total/data.page_size)) + ' 页 · ' + data.total + ' 个群';
+      document.getElementById('inspection-prev').disabled = data.page <= 1;
+      document.getElementById('inspection-next').disabled = data.page * data.page_size >= data.total;
+      var host = document.getElementById('inspection-list');
+      if (!data.groups.length) { host.innerHTML = '<tr><td colspan="4" class="empty">没有已启用群，请先到群组页添加。</td></tr>'; return; }
+      host.innerHTML = data.groups.map(function(group) {
+        var color = group.status === 'failed' ? 'badge-red' : group.missing_count ? 'badge-orange' : group.status === 'unchecked' || !group.source_count ? 'badge-dim' : 'badge-green';
+        var days = group.missing_days.map(function(day) {
+          var query = new URLSearchParams({group_id:String(group.group_id),start:day.date,end:day.date,repair:'1'});
+          return '<a href="/collect?' + escapeHtml(query.toString()) + '">' + escapeHtml(day.date) + ' · 补采 ' + formatNumber(day.count) + ' 条 ↗</a>';
+        }).join('');
+        return '<tr><td data-label="群"><strong>' + escapeHtml(group.group_name) + '</strong><div class="inspection-note">' + group.group_id + '</div></td>'
+          + '<td data-label="状态"><span class="badge ' + color + '">' + escapeHtml(group.label) + '</span>'
+          + (group.error ? '<div class="inspection-note inspection-error">' + escapeHtml(group.error) + '</div>' : '')
+          + (!group.is_latest && group.last_success_at || group.status === 'failed' && group.last_success_at ? '<div class="inspection-note">以下为上次成功检查的快照，请重新巡检确认。</div>' : '') + '</td>'
+          + '<td data-label="检查范围"><span>' + (group.start_date ? escapeHtml(group.start_date + ' 至 ' + group.end_date) + '<br>源库可读取 ' + formatNumber(group.source_count) + ' 条<br><span class="inspection-note">' + escapeHtml(inspectionTime(group.last_success_at)) + '</span>' : '尚无有效检查结果') + '</span></td>'
+          + '<td data-label="待补日期"><div class="inspection-days">' + (days || '<span class="inspection-note">' + (group.status === 'failed' || group.status === 'unchecked' ? '无法确认' : '未发现待补消息') + '</span>') + '</div></td></tr>';
+      }).join('');
+    }).catch(function(error) { document.getElementById('inspection-status').textContent = '巡检记录读取失败：' + error.message; });
+  }
+  function saveInspectionSettings(event) {
+    event.preventDefault(); var button = document.getElementById('inspection-save'); button.disabled = true;
+    api('PUT', '/api/history-inspection/settings', {enabled:document.getElementById('inspection-enabled').checked,
+      lookback_days:Number(document.getElementById('inspection-days').value),interval_hours:Number(document.getElementById('inspection-interval').value)}).then(function() {
+      inspectionSettingsDirty = false; toast('巡检设置已保存', 'success'); loadHistoryInspection();
+    }).catch(function(error) { toast('保存失败：' + error.message,'error'); }).finally(function() { button.disabled = false; });
+  }
+  function runHistoryInspection() {
+    if (inspectionBusy) return;
+    inspectionBusy = true; document.getElementById('inspection-run').disabled = true; document.getElementById('inspection-run').textContent = '巡检中...';
+    document.getElementById('inspection-save').disabled = true;
+    document.getElementById('inspection-status').textContent = '正在检查所有已启用群，结果将按群和日期汇总...';
+    api('POST', '/api/history-inspection/run', {refresh:document.getElementById('inspection-refresh').checked}).then(function(result) {
+      inspectionPage = 1; toast(result.status === 'success' ? '巡检完成，本次发现 ' + result.missing_count + ' 条待补消息' : '巡检未全部完成，请查看失败原因', result.status === 'success' ? 'success' : 'error');
+    }).catch(function(error) { toast('巡检失败：' + error.message,'error'); }).finally(function() { inspectionBusy = false; loadHistoryInspection(); });
+  }
   function loadGroupOptions() {
     return api('GET', '/api/groups').then(function(d) {
       var sel = document.getElementById('collect-group');
@@ -141,8 +240,14 @@
   if (/^\d{4}-\d{2}-\d{2}$/.test(params.get('start') || '')) {
     document.getElementById('collect-start').value = params.get('start');
   }
+  if (/^\d{4}-\d{2}-\d{2}$/.test(params.get('end') || '')) {
+    document.getElementById('collect-end').value = params.get('end');
+  }
   loadGroupOptions().then(function() {
     if (params.get('group_id')) document.getElementById('collect-group').value = params.get('group_id');
+    if (params.get('repair') === '1') document.getElementById('manual-collect-controls').scrollIntoView({block:'start'});
   });
+  loadHistoryInspection();
+  setInterval(loadHistoryInspection, 30000);
 </script>
 {% endblock %}

@@ -197,6 +197,25 @@ class Archive:
                     state_id INTEGER PRIMARY KEY CHECK (state_id=1),
                     last_viewed_at TEXT NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS history_inspection_settings (
+                    settings_id INTEGER PRIMARY KEY CHECK(settings_id=1),
+                    enabled INTEGER NOT NULL DEFAULT 1 CHECK(enabled IN (0,1)),
+                    lookback_days INTEGER NOT NULL DEFAULT 7 CHECK(lookback_days BETWEEN 1 AND 31),
+                    interval_hours INTEGER NOT NULL DEFAULT 24 CHECK(interval_hours BETWEEN 1 AND 168)
+                );
+                INSERT OR IGNORE INTO history_inspection_settings(settings_id) VALUES(1);
+                CREATE TABLE IF NOT EXISTS history_inspection_groups (
+                    group_id INTEGER PRIMARY KEY REFERENCES groups(group_id) ON DELETE CASCADE,
+                    last_job_id INTEGER NOT NULL REFERENCES jobs(job_id),
+                    status TEXT NOT NULL CHECK(status IN ('success','failed')),
+                    checked_at TEXT NOT NULL,
+                    last_success_at TEXT,
+                    start_date TEXT,
+                    end_date TEXT,
+                    source_count INTEGER,
+                    missing_days TEXT NOT NULL DEFAULT '[]',
+                    error TEXT NOT NULL DEFAULT ''
+                );
                 CREATE TABLE IF NOT EXISTS catchup_reads (
                     item_key TEXT PRIMARY KEY,
                     read_at TEXT NOT NULL

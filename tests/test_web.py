@@ -65,6 +65,51 @@ def test_candidates_requires_login(web_client):
     assert response.headers["location"] == "/login"
 
 
+def test_history_inspection_requires_login_and_persists_settings(web_client):
+    client, _, _ = web_client
+    assert client.get("/api/history-inspection").status_code == 401
+    assert client.put("/api/history-inspection/settings", json={}).status_code == 401
+    assert client.post("/api/history-inspection/run", json={}).status_code == 401
+    client.post("/login", data={"password": "password123"})
+    response = client.put("/api/history-inspection/settings", json={"enabled": False,
+        "lookback_days": 14, "interval_hours": 48})
+    assert response.status_code == 200
+    assert client.get("/api/history-inspection").json()["settings"] == response.json()
+    assert client.get("/api/history-inspection").json()["groups"][0]["status"] == "unchecked"
+    assert client.put("/api/history-inspection/settings", json={"lookback_days": 32}).status_code == 422
+    assert client.put("/api/history-inspection/settings", json={"enabled": "false"}).status_code == 422
+    assert client.get("/api/history-inspection?page=0").status_code == 422
+    assert client.post("/api/history-inspection/run", json={}).status_code == 400
+
+
+def test_manual_history_inspection_and_conflict_do_not_import_messages(web_client, monkeypatch):
+    client, _, _ = web_client
+    config = client.app.state.config
+    config.ntqq.enabled, config.ntqq.db_dir = True, "test-source"
+    stamp = datetime.now(ZoneInfo("Asia/Shanghai")) - timedelta(days=3)
+    class Source:
+        def __init__(self, **kwargs):
+            pass
+        def collect(self, group_id, start, end):
+            return [NormalizedMessage(msg_id="history-gap", group_id=group_id,
+                timestamp=stamp, collected_at=stamp, text="历史缺口")]
+    monkeypatch.setattr("qq_digest.history_inspection.NTQQCollector", Source)
+    client.post("/login", data={"password": "password123"})
+    result = client.post("/api/history-inspection/run", json={"refresh": False})
+    assert result.status_code == 200
+    assert result.json()["missing_count"] == 1
+    data = client.get("/api/history-inspection").json()
+    assert data["groups"][0]["missing_days"] == [{"date": stamp.date().isoformat(), "count": 1}]
+    assert data["running"] is False
+    assert client.app.state.archive.count_messages(123) == 0
+    with client.app.state.operations.claim("collect"):
+        assert client.post("/api/history-inspection/run", json={}).status_code == 409
+        assert client.put("/api/history-inspection/settings", json={}).status_code == 409
+    assert client.post("/api/history-inspection/run", json={"refresh": "yes"}).status_code == 422
+    assert "history-inspection" in client.get("/collect").text
+    assert "params.get('end')" in client.get("/collect").text
+
+
 def test_report_completeness_is_exposed_in_list_detail_and_health(web_client, tmp_path):
     client, _, _ = web_client
     archive = client.app.state.archive
