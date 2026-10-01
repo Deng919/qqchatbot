@@ -65,6 +65,57 @@ def test_candidates_requires_login(web_client):
     assert response.headers["location"] == "/login"
 
 
+def test_revision_api_auth_validation_notes_and_conflict(web_client, tmp_path, monkeypatch):
+    client, _, _ = web_client
+    ar = client.app.state.archive
+    md, js = tmp_path/'legacy.md', tmp_path/'legacy.json'
+    md.write_text('old',encoding='utf-8'); js.write_text('{}',encoding='utf-8')
+    rid = ar.record_report(group_id=123,report_date='2026-10-01',markdown_path=md,json_path=js,candidate_ids=[])
+    path = f'/api/reports/daily/{rid}'
+    assert client.get(path+'/versions').status_code==401
+    assert client.post(path+'/corrections',json={}).status_code==401
+    assert client.post(path+'/regenerate',json={}).status_code==401
+    client.post('/login',data={'password':'password123'})
+    assert client.get(path+'/versions').json()['current_version']==0
+    assert client.get(path+'/versions/0').json()['markdown']=='old'
+    payload = dict(expected_version=0,category='error',excerpt='old',correction='new',reason='依据原消息')
+    note = client.post(path+'/corrections',json=payload)
+    assert note.status_code==200
+    assert client.get(path+'/corrections').json()['corrections'][0]['correction']=='new'
+    assert client.post(path+'/corrections',json=payload).status_code==409
+    note_id = note.json()['correction_id']
+    assert client.put(path+f'/corrections/{note_id}',json={'status':'resolved'}).status_code==200
+    assert client.post(path+'/corrections',json={**payload,'reason':' '}).status_code==422
+    assert client.post(path+'/regenerate',json={'expected_version':1,'reason':' '}).status_code==422
+    assert client.get(path+'/versions/99').status_code==404
+    assert client.get('/api/reports/other/1/versions').status_code==404
+    with client.app.state.operations.claim('collect'):
+        assert client.post(path+'/corrections',json={**payload,'expected_version':1}).status_code==409
+        assert client.post(path+'/regenerate',json={'expected_version':1,'reason':'重试'}).status_code==409
+    calls=[]
+    def regen(**kwargs):
+        calls.append(kwargs); return {'version':2}
+    monkeypatch.setattr('qq_digest.web.report_revisions.regenerate_report',regen)
+    assert client.post(path+'/regenerate',json={'expected_version':1,'reason':'重试'}).status_code==200
+    assert calls[0]['kind']=='daily' and calls[0]['reason']=='重试'
+
+
+def test_report_detail_binds_content_to_immutable_revision(web_client, tmp_path):
+    client,_,_=web_client
+    ar=client.app.state.archive
+    md,js=tmp_path/'version.md',tmp_path/'version.json'
+    md.write_text('mutable file',encoding='utf-8'); js.write_text('{}',encoding='utf-8')
+    rid=ar.record_report(group_id=123,report_date='2026-10-01',markdown_path=md,json_path=js,
+        candidate_ids=[],revision_markdown='snapshot content',revision_payload={'group_id':123})
+    md.write_bytes(b'\xff')
+    client.post('/login',data={'password':'password123'})
+    detail=client.get(f'/api/reports/daily/{rid}').json()
+    assert detail['current_version']==1
+    assert detail['markdown']=='snapshot content'
+    assert client.get(f'/api/reports/daily/{rid}/sources/test?version=0').status_code==409
+    assert client.post(f'/api/reports/daily/{rid}/ask',json={'question':'解释','expected_version':0}).status_code==409
+
+
 def test_history_inspection_requires_login_and_persists_settings(web_client):
     client, _, _ = web_client
     assert client.get("/api/history-inspection").status_code == 401

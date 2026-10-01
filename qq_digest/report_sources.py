@@ -68,7 +68,7 @@ def load_verified_report_sources(
 ) -> list[dict[str, object]] | None:
     """Discard references that are missing, from another group, or outside the report."""
     try:
-        payload = json.loads(Path(json_path).read_text(encoding="utf-8"))
+        payload = json_path if isinstance(json_path, dict) else json.loads(Path(json_path).read_text(encoding="utf-8"))
         items = extract_report_sources(payload) if isinstance(payload, dict) else None
     except (OSError, ValueError, TypeError):
         return None

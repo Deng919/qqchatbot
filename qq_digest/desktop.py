@@ -24,7 +24,7 @@ from .knowledge import KnowledgeWriter
 from .web.app import create_app
 
 
-DESKTOP_BACKEND_ID = "2026-10-01-history-gap-inspection"
+DESKTOP_BACKEND_ID = "2026-10-01-report-revisions"
 
 
 def resolve_config_path(install_dir: Path) -> Path:

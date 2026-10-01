@@ -14,7 +14,7 @@ from .report_completeness import input_coverage
 
 
 # Bump when report rendering changes without a prompt/schema change.
-REPORT_FORMAT_VERSION = 6
+REPORT_FORMAT_VERSION = 7
 
 
 @dataclass(frozen=True)
@@ -128,6 +128,8 @@ class GroupSummaryBuilder:
         return GroupSummaryArtifact(
             markdown=markdown,
             payload={**summary.response.model_dump(), "evidence_version": 1,
+                     "window_start": window_start.isoformat(), "window_end": window_end.isoformat(),
+                     "window_end_inclusive": report_kind == "daily",
                      "diagnostics": diagnostics, "coverage": coverage},
             candidate_kwargs=candidate_kwargs,
             source_message_count=len(messages),

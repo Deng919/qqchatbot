@@ -36,9 +36,11 @@ from ..report_qa import (
     NoReportEvidence, ReportNotFound, answer_report_question, load_report_evidence,
 )
 from ..report_sources import load_verified_report_sources
+from ..report_revisions import ReportRevisionService, RevisionConflict
 from .auth import PasswordHasher, SessionCookie
 from .operations import OperationBusy, OperationCoordinator
 from .history_inspection import add_history_inspection_routes, history_inspection_loop
+from .report_revisions import add_report_revision_routes
 
 templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
 
@@ -78,6 +80,7 @@ class QATurn(BaseModel):
 class AskReportPayload(BaseModel):
     question: str = Field(min_length=1, max_length=2000)
     history: list[QATurn] = Field(default_factory=list, max_length=6)
+    expected_version: int | None = Field(default=None, ge=0, strict=True)
 
     @field_validator("question")
     @classmethod
@@ -669,6 +672,8 @@ def create_app(
     app.state.desktop_bridge = None
     add_history_inspection_routes(app, archive=archive, config=config,
                                   operations=operations, require_login=require_login)
+    add_report_revision_routes(app, archive=archive, config=config,
+                               operations=operations, require_login=require_login)
 
     @app.get("/healthz")
     async def healthz():
@@ -1729,19 +1734,27 @@ def create_app(
         group = ar.connection.execute(
             "SELECT name FROM groups WHERE group_id=?", (row["group_id"],)
         ).fetchone()
-        markdown = (
-            markdown_path.read_text(encoding="utf-8")
-            if markdown_path.exists()
-            else "报告文件不存在"
-        )
+        revision_service = ReportRevisionService(ar)
+        current_version = revision_service.current_version(report_kind, report_id)
+        revision_payload = row["json_path"]
+        if current_version:
+            snapshot = revision_service.version(report_kind, report_id, current_version)
+            markdown = snapshot['markdown'] if snapshot['markdown'] is not None else "报告版本正文不可读取"
+            revision_payload = snapshot['payload'] or {}
+        else:
+            try:
+                markdown = markdown_path.read_text(encoding="utf-8")
+            except (OSError, UnicodeError):
+                markdown = "报告文件不存在或无法读取，可尝试重新生成修复"
         cfg = _config(request)
         evidence_items = load_verified_report_sources(
-            ar.connection, row["json_path"], group_id=row["group_id"],
+            ar.connection, revision_payload, group_id=row["group_id"],
             start_date=start_date, end_date=end_date,
             timezone_name=cfg.summary.timezone if cfg else "Asia/Shanghai",
         )
         return {
             "markdown": markdown,
+            "current_version": current_version,
             "report_kind": report_kind,
             "group_name": group["name"] if group else str(row["group_id"]),
             "window_start_date": start_date,
@@ -1749,16 +1762,24 @@ def create_app(
             "evidence_status": "available" if evidence_items is not None else "legacy",
             "evidence_items": evidence_items or [],
             "completeness": ReportCompletenessService(ar).report(
-                row["json_path"], report_kind, end_date
+                revision_payload, report_kind, end_date
             ),
         }
 
     @app.get("/api/reports/{report_kind}/{report_id}/sources/{msg_id}")
     async def api_report_source_context(
-        request: Request, report_kind: str, report_id: int, msg_id: str
+        request: Request, report_kind: str, report_id: int, msg_id: str,
+        version: int | None = Query(default=None, ge=0)
     ):
         require_login(request)
         ar = _archive(request)
+        if version is not None:
+            try:
+                ReportRevisionService(ar).check_version(report_kind, report_id, version)
+            except RevisionConflict as exc:
+                raise HTTPException(409, detail=str(exc)) from exc
+            except LookupError as exc:
+                raise HTTPException(404, detail=str(exc)) from exc
         if report_kind == "daily":
             row = ar.connection.execute(
                 "SELECT * FROM reports WHERE report_id=?", (report_id,)
@@ -1790,6 +1811,13 @@ def create_app(
         request: Request, report_kind: str, report_id: int, payload: AskReportPayload
     ):
         require_login(request)
+        if payload.expected_version is not None:
+            try:
+                ReportRevisionService(_archive(request)).check_version(report_kind, report_id, payload.expected_version)
+            except RevisionConflict as exc:
+                raise HTTPException(409, detail=str(exc)) from exc
+            except LookupError as exc:
+                raise HTTPException(404, detail=str(exc)) from exc
         cfg = _config(request)
         if cfg is None:
             raise HTTPException(status_code=503, detail="AI 配置不可用")

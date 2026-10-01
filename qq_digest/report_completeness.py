@@ -36,7 +36,7 @@ def input_coverage(diagnostics: object, *, archive_mismatch: bool = False) -> di
 
 def _read_input(json_path: str) -> dict:
     try:
-        payload = json.loads(Path(json_path).read_text(encoding="utf-8"))
+        payload = json_path if isinstance(json_path, dict) else json.loads(Path(json_path).read_text(encoding="utf-8"))
     except (OSError, UnicodeError, ValueError):
         payload = None
     if not isinstance(payload, dict):

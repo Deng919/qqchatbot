@@ -142,6 +142,9 @@ def test_manual_summary_generates_per_group_and_reuses_same_input(tmp_path):
     assert second.created_reports == []
     assert [item.group_id for item in second.reused_reports] == [123, 456]
     assert ai.calls == [123, 456]
+    from qq_digest.report_revisions import ReportRevisionService
+    assert all(ReportRevisionService(archive).versions('range', item.report_id)['total'] == 1
+               for item in first.created_reports)
     assert archive.connection.execute(
         "SELECT COUNT(*) FROM manual_reports"
     ).fetchone()[0] == 2

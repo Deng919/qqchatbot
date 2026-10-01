@@ -131,6 +131,30 @@ class Archive:
                 );
                 CREATE INDEX IF NOT EXISTS idx_manual_reports_window
                     ON manual_reports(end_date DESC, start_date DESC, group_id);
+                CREATE TABLE IF NOT EXISTS report_revisions (
+                    revision_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    report_kind TEXT NOT NULL CHECK(report_kind IN ('daily','range')),
+                    report_id INTEGER NOT NULL,
+                    group_id INTEGER NOT NULL REFERENCES groups(group_id) ON DELETE CASCADE,
+                    version INTEGER NOT NULL,
+                    markdown TEXT,
+                    payload TEXT,
+                    origin TEXT NOT NULL,
+                    reason TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    UNIQUE(report_kind,report_id,version)
+                );
+                CREATE TABLE IF NOT EXISTS report_corrections (
+                    correction_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    revision_id INTEGER NOT NULL REFERENCES report_revisions(revision_id) ON DELETE CASCADE,
+                    category TEXT NOT NULL CHECK(category IN ('missing','error','noise')),
+                    excerpt TEXT NOT NULL,
+                    correction TEXT NOT NULL,
+                    reason TEXT NOT NULL,
+                    status TEXT NOT NULL CHECK(status IN ('open','resolved')),
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
                 CREATE TABLE IF NOT EXISTS candidates (
                     candidate_id INTEGER PRIMARY KEY AUTOINCREMENT,
                     group_id INTEGER NOT NULL,
@@ -864,7 +888,15 @@ class Archive:
         effective_template: str = "",
         input_fingerprint: str = "",
         source_message_count: int = 0,
+        revision_markdown: str | None = None,
+        revision_payload: dict | None = None,
+        revision_reason: str = "AI 生成或因输入/配置变化重新生成",
     ) -> int:
+        from .report_revisions import ReportRevisionService
+        revisions = ReportRevisionService(self)
+        existing = self.report_for(group_id, report_date)
+        if revision_markdown is not None and existing is not None:
+            revisions.capture_legacy_in_transaction('daily', existing['report_id'])
         now = datetime.now(timezone.utc).isoformat()
         self.connection.execute(
             """
@@ -898,7 +930,11 @@ class Archive:
             "SELECT report_id FROM reports WHERE group_id=? AND report_date=?",
             (group_id, report_date),
         ).fetchone()
-        return int(row["report_id"])
+        report_id = int(row["report_id"])
+        if revision_markdown is not None:
+            revisions.record_generated_in_transaction('daily', report_id, revision_markdown,
+                                                      revision_payload, revision_reason)
+        return report_id
 
     def record_manual_report(
         self,
@@ -913,6 +949,9 @@ class Archive:
         candidate_ids: list[int],
         input_fingerprint: str,
         source_message_count: int,
+        revision_markdown: str | None = None,
+        revision_payload: dict | None = None,
+        revision_reason: str = "AI 生成或因输入/配置变化重新生成",
     ) -> int:
         with self.transaction():
             return self.record_manual_report_in_transaction(
@@ -926,6 +965,9 @@ class Archive:
                 candidate_ids=candidate_ids,
                 input_fingerprint=input_fingerprint,
                 source_message_count=source_message_count,
+                revision_markdown=revision_markdown,
+                revision_payload=revision_payload,
+                revision_reason=revision_reason,
             )
 
     def record_manual_report_in_transaction(
@@ -941,7 +983,15 @@ class Archive:
         candidate_ids: list[int],
         input_fingerprint: str,
         source_message_count: int,
+        revision_markdown: str | None = None,
+        revision_payload: dict | None = None,
+        revision_reason: str = "AI 生成或因输入/配置变化重新生成",
     ) -> int:
+        from .report_revisions import ReportRevisionService
+        revisions = ReportRevisionService(self)
+        existing = self.manual_report_for(group_id, start_date, end_date, detail_mode)
+        if revision_markdown is not None and existing is not None:
+            revisions.capture_legacy_in_transaction('range', existing['manual_report_id'])
         now = datetime.now(timezone.utc).isoformat()
         self.connection.execute(
             """
@@ -977,7 +1027,11 @@ class Archive:
         row = self.manual_report_for(group_id, start_date, end_date, detail_mode)
         if row is None:
             raise RuntimeError("范围报告写入后无法读取")
-        return int(row["manual_report_id"])
+        report_id = int(row["manual_report_id"])
+        if revision_markdown is not None:
+            revisions.record_generated_in_transaction('range', report_id, revision_markdown,
+                                                      revision_payload, revision_reason)
+        return report_id
 
     def start_job(
         self, job_type: str, *, target_date: str | None = None,

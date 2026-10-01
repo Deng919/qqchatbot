@@ -369,6 +369,8 @@ def test_same_day_report_regenerates_when_new_messages_arrive(tmp_path):
 
     report = archive.report_for(123, "2026-08-24")
     assert len(second.report_paths) == 1
+    from qq_digest.report_revisions import ReportRevisionService
+    assert ReportRevisionService(archive).versions('daily', report['report_id'])['total'] == 2
     assert report["source_message_count"] == 2
     assert report["input_fingerprint"]
 

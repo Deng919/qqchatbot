@@ -284,6 +284,8 @@ class DailyPipeline:
                             candidate_ids=group_candidate_ids,
                             input_fingerprint=input_fingerprint,
                             source_message_count=artifact.source_message_count,
+                            revision_markdown=artifact.markdown,
+                            revision_payload=artifact.payload,
                         )
                         self.archive.delete_unreferenced_pending_candidates_in_transaction(
                             old_candidate_ids

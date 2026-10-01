@@ -29,6 +29,24 @@
     <div class="card-header">报告详情 <span><button class="btn btn-sm" id="report-qa-open" type="button" onclick="openReportQA()">问 DeepSeek</button> <button class="btn btn-sm" aria-label="关闭报告详情" type="button" onclick="closeReport()">关闭</button></span></div>
     <div class="report-detail-scroll">
       <section id="report-completeness" class="coverage-notice" aria-label="报告覆盖范围" aria-live="polite"></section>
+      <section id="report-revisions" class="revision-panel" aria-label="版本与纠错">
+        <div class="revision-heading"><h3>版本与纠错</h3><label for="revision-select">查看版本</label><select class="input" id="revision-select" onchange="selectReportVersion()"></select></div>
+        <p id="revision-notice" role="status"></p>
+        <div class="revision-pages"><button class="btn btn-sm" id="revision-prev" onclick="changeRevisionPage(-1)">较新版本</button><span id="revision-page"></span><button class="btn btn-sm" id="revision-next" onclick="changeRevisionPage(1)">较旧版本</button></div>
+        <details><summary>添加纠错意见</summary><p class="header-meta">意见单独留存，不改 AI 正文，不会被后续生成覆盖。旧版意见需结合新报告重新核实。</p>
+          <form onsubmit="saveReportCorrection(event)"><fieldset id="correction-fields">
+            <div class="field"><label for="correction-category">问题类型</label><select class="input" id="correction-category"><option value="missing">遗漏</option><option value="error">错误</option><option value="noise">噪声</option></select></div>
+            <div class="field"><label for="correction-excerpt">原报告段落（可选）</label><textarea class="input" id="correction-excerpt" rows="2" maxlength="4000"></textarea></div>
+            <div class="field"><label for="correction-text">修正意见</label><textarea class="input" id="correction-text" rows="3" maxlength="4000" required></textarea></div>
+            <div class="field"><label for="correction-reason">依据或理由</label><textarea class="input" id="correction-reason" rows="2" maxlength="2000" required></textarea></div>
+            <button class="btn" type="submit">保存纠错意见</button>
+          </fieldset></form>
+        </details>
+        <div id="report-corrections"></div>
+        <details><summary>重新生成这份报告</summary><p class="header-meta">按原群和时间窗读取本地归档，使用当前 AI 设置。旧报告保留为历史版本，纠错意见仍需人工核实，不会自动作为 AI 事实。较早报告未记录精确时间窗时按原日期的完整自然日生成。</p>
+          <form onsubmit="regenerateSelectedReport(event)"><fieldset id="regeneration-fields"><div class="field"><label for="regeneration-reason">重新生成原因</label><textarea class="input" id="regeneration-reason" rows="2" maxlength="2000" required placeholder="例如：补采后重新核对摘要"></textarea></div><button class="btn" id="report-regenerate" type="submit">保留旧版并重新生成</button></fieldset></form>
+        </details>
+      </section>
       <div id="report-content" class="report-content"></div>
       <section id="report-evidence" class="report-evidence" aria-label="逐条来源"></section>
       <section id="report-source-context" class="report-source-context" aria-label="原消息与上下文" hidden></section>
@@ -68,6 +86,17 @@
 </aside>
 
 <style>
+  .revision-panel { margin: 18px; padding: 16px; border: 1px solid var(--border); border-radius: 10px; overflow-wrap: anywhere; }
+  .revision-heading { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
+  .revision-heading h3 { font-size: 15px; margin: 0 auto 0 0; }
+  .revision-heading .input { width: auto; max-width: 100%; }
+  .revision-panel p { font-size: 12px; line-height: 1.7; }
+  .revision-panel details { margin: 14px 0; }
+  .revision-panel summary { cursor: pointer; font-size: 13px; font-weight: 600; }
+  .revision-panel fieldset { border: 0; padding: 0; margin: 12px 0 0; display: grid; gap: 12px; min-width: 0; }
+  .revision-pages { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; font-size: 12px; }
+  .correction-note { border-top: 1px solid var(--border); padding: 12px 0; font-size: 13px; line-height: 1.7; }
+  .correction-note p { white-space: pre-wrap; margin: 6px 0; }
   .coverage-notice { margin: 18px; padding: 16px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); overflow-wrap: anywhere; }
   .coverage-notice[data-status="limited"] { border-color: #e9cf9a; background: #fffaef; }
   .coverage-notice p { margin: 8px 0 0; font-size: 13px; line-height: 1.7; }
@@ -130,6 +159,95 @@
   var rangeGroups = [], rangeBusy = false, rangeOpener = null;
   var qaReport = null, qaHistory = [], qaOpener = null, qaRequestToken = 0, qaBusy = false, reportSelectionToken = 0, sourceRequestToken = 0;
   var reportPage = 1, reportLoadToken = 0;
+  var revisionReport = null, revisionPage = 1, revisionLoadToken = 0, revisionBusy = false;
+  function revisionPath(report) { return '/api/reports/' + report.kind + '/' + report.id; }
+  function revisionIsCurrent() { return revisionReport && revisionReport.viewing_version === revisionReport.current_version; }
+  function revisionControls() {
+    var disabled = revisionBusy || !revisionIsCurrent();
+    document.getElementById('correction-fields').disabled = disabled;
+    document.getElementById('regeneration-fields').disabled = disabled;
+    document.getElementById('report-qa-open').disabled = !revisionIsCurrent();
+    document.querySelectorAll('#report-corrections button').forEach(function(button) { button.disabled = revisionBusy; });
+  }
+  function changeRevisionPage(step) { revisionPage += step; loadReportRevisions(reportSelectionToken); }
+  function loadReportRevisions(selectionToken) {
+    if (!qaReport) return;
+    var report = {kind:qaReport.kind,id:qaReport.id}, token = ++revisionLoadToken;
+    return Promise.all([api('GET',revisionPath(report)+'/versions?page='+revisionPage),api('GET',revisionPath(report)+'/corrections')]).then(function(results) {
+      if (selectionToken !== reportSelectionToken || token !== revisionLoadToken) return;
+      var data = results[0], notes = results[1].corrections;
+      if(data.current_version !== qaReport.current_version) {
+        revisionReport=null; revisionControls();
+        document.getElementById('revision-notice').textContent='报告已更新，正在读取对应版本的正文...';
+        viewReport(report.kind,report.id); return;
+      }
+      var viewing = revisionReport ? revisionReport.viewing_version : data.current_version;
+      revisionReport = {kind:report.kind,id:report.id,current_version:data.current_version,viewing_version:viewing}; revisionPage = data.page;
+      var options = [{version:data.current_version,reason:'当前版本'}];
+      data.versions.forEach(function(row) { if (row.version !== data.current_version) options.push(row); });
+      if (!options.some(function(row) { return row.version === viewing; })) options.push({version:viewing,reason:'正在查看'});
+      document.getElementById('revision-select').innerHTML = options.map(function(row) { return '<option value="'+row.version+'">'+(row.version ? 'v'+row.version : '旧报告')+' · '+escapeHtml(row.reason)+'</option>'; }).join('');
+      document.getElementById('revision-select').value = String(viewing);
+      document.getElementById('revision-page').textContent = '共 '+data.total+' 个版本 · 第 '+data.page+' 页';
+      document.getElementById('revision-prev').disabled = data.page<=1;
+      document.getElementById('revision-next').disabled = data.page*data.page_size>=data.total;
+      var currentRow = data.versions.find(function(row) { return row.version===data.current_version; });
+      if (revisionIsCurrent()) document.getElementById('revision-notice').textContent = data.current_version===0 ? '旧报告尚无历史记录。下一次生成前会保留当前可读取内容，更早历史无法恢复。' : '当前版本 v'+data.current_version+(currentRow ? ' · '+new Date(currentRow.created_at).toLocaleString('zh-CN')+' · '+currentRow.reason : '');
+      var labels = {missing:'遗漏',error:'错误',noise:'噪声'};
+      document.getElementById('report-corrections').innerHTML = notes.length ? notes.map(function(note) {
+        return '<article class="correction-note"><strong>'+labels[note.category]+' · 基于 v'+note.version+' · '+(note.status==='resolved'?'已处理':'待核实')+'</strong>'
+          +(note.version!==data.current_version?'<p class="header-meta">基于旧版，请结合当前摘要重新核实。</p>':'')
+          +(note.excerpt?'<p>原段落：'+escapeHtml(note.excerpt)+'</p>':'')+'<p>修正意见：'+escapeHtml(note.correction)+'</p><p>依据：'+escapeHtml(note.reason)+'</p>'
+          +'<button class="btn btn-sm" type="button" onclick="setReportCorrectionStatus('+note.correction_id+',\''+(note.status==='resolved'?'open':'resolved')+'\')">'+(note.status==='resolved'?'重新打开':'标记已处理')+'</button></article>';
+      }).join('') : '<p class="header-meta">尚无纠错意见</p>';
+      revisionControls();
+    }).catch(function(error) { if (selectionToken===reportSelectionToken) { document.getElementById('revision-notice').textContent='版本读取失败：'+error.message; document.getElementById('correction-fields').disabled=true; document.getElementById('regeneration-fields').disabled=true; } });
+  }
+  function selectReportVersion() {
+    if (!revisionReport || revisionBusy) return;
+    var version = Number(document.getElementById('revision-select').value), report = revisionReport;
+    if (version===report.current_version) { viewReport(report.kind,report.id); return; }
+    closeReportQA(); var token = ++reportSelectionToken;
+    sourceRequestToken += 1;
+    revisionReport.viewing_version=version; revisionControls();
+    document.getElementById('report-content').textContent='正在读取历史版本...';
+    ['report-completeness','report-evidence','report-source-context'].forEach(function(id) { document.getElementById(id).hidden=true; });
+    api('GET',revisionPath(report)+'/versions/'+version).then(function(data) {
+      if (token!==reportSelectionToken) return;
+      closeReportQA();
+      revisionReport.viewing_version=version;
+      document.getElementById('report-content').textContent=data.markdown===null?'该版本正文无法读取，不能恢复原内容。':data.markdown;
+      document.getElementById('revision-notice').textContent='正在查看只读历史 v'+version+' · '+new Date(data.created_at).toLocaleString('zh-CN')+' · '+data.reason+(!data.content_available?' · 内容不完整':'')+'。问答和来源请回到当前版本查看。';
+      ['report-completeness','report-evidence','report-source-context'].forEach(function(id) { document.getElementById(id).hidden=true; });
+      revisionControls();
+    }).catch(function(error) { if(token===reportSelectionToken) toast('历史读取失败：'+error.message,'error'); });
+  }
+  function saveReportCorrection(event) {
+    event.preventDefault(); if (!revisionIsCurrent() || revisionBusy) return;
+    var report = revisionReport, token=reportSelectionToken;
+    revisionBusy=true; revisionControls();
+    api('POST',revisionPath(report)+'/corrections',{expected_version:report.current_version,category:document.getElementById('correction-category').value,
+      excerpt:document.getElementById('correction-excerpt').value,correction:document.getElementById('correction-text').value,reason:document.getElementById('correction-reason').value}).then(function() {
+      if(token!==reportSelectionToken)return;
+      ['correction-excerpt','correction-text','correction-reason'].forEach(function(id){document.getElementById(id).value='';});
+      toast('纠错意见已保存，后续生成不会删除','success'); viewReport(report.kind,report.id);
+    }).catch(function(error){toast('保存失败：'+error.message,'error');}).finally(function(){revisionBusy=false; revisionControls();});
+  }
+  function setReportCorrectionStatus(id,status) {
+    if(!revisionReport || revisionBusy)return;
+    var report=revisionReport,token=reportSelectionToken; revisionBusy=true;revisionControls();
+    api('PUT',revisionPath(report)+'/corrections/'+id,{status:status}).then(function(){if(token===reportSelectionToken)loadReportRevisions(token);})
+      .catch(function(error){toast('更新失败：'+error.message,'error');}).finally(function(){revisionBusy=false;revisionControls();});
+  }
+  function regenerateSelectedReport(event) {
+    event.preventDefault(); if(!revisionIsCurrent() || revisionBusy)return;
+    var report=revisionReport,token=reportSelectionToken,reason=document.getElementById('regeneration-reason').value;
+    revisionBusy=true;revisionControls();document.getElementById('report-regenerate').textContent='生成中，旧报告已保留...';
+    api('POST',revisionPath(report)+'/regenerate',{expected_version:report.current_version,reason:reason}).then(function(data){
+      toast('新版本 v'+data.version+' 已生成，纠错意见仍需核实','success');loadReports();
+      if(token===reportSelectionToken){document.getElementById('regeneration-reason').value='';viewReport(report.kind,report.id);}
+    }).catch(function(error){toast('重新生成失败：'+error.message,'error');}).finally(function(){revisionBusy=false;document.getElementById('report-regenerate').textContent='保留旧版并重新生成';revisionControls();});
+  }
   function reportParams() { var p = new URLSearchParams(); p.set('page', reportPage); p.set('kind', document.getElementById('report-kind').value); [['group_id','report-group'],['date_from','report-from'],['date_to','report-to']].forEach(function(row) { var value = document.getElementById(row[1]).value; if (value) p.set(row[0], value); }); return p; }
   function filterReports() { reportPage = 1; loadReports(); }
   function clearReportFilters() { ['report-group','report-from','report-to'].forEach(function(id) { document.getElementById(id).value = ''; }); document.getElementById('report-kind').value = 'all'; refreshDateHints(); filterReports(); }
@@ -160,15 +278,18 @@
     if ((kind !== 'daily' && kind !== 'range') || !Number.isInteger(Number(reportId))) return;
     var selectionToken = ++reportSelectionToken;
     closeReportQA(); qaReport = null;
+    revisionReport=null; revisionPage=1; revisionLoadToken+=1; revisionControls();
     api('GET', '/api/reports/' + kind + '/' + Number(reportId)).then(function(d) {
       if (selectionToken !== reportSelectionToken) return;
-      qaReport = {kind: kind, id: Number(reportId), group_name: d.group_name, start: d.window_start_date, end: d.window_end_date};
+      qaReport = {kind: kind, id: Number(reportId), current_version:d.current_version, group_name: d.group_name, start: d.window_start_date, end: d.window_end_date};
       document.getElementById('report-detail').hidden = false; document.getElementById('report-layout').classList.add('has-detail'); document.getElementById('report-content').textContent = d.markdown;
       renderReportEvidence(d);
       renderReportCompleteness(d.completeness);
+      ['report-completeness','report-evidence'].forEach(function(id) { document.getElementById(id).hidden=false; });
+      loadReportRevisions(selectionToken);
     }).catch(function(e) { if (selectionToken === reportSelectionToken) toast('加载失败: ' + e.message, 'error'); });
   }
-  function closeReport() { reportSelectionToken += 1; sourceRequestToken += 1; closeReportQA(); qaReport = null; document.getElementById('report-detail').hidden = true; document.getElementById('report-layout').classList.remove('has-detail'); document.getElementById('report-source-context').hidden = true; }
+  function closeReport() { reportSelectionToken += 1; sourceRequestToken += 1; closeReportQA(); qaReport = null; revisionReport=null; revisionLoadToken+=1; document.getElementById('report-detail').hidden = true; document.getElementById('report-layout').classList.remove('has-detail'); document.getElementById('report-source-context').hidden = true; }
   function coverageBadge(data) {
     data = data || {};
     var color = data.status === 'normal' ? 'badge-green' : data.status === 'limited' ? 'badge-orange' : 'badge-dim';
@@ -215,9 +336,9 @@
     });
   }
   function openReportSource(messageId) {
-    if (!qaReport) return;
+    if (!qaReport || !revisionIsCurrent()) return;
     var report = qaReport, token = ++sourceRequestToken;
-    api('GET', '/api/reports/' + report.kind + '/' + report.id + '/sources/' + encodeURIComponent(messageId)).then(function(data) {
+    api('GET', '/api/reports/' + report.kind + '/' + report.id + '/sources/' + encodeURIComponent(messageId)+'?version='+report.current_version).then(function(data) {
       if (token !== sourceRequestToken || qaReport !== report) return;
       var host = document.getElementById('report-source-context'); host.textContent = '';
       var header = document.createElement('h3'); header.textContent = '原消息与上下文'; host.appendChild(header);
@@ -231,7 +352,7 @@
     }).catch(function(error) { if (token === sourceRequestToken) toast('无法打开原消息：' + error.message, 'error'); });
   }
   function openReportQA() {
-    if (!qaReport) return;
+    if (!qaReport || !revisionIsCurrent()) return;
     qaOpener = document.activeElement; qaHistory = [];
     document.getElementById('report-qa-messages').textContent = '';
     document.getElementById('report-qa-sources').textContent = '';
@@ -269,11 +390,11 @@
     container.appendChild(block); container.scrollTop = container.scrollHeight;
   }
   function askReport(event) {
-    event.preventDefault(); if (!qaReport || qaBusy) return;
+    event.preventDefault(); if (!qaReport || qaBusy || !revisionIsCurrent()) return;
     var input = document.getElementById('report-qa-question'), question = input.value.trim(); if (!question) return;
     var report = qaReport, requestToken = ++qaRequestToken, history = qaHistory.slice(-6);
     qaBusy = true; document.getElementById('report-qa-submit').disabled = true;
-    api('POST', '/api/reports/' + report.kind + '/' + report.id + '/ask', {question: question, history: history}).then(function(data) {
+    api('POST', '/api/reports/' + report.kind + '/' + report.id + '/ask', {question: question, history: history, expected_version:report.current_version}).then(function(data) {
       if (requestToken !== qaRequestToken) return;
       appendQAMessage('你', question); appendQAMessage('DeepSeek', data.answer);
       renderQASources(data); qaHistory.push({role: 'user', content: question}, {role: 'assistant', content: data.answer}); qaHistory = qaHistory.slice(-6); input.value = '';

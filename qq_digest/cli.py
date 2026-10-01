@@ -389,6 +389,8 @@ def summarize(
                         candidate_ids=candidate_ids,
                         input_fingerprint=fingerprint,
                         source_message_count=artifact.source_message_count,
+                        revision_markdown=artifact.markdown,
+                        revision_payload=artifact.payload,
                     )
                     archive.delete_unreferenced_pending_candidates_in_transaction(
                         old_candidate_ids
