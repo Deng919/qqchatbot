@@ -5,10 +5,10 @@
 {% block actions %}<button class="btn btn-primary" id="run-daily-btn" onclick="runDaily()">立即生成摘要</button>{% endblock %}
 {% block content %}
 <section class="metrics" aria-label="归档统计">
-  <div class="metric"><div class="stat" id="stat-groups">--</div><div class="stat-label">已启用群组</div></div>
-  <div class="metric"><div class="stat" id="stat-messages">--</div><div class="stat-label">归档消息</div></div>
-  <div class="metric" {% if not features.get('review',true) %}data-feature-off{% endif %}><div class="stat" id="stat-pending">--</div><div class="stat-label">待审核重点</div></div>
-  <div class="metric"><div class="stat" id="stat-reports">--</div><div class="stat-label">已生成摘要</div></div>
+  <a class="metric metric-link" href="/groups" aria-label="查看已启用群组"><div class="stat" id="stat-groups">--</div><div class="stat-label">已启用群组 <span aria-hidden="true">↗</span></div></a>
+  <a class="metric metric-link" href="/search?kind=message" aria-label="搜索归档消息"><div class="stat" id="stat-messages">--</div><div class="stat-label">归档消息 <span aria-hidden="true">↗</span></div></a>
+  <a class="metric metric-link" href="/candidates" aria-label="查看待审核重点" {% if not features.get('review',true) %}data-feature-off{% endif %}><div class="stat" id="stat-pending">--</div><div class="stat-label">待审核重点 <span aria-hidden="true">↗</span></div></a>
+  <a class="metric metric-link" href="/reports" aria-label="查看已生成摘要"><div class="stat" id="stat-reports">--</div><div class="stat-label">已生成摘要 <span aria-hidden="true">↗</span></div></a>
 </section>
 
 <nav class="overview-links" aria-label="常用操作">
@@ -50,6 +50,11 @@
 </div>
 
 <style>
+  .metric-link { display: block; color: inherit; text-decoration: none; transition: background 150ms ease; }
+  .metric-link:hover { background: var(--primary-soft); }
+  .metric-link:focus-visible { outline: 2px solid var(--primary); outline-offset: 3px; }
+  .metric-link .stat-label { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+  .metric-link .stat-label span { color: var(--primary); }
   .daily-coverage { margin-bottom: 20px; padding: 18px 20px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); overflow-wrap: anywhere; }
   .daily-coverage[data-status="limited"] { border-color: #e9cf9a; background: #fffaef; }
   .daily-coverage-heading { display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 8px; }

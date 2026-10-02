@@ -24,7 +24,7 @@ from .knowledge import KnowledgeWriter
 from .web.app import create_app
 
 
-DESKTOP_BACKEND_ID = "2026-10-02-feature-switches"
+DESKTOP_BACKEND_ID = "2026-10-02-dashboard-links"
 
 
 def resolve_config_path(install_dir: Path) -> Path:
