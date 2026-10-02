@@ -41,8 +41,10 @@ from .auth import PasswordHasher, SessionCookie
 from .operations import OperationBusy, OperationCoordinator
 from .history_inspection import add_history_inspection_routes, history_inspection_loop
 from .report_revisions import add_report_revision_routes
+from .features import add_feature_routes
 
-templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
+templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"),
+                           context_processors=[lambda request: {'features': getattr(request.state, 'features', {})}])
 
 
 class ManualRangePayload(BaseModel):
@@ -472,6 +474,7 @@ def create_app(
             await asyncio.sleep(60)
             if (
                 not config
+                or not feature_service.enabled('auto_daily')
                 or scheduler_state["running"]
                 or not operations.can_start("daily")
             ):
@@ -580,6 +583,7 @@ def create_app(
         while True:
             if (
                 config.collection.enabled
+                and feature_service.enabled('auto_collection')
                 and config.ntqq.enabled
                 and operations.can_start("sync")
             ):
@@ -637,7 +641,8 @@ def create_app(
         sync_scheduler_state["task"] = asyncio.get_event_loop().create_task(
             _message_sync_loop()
         )
-        inspection_task = asyncio.create_task(history_inspection_loop(config, operations))
+        inspection_task = asyncio.create_task(history_inspection_loop(
+            config, operations, enabled=lambda: feature_service.enabled('history_inspection')))
 
         yield
 
@@ -670,6 +675,7 @@ def create_app(
     app.state.config = config
     app.state.operations = operations
     app.state.desktop_bridge = None
+    feature_service = add_feature_routes(app, archive=archive, cookie=cookie, require_login=require_login)
     add_history_inspection_routes(app, archive=archive, config=config,
                                   operations=operations, require_login=require_login)
     add_report_revision_routes(app, archive=archive, config=config,
@@ -1547,7 +1553,7 @@ def create_app(
         tz = ZoneInfo(cfg.summary.timezone) if cfg else ZoneInfo("Asia/Shanghai")
         now = datetime.now(tz)
         return {
-            "enabled": True,
+            "enabled": bool(cfg and feature_service.enabled('auto_daily')),
             "schedule": f"{cfg.summary.hour:02d}:{cfg.summary.minute:02d}" if cfg else "",
             "timezone": cfg.summary.timezone if cfg else "Asia/Shanghai",
             "running": scheduler_state["running"],
@@ -1555,7 +1561,7 @@ def create_app(
             "last_result": scheduler_state["last_result"],
             "next_check": "within 60s",
             "collection": {
-                "enabled": bool(cfg and cfg.collection.enabled and cfg.ntqq.enabled),
+                "enabled": bool(cfg and cfg.collection.enabled and cfg.ntqq.enabled and feature_service.enabled('auto_collection')),
                 "interval_minutes": cfg.collection.interval_minutes if cfg else 0,
                 "running": sync_scheduler_state["running"],
                 "last_run_at": sync_scheduler_state["last_run_at"],

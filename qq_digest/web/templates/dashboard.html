@@ -7,17 +7,17 @@
 <section class="metrics" aria-label="归档统计">
   <div class="metric"><div class="stat" id="stat-groups">--</div><div class="stat-label">已启用群组</div></div>
   <div class="metric"><div class="stat" id="stat-messages">--</div><div class="stat-label">归档消息</div></div>
-  <div class="metric"><div class="stat" id="stat-pending">--</div><div class="stat-label">待审核重点</div></div>
+  <div class="metric" {% if not features.get('review',true) %}data-feature-off{% endif %}><div class="stat" id="stat-pending">--</div><div class="stat-label">待审核重点</div></div>
   <div class="metric"><div class="stat" id="stat-reports">--</div><div class="stat-label">已生成摘要</div></div>
 </section>
 
 <nav class="overview-links" aria-label="常用操作">
-  <a href="/catchup"><span><strong>跨群补看</strong><small>一次看完各群日报要点</small></span><span aria-hidden="true">↗</span></a>
-  <a href="/tasks"><span><strong>待办收件箱</strong><small id="task-reminder">确认任务并跟踪截止日期</small></span><span aria-hidden="true">↗</span></a>
-  <a href="/failures"><span><strong>失败处理</strong><small>查看原因、重试并追踪结果</small></span><span aria-hidden="true">↗</span></a>
+{% if features.get('catchup',true) %}  <a href="/catchup"><span><strong>跨群补看</strong><small>一次看完各群日报要点</small></span><span aria-hidden="true">↗</span></a>{% endif %}
+{% if features.get('tasks',true) %}  <a href="/tasks"><span><strong>待办收件箱</strong><small id="task-reminder">确认任务并跟踪截止日期</small></span><span aria-hidden="true">↗</span></a>{% endif %}
+{% if features.get('failures',true) %}  <a href="/failures"><span><strong>失败处理</strong><small>查看原因、重试并追踪结果</small></span><span aria-hidden="true">↗</span></a>{% endif %}
   <a href="/search"><span><strong>搜索归档</strong><small>查找消息、摘要与知识</small></span><span aria-hidden="true">↗</span></a>
   <a href="/reports"><span><strong>查看摘要</strong><small>浏览已生成的群聊简报</small></span><span aria-hidden="true">↗</span></a>
-  <a href="/candidates"><span><strong>处理审核</strong><small>整理待确认的重点信息</small></span><span aria-hidden="true">↗</span></a>
+{% if features.get('review',true) %}  <a href="/candidates"><span><strong>处理审核</strong><small>整理待确认的重点信息</small></span><span aria-hidden="true">↗</span></a>{% endif %}
 </nav>
 <section class="health-strip" aria-live="polite"><span class="health-dot" id="health-dot"></span><strong id="health-service">服务状态读取中</strong><span id="health-sync">最近同步：读取中</span><span id="health-daily">日报：读取中</span><span id="health-job">最近任务：读取中</span><span id="health-send">发送失败：读取中</span></section>
 
@@ -75,7 +75,7 @@
 </style>
 
 <script>
-  api('GET', '/api/tasks').then(function(data) {
+  if (featureFlags.tasks !== false) api('GET', '/api/tasks').then(function(data) {
     var late = data.counts.overdue, today = data.counts.today;
     document.getElementById('task-reminder').textContent = late || today
       ? (late ? late + ' 项逾期' : '') + (late && today ? ' · ' : '') + (today ? today + ' 项今天到期' : '')
@@ -146,7 +146,8 @@
       var button = document.getElementById('run-daily-btn');
       button.disabled = data.running;
       button.textContent = data.running ? '摘要生成中...' : '立即生成摘要';
-      if (data.running) node.textContent = '正在运行';
+      if (!data.enabled) node.textContent = '自动日报已关闭 · 可手动生成';
+      else if (data.running) node.textContent = '正在运行';
       else if (data.last_result && data.last_result.status === 'partial_success') node.textContent = '上次部分完成 · 将自动重试';
       else if (data.last_result && !data.last_result.success) node.textContent = '上次执行失败 · 将尝试自动补跑';
       else if (data.last_run_date) node.textContent = '每日 ' + data.schedule + ' · 今日已运行';

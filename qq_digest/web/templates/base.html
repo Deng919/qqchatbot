@@ -308,20 +308,22 @@
   </style>
 </head>
 <body>
+  <style>[data-feature-off] { display: none !important; }</style>
+  <script>var featureFlags = {{ features | tojson }};</script>
   <a class="skip-link" href="#main-content">跳到主要内容</a>
   <header class="global-header">
     <div class="global-header-inner">
       <a class="brand" href="/">群聊简报 <small>QQ Digest</small></a>
       <nav class="global-nav" aria-label="主要导航">
         <a href="/" id="nav-dashboard">总览</a>
-        <a href="/catchup" id="nav-catchup">补看</a>
-        <a href="/tasks" id="nav-tasks">待办</a>
-        <a href="/failures" id="nav-failures">异常</a>
+        {% if features.get('catchup', true) %}<a href="/catchup" id="nav-catchup">补看</a>{% endif %}
+        {% if features.get('tasks', true) %}<a href="/tasks" id="nav-tasks">待办</a>{% endif %}
+        {% if features.get('failures', true) %}<a href="/failures" id="nav-failures">异常</a>{% endif %}
         <a href="/groups" id="nav-groups">群组</a>
         <a href="/collect" id="nav-collect">采集</a>
         <a href="/search" id="nav-search">搜索</a>
         <a href="/reports" id="nav-reports">摘要</a>
-        <a href="/candidates" id="nav-candidates">审核</a>
+        {% if features.get('review', true) %}<a href="/candidates" id="nav-candidates">审核</a>{% endif %}
         <a href="/ai-settings" id="nav-ai-settings">AI 设置</a>
         <a href="/settings" id="nav-settings">设置</a>
       </nav>

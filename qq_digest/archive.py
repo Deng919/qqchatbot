@@ -61,6 +61,12 @@ class Archive:
         with self.transaction():
             self.connection.executescript(
                 """
+                CREATE TABLE IF NOT EXISTS feature_settings (
+                    singleton INTEGER PRIMARY KEY CHECK(singleton=1),
+                    revision INTEGER NOT NULL DEFAULT 0,
+                    payload TEXT NOT NULL DEFAULT '{}'
+                );
+                INSERT OR IGNORE INTO feature_settings(singleton) VALUES(1);
                 CREATE TABLE IF NOT EXISTS groups (
                     group_id INTEGER PRIMARY KEY,
                     name TEXT NOT NULL,

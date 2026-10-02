@@ -65,6 +65,80 @@ def test_candidates_requires_login(web_client):
     assert response.headers["location"] == "/login"
 
 
+def test_feature_switches_auth_validation_routes_and_reopen(web_client):
+    client, candidate_id, _ = web_client
+    assert client.get('/api/features').status_code == 401
+    assert client.put('/api/features', json={}).status_code == 401
+    client.post('/login', data={'password': 'password123'})
+    state = client.get('/api/features').json()
+    patch = {'values': {'catchup': False, 'tasks': False, 'failures': False, 'review': False,
+                        'report_qa': False, 'report_revisions': False, 'history_inspection': False},
+             'expected_revision': state['revision']}
+    result = client.put('/api/features', json=patch)
+    assert result.status_code == 200
+    for page in ('catchup', 'tasks', 'failures', 'candidates'):
+        response = client.get('/'+page, follow_redirects=False)
+        assert response.status_code == 303 and response.headers['location'].startswith('/settings')
+        assert client.get('/api/'+page).status_code == 403
+    for path in ('/api/tasks/from-message', '/api/reports/daily/1/ask',
+                 '/api/reports/daily/1/regenerate', '/api/history-inspection/run',
+                 f'/candidates/{candidate_id}/confirm'):
+        assert client.post(path, json={}).status_code == 403
+    assert client.get('/api/reports/daily/1/versions').status_code == 403
+    for alternative_id in ('+1', '1.0', '01'):
+        assert client.get(f'/api/reports/daily/{alternative_id}/versions').status_code == 403
+        assert client.post(f'/api/reports/daily/{alternative_id}/corrections', json={}).status_code == 403
+        assert client.post(f'/api/reports/daily/{alternative_id}/ask', json={}).status_code == 403
+    assert client.put('/api/features', json=patch).status_code == 409
+    for values in ({'unknown': False}, {'tasks': 'false'}, {}):
+        assert client.put('/api/features', json={'values': values, 'expected_revision': 1}).status_code == 422
+    page = client.get('/').text
+    assert 'id="nav-tasks"' not in page and 'href="/catchup"' not in page
+    assert 'href="/settings"' in page and 'href="/reports"' in page
+    scheduler = client.get('/api/scheduler').json()
+    assert scheduler['enabled'] is True
+    result = client.put('/api/features', json={'values': {'review': True, 'tasks': True, 'auto_daily': False}, 'expected_revision': 1})
+    assert result.status_code == 200
+    assert client.get('/api/tasks').status_code == 200
+    assert client.get(f'/api/candidates/{candidate_id}').status_code == 200
+    assert client.get('/api/scheduler').json()['enabled'] is False
+
+
+@pytest.mark.parametrize('enabled', [False, True])
+def test_live_auto_switches_pause_schedulers_before_work(web_client, monkeypatch, enabled):
+    import asyncio
+    client, _, _ = web_client
+    app = client.app
+    service = app.state.features
+    service.update({'auto_daily': enabled, 'auto_collection': enabled, 'history_inspection': False}, 0)
+    app.state.config.ntqq.enabled = True
+    app.state.config.ntqq.db_dir = 'synthetic-unused'
+    ticks = []
+    original_sleep = asyncio.sleep
+    async def tick(delay):
+        ticks.append(delay)
+        # Let each loop evaluate at least once, then wait for cancellation.
+        if ticks.count(delay) > 1:
+            await original_sleep(3600)
+        else:
+            await original_sleep(0)
+    work_calls = []
+    def forbidden(*args, **kwargs):
+        work_calls.append('worker')
+        raise AssertionError('disabled scheduler reached a worker')
+    monkeypatch.setattr('qq_digest.web.app.asyncio.sleep', tick)
+    monkeypatch.setattr('qq_digest.web.app.pending_catchup_date', forbidden)
+    monkeypatch.setattr('qq_digest.sync.run_message_sync', forbidden)
+    monkeypatch.setattr('qq_digest.web.history_inspection.run_history_inspection', forbidden)
+    async def check():
+        async with app.router.lifespan_context(app):
+            for _ in range(6):
+                await original_sleep(0)
+    asyncio.run(check())
+    assert 60 in ticks and app.state.config.collection.startup_delay_seconds in ticks
+    assert bool(work_calls) is enabled
+
+
 def test_revision_api_auth_validation_notes_and_conflict(web_client, tmp_path, monkeypatch):
     client, _, _ = web_client
     ar = client.app.state.archive

@@ -1,9 +1,22 @@
 {% extends "base.html" %}
 {% block title %}设置 - QQ Digest{% endblock %}
 {% block page_title %}设置{% endblock %}
-{% block page_description %}管理桌面程序的存储、摘要导出、备份与启动方式。{% endblock %}
+{% block page_description %}选择需要的功能，管理存储、备份与启动方式。{% endblock %}
 {% block content %}
 <div class="desktop-settings">
+  <section class="card setting-card" aria-labelledby="features-title">
+    <div class="setting-heading"><div><h2 id="features-title">功能开关</h2><p>保留常用功能，其他功能按需开启。</p></div><span class="setting-index">功能</span></div>
+    <p class="setting-help">总览、群组、手动采集、搜索、摘要与设置始终保留。关闭不删除已有数据，重新开启即可继续使用。正在执行的任务会完成，后续自动任务按开关状态执行。</p>
+    <p id="feature-redirect" class="setting-result" hidden>刚才访问的功能已关闭，你可以在这里重新开启。</p>
+    <form id="features-form">
+      <div class="actions"><button type="button" class="btn" id="features-simple" disabled>精简界面</button><button type="button" class="btn" id="features-all" disabled>全部扩展功能</button></div>
+      <p class="setting-muted">上方快捷选择只调整扩展功能，自动任务请在下面单独设置。</p>
+      <fieldset id="feature-options" disabled style="border:0;padding:0;margin:0"><div id="features-list"><p>正在读取功能设置…</p></div></fieldset>
+      <p class="setting-help">如需暂停所有自动消息导入，请同时关闭自动采集和自动日报。备份、开机自启仍在下方单独设置。</p>
+      <button type="submit" class="btn btn-primary" id="features-save" disabled>保存功能设置</button>
+      <p id="features-result" class="setting-result" role="status" hidden></p>
+    </form>
+  </section>
   <div id="desktop-required" class="card" hidden>这些设置需要在 QQ Digest 桌面程序中打开。</div>
 
   <section class="card setting-card" aria-labelledby="storage-title">
@@ -63,6 +76,13 @@
 </div>
 <style>
   .desktop-settings { max-width: 850px; }
+  .feature-group-title { font-size: 14px; margin: 22px 0 8px; }
+  .feature-option { display:flex; align-items:center; justify-content:space-between; gap:20px; padding:15px 0; border-bottom:1px solid var(--border); cursor:pointer; }
+  .feature-option span { min-width:0; }
+  .feature-option strong { display:block; font-size:14px; }
+  .feature-option small { display:block; color:var(--text-soft); font-size:12px; line-height:1.7; margin-top:3px; }
+  .feature-option input { flex-shrink:0; width:20px; height:20px; accent-color:var(--primary); }
+  #features-save { margin-top:20px; }
   .setting-card { padding: 27px 30px; }
   .setting-heading { display: flex; justify-content: space-between; gap: 24px; margin-bottom: 24px; }
   .setting-heading h2 { margin: 0 0 5px; font-size: 17px; letter-spacing: -.025em; }
@@ -91,6 +111,37 @@
   @media (max-width: 700px) { .setting-card { padding: 20px; } .export-options { align-items: stretch; flex-wrap: wrap; } .export-options label { width: 100%; } .export-options select { flex: 1; } }
 </style>
 <script>
+  var savedFeatures = null;
+  function setFeatureFormBusy(busy) {
+    ['feature-options','features-simple','features-all','features-save'].forEach(function(id) { document.getElementById(id).disabled=busy; });
+  }
+  api('GET','/api/features').then(function(data) {
+    savedFeatures=data;
+    var host=document.getElementById('features-list'); host.textContent=''; var lastGroup='';
+    data.catalog.forEach(function(item) {
+      if(item.group!==lastGroup) { var heading=document.createElement('h3'); heading.className='feature-group-title'; heading.textContent=item.group; host.appendChild(heading); lastGroup=item.group; }
+      var label=document.createElement('label'); label.className='feature-option';
+      var text=document.createElement('span'),title=document.createElement('strong'),description=document.createElement('small');
+      title.textContent=item.title; description.textContent=item.description; text.append(title,description);
+      var input=document.createElement('input'); input.type='checkbox'; input.id='feature-'+item.key; input.checked=data.values[item.key]; input.setAttribute('aria-label',item.title);
+      label.append(text,input); host.appendChild(label);
+    });
+    document.getElementById('feature-redirect').hidden=!new URLSearchParams(location.search).get('feature');
+    setFeatureFormBusy(false);
+  }).catch(function(error) { setResult('features-result','功能设置读取失败：'+error.message+'。请刷新重试。'); });
+  function selectFeaturePreset(enabled) {
+    savedFeatures.catalog.filter(function(item) { return item.group==='扩展功能'; }).forEach(function(item) { document.getElementById('feature-'+item.key).checked=enabled; });
+    setResult('features-result','已选择'+(enabled?'全部扩展功能':'精简界面')+'，点击保存后生效。');
+  }
+  document.getElementById('features-simple').onclick=function() { selectFeaturePreset(false); };
+  document.getElementById('features-all').onclick=function() { selectFeaturePreset(true); };
+  document.getElementById('features-form').onsubmit=function(event) {
+    event.preventDefault(); if(!savedFeatures)return; setFeatureFormBusy(true); var values={};
+    savedFeatures.catalog.forEach(function(item) { values[item.key]=document.getElementById('feature-'+item.key).checked; });
+    api('PUT','/api/features',{values:values,expected_revision:savedFeatures.revision}).then(function() { location.href='/settings?saved=features'; })
+      .catch(function(error) { setResult('features-result',error.message+'；你的选择尚未保存。'); setFeatureFormBusy(false); });
+  };
+  if(new URLSearchParams(location.search).get('saved')==='features')setResult('features-result','功能设置已保存，入口和自动任务按新设置生效。');
   var restorePreview = null;
   function settingsError(error) { toast(error && error.message ? error.message : String(error), 'error'); }
   function setResult(id, message) { var node = document.getElementById(id); node.textContent = message; node.hidden = false; }

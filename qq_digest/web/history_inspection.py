@@ -57,8 +57,8 @@ def add_history_inspection_routes(app, *, archive, config, operations, require_l
             raise HTTPException(status_code=503, detail=f"巡检未完成：{exc}") from exc
 
 
-async def run_scheduled_inspection(config, operations) -> bool:
-    if not config or not config.ntqq.enabled or not config.ntqq.db_dir:
+async def run_scheduled_inspection(config, operations, *, enabled=lambda: True) -> bool:
+    if not enabled() or not config or not config.ntqq.enabled or not config.ntqq.db_dir:
         return False
     def worker():
         try:
@@ -78,11 +78,11 @@ async def run_scheduled_inspection(config, operations) -> bool:
     return await asyncio.to_thread(worker)
 
 
-async def history_inspection_loop(config, operations):
+async def history_inspection_loop(config, operations, *, enabled=lambda: True):
     await asyncio.sleep(30)
     while True:
         try:
-            await run_scheduled_inspection(config, operations)
+            await run_scheduled_inspection(config, operations, enabled=enabled)
         except Exception:
             logging.getLogger("qq_digest.history_inspection").exception("历史巡检失败，将在后续周期重试")
         await asyncio.sleep(60)

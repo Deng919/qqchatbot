@@ -50,9 +50,12 @@
   function searchPage(step) { currentSearchPage += step; loadSearch(); window.scrollTo({top: 0, behavior: 'smooth'}); }
   function renderSearchResult(item) {
     var labels = {message: '消息', report: '报告', knowledge: '知识'};
-    var heading = item.url ? '<a class="search-result-title" href="' + escapeHtml(item.url) + '">' + escapeHtml(item.title) + '</a>' : '<strong class="search-result-title">' + escapeHtml(item.title) + '</strong>';
+    var reviewHidden = featureFlags.review === false && item.kind === 'knowledge';
+    var heading = item.url && !reviewHidden ? '<a class="search-result-title" href="' + escapeHtml(item.url) + '">' + escapeHtml(item.title) + '</a>' : '<strong class="search-result-title">' + escapeHtml(item.title) + '</strong>';
     var taskHref = '/tasks?' + new URLSearchParams({group_id: String(Number(item.group_id)), msg_id: String(item.id)}).toString();
     var action = item.kind === 'message' ? '<button class="btn btn-sm" type="button" data-group="' + Number(item.group_id) + '" data-message="' + escapeHtml(item.id) + '" onclick="showSearchContext(this)">查看上下文</button> <a class="btn btn-sm" href="' + escapeHtml(taskHref) + '">加入待办</a>' : '<a class="btn btn-sm" href="' + escapeHtml(item.url) + '">查看详情</a>';
+    if (featureFlags.tasks === false) action = action.replace(/ <a class="btn btn-sm"[^>]*>加入待办<\/a>/, '');
+    if (reviewHidden) action = '<span class="header-meta">知识记录已保留；如需整理，可在设置中开启审核。</span>';
     return '<article class="search-result"><div class="search-result-head"><span class="badge badge-dim">' + labels[item.kind] + '</span>' + heading + '</div><div class="search-result-meta">' + escapeHtml(item.group_name) + ' · ' + escapeHtml(item.date) + '</div><p class="search-result-snippet">' + escapeHtml(item.snippet) + '</p>' + action + '<div class="search-context" hidden></div></article>';
   }
   function loadSearch() {

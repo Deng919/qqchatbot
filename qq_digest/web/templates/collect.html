@@ -3,7 +3,7 @@
 {% block page_title %}消息采集{% endblock %}
 {% block page_description %}按群组和日期查看消息，也可以刷新本地数据库。{% endblock %}
 {% block content %}
-<section class="card history-inspection" id="history-inspection" aria-label="多群历史缺口巡检">
+<section class="card history-inspection" id="history-inspection" aria-label="多群历史缺口巡检" {% if not features.get('history_inspection',true) %}data-feature-off{% endif %}>
   <div class="card-header"><span>历史缺口巡检 <small class="header-meta">全部已启用群</small></span><button class="btn btn-sm" id="inspection-run" type="button" onclick="runHistoryInspection()">立即巡检</button></div>
   <div class="inspection-body">
     <p id="inspection-status" role="status">正在读取巡检记录...</p>
@@ -247,7 +247,6 @@
     if (params.get('group_id')) document.getElementById('collect-group').value = params.get('group_id');
     if (params.get('repair') === '1') document.getElementById('manual-collect-controls').scrollIntoView({block:'start'});
   });
-  loadHistoryInspection();
-  setInterval(loadHistoryInspection, 30000);
+  if (featureFlags.history_inspection !== false) { loadHistoryInspection(); setInterval(loadHistoryInspection, 30000); }
 </script>
 {% endblock %}

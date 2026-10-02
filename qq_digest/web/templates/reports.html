@@ -26,10 +26,10 @@
     <div class="report-pages" id="report-pages" hidden><button class="btn btn-sm" id="report-prev" type="button" onclick="changeReportPage(-1)">上一页</button><span id="report-page-label"></span><button class="btn btn-sm" id="report-next" type="button" onclick="changeReportPage(1)">下一页</button></div>
   </section>
   <section class="card report-detail" id="report-detail" hidden>
-    <div class="card-header">报告详情 <span><button class="btn btn-sm" id="report-qa-open" type="button" onclick="openReportQA()">问 DeepSeek</button> <button class="btn btn-sm" aria-label="关闭报告详情" type="button" onclick="closeReport()">关闭</button></span></div>
+    <div class="card-header">报告详情 <span><button class="btn btn-sm" id="report-qa-open" {% if not features.get('report_qa',true) %}data-feature-off{% endif %} type="button" onclick="openReportQA()">问 DeepSeek</button> <button class="btn btn-sm" aria-label="关闭报告详情" type="button" onclick="closeReport()">关闭</button></span></div>
     <div class="report-detail-scroll">
       <section id="report-completeness" class="coverage-notice" aria-label="报告覆盖范围" aria-live="polite"></section>
-      <section id="report-revisions" class="revision-panel" aria-label="版本与纠错">
+      <section id="report-revisions" class="revision-panel" aria-label="版本与纠错" {% if not features.get('report_revisions',true) %}data-feature-off{% endif %}>
         <div class="revision-heading"><h3>版本与纠错</h3><label for="revision-select">查看版本</label><select class="input" id="revision-select" onchange="selectReportVersion()"></select></div>
         <p id="revision-notice" role="status"></p>
         <div class="revision-pages"><button class="btn btn-sm" id="revision-prev" onclick="changeRevisionPage(-1)">较新版本</button><span id="revision-page"></span><button class="btn btn-sm" id="revision-next" onclick="changeRevisionPage(1)">较旧版本</button></div>
@@ -161,16 +161,18 @@
   var reportPage = 1, reportLoadToken = 0;
   var revisionReport = null, revisionPage = 1, revisionLoadToken = 0, revisionBusy = false;
   function revisionPath(report) { return '/api/reports/' + report.kind + '/' + report.id; }
-  function revisionIsCurrent() { return revisionReport && revisionReport.viewing_version === revisionReport.current_version; }
+  function reportFeatureEnabled(name) { return typeof featureFlags === 'undefined' || featureFlags[name] !== false; }
+  function revisionIsCurrent() { return !reportFeatureEnabled('report_revisions') ? !!qaReport : revisionReport && revisionReport.viewing_version === revisionReport.current_version; }
   function revisionControls() {
     var disabled = revisionBusy || !revisionIsCurrent();
     document.getElementById('correction-fields').disabled = disabled;
     document.getElementById('regeneration-fields').disabled = disabled;
-    document.getElementById('report-qa-open').disabled = !revisionIsCurrent();
+    document.getElementById('report-qa-open').disabled = !reportFeatureEnabled('report_qa') || !revisionIsCurrent();
     document.querySelectorAll('#report-corrections button').forEach(function(button) { button.disabled = revisionBusy; });
   }
   function changeRevisionPage(step) { revisionPage += step; loadReportRevisions(reportSelectionToken); }
   function loadReportRevisions(selectionToken) {
+    if (!reportFeatureEnabled('report_revisions')) { revisionControls(); return Promise.resolve(); }
     if (!qaReport) return;
     var report = {kind:qaReport.kind,id:qaReport.id}, token = ++revisionLoadToken;
     return Promise.all([api('GET',revisionPath(report)+'/versions?page='+revisionPage),api('GET',revisionPath(report)+'/corrections')]).then(function(results) {
@@ -352,6 +354,7 @@
     }).catch(function(error) { if (token === sourceRequestToken) toast('无法打开原消息：' + error.message, 'error'); });
   }
   function openReportQA() {
+    if (!reportFeatureEnabled('report_qa')) return;
     if (!qaReport || !revisionIsCurrent()) return;
     qaOpener = document.activeElement; qaHistory = [];
     document.getElementById('report-qa-messages').textContent = '';
@@ -390,6 +393,7 @@
     container.appendChild(block); container.scrollTop = container.scrollHeight;
   }
   function askReport(event) {
+    if (!reportFeatureEnabled('report_qa')) { event.preventDefault(); return; }
     event.preventDefault(); if (!qaReport || qaBusy || !revisionIsCurrent()) return;
     var input = document.getElementById('report-qa-question'), question = input.value.trim(); if (!question) return;
     var report = qaReport, requestToken = ++qaRequestToken, history = qaHistory.slice(-6);
