@@ -99,6 +99,8 @@ class BridgeAIClient:
                 text=True,
                 encoding="utf-8",
                 timeout=self.timeout_seconds,
+                # Pipes capture output but do not prevent a console in a GUI EXE.
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
             )
             if result.returncode != 0:
                 message = "chatgpt-bridge 调用失败"

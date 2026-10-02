@@ -264,6 +264,7 @@ def test_bridge_client_writes_request_invokes_wrapper_and_cleans_file(tmp_path):
         request_path = Path(command[command.index("-RequestPath") + 1])
         captured["request_path"] = request_path
         captured["request"] = json.loads(request_path.read_text(encoding="utf-8"))
+        captured["process_options"] = kwargs
         return subprocess.CompletedProcess(
             command,
             0,
@@ -295,7 +296,42 @@ def test_bridge_client_writes_request_invokes_wrapper_and_cleans_file(tmp_path):
     assert response == {"summary": "done"}
     assert captured["request"]["model"] == "gpt-test"
     assert captured["request"]["messages"][1]["content"] == "Summarize."
+    assert captured["process_options"]["creationflags"] == getattr(
+        subprocess, "CREATE_NO_WINDOW", 0
+    )
+    assert captured["process_options"]["capture_output"] is True
     assert not captured["request_path"].exists()
+
+
+@pytest.mark.skipif(not hasattr(subprocess, "CREATE_NO_WINDOW"), reason="Windows console API")
+def test_bridge_client_runs_powershell_without_console_and_preserves_errors(tmp_path):
+    wrapper = tmp_path / "console-check.ps1"
+    wrapper.write_text(
+        '''param([string]$RequestPath, [string]$AccountDirectory, [int]$QueueTimeoutSeconds)
+Add-Type -TypeDefinition 'using System; using System.Runtime.InteropServices; public class BridgeConsoleCheck { [DllImport("kernel32.dll")] public static extern IntPtr GetConsoleWindow(); }'
+if ([BridgeConsoleCheck]::GetConsoleWindow() -ne [IntPtr]::Zero) {
+    [Console]::Error.WriteLine('{"error":"unexpected console"}')
+    exit 1
+}
+$request = Get-Content -LiteralPath $RequestPath -Raw | ConvertFrom-Json
+if ($request.messages[0].content -eq 'fail') {
+    [Console]::Error.WriteLine('{"error":"synthetic bridge failure"}')
+    exit 1
+}
+[Console]::Out.WriteLine('{"ok":true,"content":"{\\"hidden\\":true}"}')
+''',
+        encoding="utf-8",
+    )
+    client = BridgeAIClient(
+        wrapper_path=wrapper,
+        account_directory=tmp_path / "unused-accounts",
+        request_directory=tmp_path,
+        timeout_seconds=30,
+    )
+    assert client.chat([{"role": "user", "content": "check"}]) == {"hidden": True}
+    with pytest.raises(AIError, match="synthetic bridge failure"):
+        client.chat([{"role": "user", "content": "fail"}])
+    assert list(tmp_path.glob("qq-digest-chat-*.json")) == []
 
 
 def test_bridge_client_redacts_wrapper_stderr(tmp_path):
