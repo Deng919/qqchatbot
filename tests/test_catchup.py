@@ -157,3 +157,99 @@ def test_catchup_keeps_read_state_when_another_topic_is_inserted_before_it(tmp_p
     assert unchanged["key"] == original["key"]
     assert unchanged["read"] is True
     archive.close()
+
+
+def test_custom_scope_filters_before_paging_and_counts_unread_and_new_independently(tmp_path):
+    archive = Archive.open(tmp_path / "archive.sqlite")
+    archive.upsert_groups([GroupConfig(group_id=11, name="研发群"),
+                           GroupConfig(group_id=22, name="产品群")])
+    for group_id, report_date, created_at in [
+        (11, "2026-09-29", "2026-09-29T02:00:00+00:00"),
+        (11, "2026-09-28", "2026-09-28T02:00:00+00:00"),
+        (22, "2026-09-29", "2026-09-29T03:00:00+00:00"),
+        (11, "2026-09-19", "2026-09-19T03:00:00+00:00"),
+    ]:
+        _report(archive, tmp_path, group_id, report_date,
+                _payload(report_date, "missing"), created_at)
+    service = CatchupService(archive, timezone_name="Asia/Shanghai")
+    options = dict(date_from="2026-09-28", date_to="2026-09-29", group_id=11,
+                   since="2026-09-29T09:00:00+08:00", now=NOW, page_size=1)
+    all_items = service.list_items("custom", **options)
+    newest = all_items["items"][0]
+    service.set_read(newest["key"], True, now=NOW)
+    unread = service.list_items("custom", read_filter="unread", **options)
+    assert (unread["total"], unread["unread"], unread["new_count"]) == (1, 1, 1)
+    assert unread["items"][0]["report_date"] == "2026-09-28"
+    assert unread["items"][0]["new"] is False
+    new = service.list_items("custom", read_filter="new", **options)
+    assert new["items"][0]["key"] == newest["key"]
+    assert new["items"][0]["read"] is True
+    assert (new["total"], new["unread"], new["new_count"]) == (1, 1, 1)
+    assert service.list_items("custom", read_filter="unread", page=2, **options)["items"] == []
+    service.visit(now=NOW)
+    assert service.list_items("custom", read_filter="unread", **options)["total"] == 1
+    without_since = {key: value for key, value in options.items() if key != "since"}
+    assert service.list_items("custom", read_filter="new", **without_since)["total"] == 2
+    # The added selection parameters preserve the legacy feed's item keys.
+    assert service.list_items("today", now=NOW)["items"][1]["key"] == newest["key"]
+    archive.close()
+
+
+@pytest.mark.parametrize("options", [
+    {"date_from": "2026-09-30", "date_to": "2026-09-29"},
+    {"date_from": "2026-9-28", "date_to": "2026-09-29"},
+    {"date_from": "2026-09-28T00:00:00", "date_to": "2026-09-29"},
+    {"date_from": "2026-02-30", "date_to": "2026-09-29"},
+    {"since": "2026-09-29T01:00:00"},
+    {"since": "not-a-date"},
+    {"read_filter": "read"},
+])
+def test_custom_scope_rejects_invalid_selection(tmp_path, options):
+    archive = Archive.open(tmp_path / "archive.sqlite")
+    try:
+        with pytest.raises(ValueError):
+            CatchupService(archive, timezone_name="Asia/Shanghai").list_items(
+                "custom", now=NOW, **options
+            )
+    finally:
+        archive.close()
+
+
+def test_custom_scope_uses_local_natural_day_and_strict_new_cutoff(tmp_path):
+    archive = Archive.open(tmp_path / "archive.sqlite")
+    archive.upsert_groups([GroupConfig(group_id=11, name="研发群")])
+    _report(archive, tmp_path, 11, "2026-09-30", _payload("本地今日", "missing"),
+            "2026-09-30T00:30:00+08:00")
+    service = CatchupService(archive, timezone_name="Asia/Shanghai")
+    now = datetime(2026, 9, 29, 17, tzinfo=timezone.utc)
+    result = service.list_items("custom", now=now, since="2026-09-29T16:30:00+00:00")
+    assert result["total"] == 1
+    assert result["new_count"] == 0
+    assert result["items"][0]["new"] is False
+    archive.close()
+
+
+def test_legacy_since_empty_string_keeps_week_fallback(tmp_path):
+    archive = Archive.open(tmp_path / "archive.sqlite")
+    archive.upsert_groups([GroupConfig(group_id=11, name="研发群")])
+    _report(archive, tmp_path, 11, "2026-09-28", _payload("本周", "missing"),
+            "2026-09-28T02:00:00+00:00")
+    _report(archive, tmp_path, 11, "2026-09-19", _payload("上周", "missing"),
+            "2026-09-19T02:00:00+00:00")
+    service = CatchupService(archive, timezone_name="Asia/Shanghai")
+    assert service.list_items("since", since="", now=NOW) == service.list_items("since", now=NOW)
+    assert service.list_items("since", since="", now=NOW)["total"] == 1
+    archive.close()
+
+
+@pytest.mark.parametrize("scope", ["today", "week"])
+@pytest.mark.parametrize("since", ["invalid", "2026-09-29T00:00:00", ""])
+def test_legacy_date_scopes_ignore_invalid_since(tmp_path, scope, since):
+    archive = Archive.open(tmp_path / "archive.sqlite")
+    archive.upsert_groups([GroupConfig(group_id=11, name="研发群")])
+    _report(archive, tmp_path, 11, "2026-09-29", _payload("原有内容", "missing"),
+            "2026-09-29T02:00:00+00:00")
+    service = CatchupService(archive, timezone_name="Asia/Shanghai")
+    assert service.list_items(scope, since=since, now=NOW) == service.list_items(scope, now=NOW)
+    assert service.list_items(scope, since="2026-09-29T02:00:00Z", now=NOW)["new_count"] == 0
+    archive.close()

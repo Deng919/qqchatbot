@@ -3,8 +3,18 @@ const fs = require('fs'), vm = require('vm'), assert = require('node:assert/stri
 const html = fs.readFileSync('qq_digest/web/templates/reports.html','utf8');
 const script = html.slice(html.indexOf('<script>')+8, html.lastIndexOf('</script>'));
 const nodes = new Map();
-global.document = {activeElement:null,getElementById(id){if(!nodes.has(id))nodes.set(id,{value:'',hidden:true,disabled:false,textContent:'',innerHTML:'',focus(){}});return nodes.get(id);},querySelectorAll(){return [];}};
+class TestNode {
+  constructor(tag='div'){this.tagName=tag;this.value='';this.hidden=true;this.disabled=false;this.innerHTML='';this.children=[];this.text='';}
+  get textContent(){return this.text+this.children.map(child=>child.textContent).join('');}
+  set textContent(value){this.text=String(value);this.children=[];}
+  appendChild(child){this.children.push(child);return child;}
+  focus(){}
+}
+global.document = {activeElement:null,createElement(tag){return new TestNode(tag);},getElementById(id){if(!nodes.has(id))nodes.set(id,new TestNode());return nodes.get(id);},querySelectorAll(){return [];}};
 global.escapeHtml=v=>String(v??'');global.toast=()=>{};
+const reading = fs.readFileSync('qq_digest/web/templates/summary_reading_script.html','utf8');
+vm.runInThisContext(reading.slice(reading.indexOf('  function summaryNode('),reading.indexOf('  function summaryButton(')));
+vm.runInThisContext(reading.slice(reading.indexOf('  function summaryRenderMarkdown('),reading.indexOf('  function summaryReadDailyResults(')));
 vm.runInThisContext(script.slice(0,script.indexOf('  function reportParams()')));
 vm.runInThisContext(script.slice(script.indexOf('  function openReportQA()'),script.indexOf('  function appendQAMessage')));
 (async()=>{

@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -39,30 +39,48 @@ class CatchupService:
 
     def list_items(self, scope: str, *, since: str | None = None,
                    now: datetime | None = None, page: int = 1,
-                   page_size: int = 30) -> dict:
-        if scope not in {"since", "today", "week"}:
+                   page_size: int = 30, date_from: str | None = None,
+                   date_to: str | None = None, group_id: int | None = None,
+                   read_filter: str = "all") -> dict:
+        if scope not in {"since", "today", "week", "custom"}:
             raise ValueError("补看范围无效")
+        if read_filter not in {"all", "unread", "new"}:
+            raise ValueError("阅读筛选无效")
         if page < 1 or page_size < 1 or page_size > 100:
             raise ValueError("页码或每页数量无效")
+        # Legacy date scopes ignored since, and the legacy since feed treated
+        # an empty value as the seven-day fallback. Custom selection is strict.
+        if scope != "custom" and since == "":
+            since = None
+        try:
+            cutoff = self._cutoff(since) if since is not None else None
+        except ValueError:
+            if scope not in {"today", "week"}:
+                raise
+            cutoff = None
         current = self._now(now)
         today = current.astimezone(self.timezone).date()
         conditions: list[str] = []
         params: list[object] = []
-        if scope == "today":
+        if scope == "custom":
+            first = self._date(date_from) if date_from is not None else today
+            last = self._date(date_to) if date_to is not None else today
+            if first > last:
+                raise ValueError("开始日期不能晚于结束日期")
+            conditions.append("r.report_date BETWEEN ? AND ?")
+            params.extend([first.isoformat(), last.isoformat()])
+        elif scope == "today":
             conditions.append("r.report_date=?")
             params.append(today.isoformat())
-        elif scope == "week" or not since:
+        elif scope == "week" or cutoff is None:
             conditions.append("r.report_date BETWEEN ? AND ?")
             params.extend([(today - timedelta(days=6)).isoformat(), today.isoformat()])
         else:
-            try:
-                cutoff = datetime.fromisoformat(since)
-            except ValueError as exc:
-                raise ValueError("上次查看时间无效") from exc
-            if cutoff.tzinfo is None:
-                raise ValueError("上次查看时间无效")
-            conditions.append("r.created_at>?")
-            params.append(cutoff.astimezone(timezone.utc).isoformat())
+            # Compare timestamps as instants below; persisted ISO offsets may differ.
+            conditions.append("1=1")
+        if group_id is not None:
+            conditions.append("r.group_id=?")
+            params.append(group_id)
         rows = self.archive.connection.execute(
             "SELECT r.report_id, r.group_id, r.report_date, r.json_path, "
             "r.created_at, g.name AS group_name "
@@ -74,6 +92,14 @@ class CatchupService:
         items: list[dict] = []
         skipped_reports = 0
         for report in rows:
+            is_new = cutoff is None
+            if cutoff is not None:
+                try:
+                    is_new = self._cutoff(report["created_at"]) > cutoff
+                except (ValueError, TypeError):
+                    is_new = False
+            if scope == "since" and cutoff is not None and not is_new:
+                continue
             try:
                 payload = json.loads(Path(report["json_path"]).read_text(encoding="utf-8"))
                 if not isinstance(payload, dict):
@@ -123,6 +149,7 @@ class CatchupService:
                     "status": item["status"],
                     "report_id": report["report_id"],
                     "report_url": f"/reports?kind=daily&id={report['report_id']}",
+                    "new": is_new,
                 })
         keys = [item["key"] for item in items]
         read_keys: set[str] = set()
@@ -135,11 +162,18 @@ class CatchupService:
             ).fetchall())
         for item in items:
             item["read"] = item["key"] in read_keys
+        unread = sum(not item["read"] for item in items)
+        new_count = sum(item["new"] for item in items)
+        if read_filter == "unread":
+            items = [item for item in items if not item["read"]]
+        elif read_filter == "new":
+            items = [item for item in items if item["new"]]
         total = len(items)
         return {
             "items": items[(page - 1) * page_size:page * page_size],
             "total": total,
-            "unread": total - len(read_keys),
+            "unread": unread,
+            "new_count": new_count,
             "page": page,
             "page_size": page_size,
             "skipped_reports": skipped_reports,
@@ -159,6 +193,26 @@ class CatchupService:
                 self.archive.connection.execute(
                     "DELETE FROM catchup_reads WHERE item_key=?", (item_key,)
                 )
+
+    @staticmethod
+    def _date(value: str) -> date:
+        try:
+            parsed = date.fromisoformat(value)
+            if parsed.isoformat() != value:
+                raise ValueError
+            return parsed
+        except (TypeError, ValueError) as exc:
+            raise ValueError("日期必须为 YYYY-MM-DD 自然日") from exc
+
+    @staticmethod
+    def _cutoff(value: str) -> datetime:
+        try:
+            cutoff = datetime.fromisoformat(value)
+            if cutoff.tzinfo is None or cutoff.utcoffset() is None:
+                raise ValueError
+            return cutoff.astimezone(timezone.utc)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("上次查看时间无效，必须包含时区") from exc
 
     @staticmethod
     def _now(value: datetime | None) -> datetime:

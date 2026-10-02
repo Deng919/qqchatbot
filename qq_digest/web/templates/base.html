@@ -316,7 +316,6 @@
       <a class="brand" href="/">群聊简报 <small>QQ Digest</small></a>
       <nav class="global-nav" aria-label="主要导航">
         <a href="/" id="nav-dashboard">总览</a>
-        {% if features.get('catchup', true) %}<a href="/catchup" id="nav-catchup">补看</a>{% endif %}
         {% if features.get('tasks', true) %}<a href="/tasks" id="nav-tasks">待办</a>{% endif %}
         {% if features.get('failures', true) %}<a href="/failures" id="nav-failures">异常</a>{% endif %}
         <a href="/groups" id="nav-groups">群组</a>

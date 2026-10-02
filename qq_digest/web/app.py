@@ -36,12 +36,14 @@ from ..report_qa import (
     NoReportEvidence, ReportNotFound, answer_report_question, load_report_evidence,
 )
 from ..report_sources import load_verified_report_sources
+from ..report_previews import load_report_preview
 from ..report_revisions import ReportRevisionService, RevisionConflict
 from .auth import PasswordHasher, SessionCookie
 from .operations import OperationBusy, OperationCoordinator
 from .history_inspection import add_history_inspection_routes, history_inspection_loop
 from .report_revisions import add_report_revision_routes
 from .features import add_feature_routes
+from .summary_reading_routes import add_summary_reading_routes
 
 templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"),
                            context_processors=[lambda request: {'features': getattr(request.state, 'features', {})}])
@@ -406,6 +408,7 @@ def create_app(
             return {
                 "success": result.status == "success",
                 "status": result.status,
+                "report_date": target_date,
                 "groups_processed": result.groups_processed,
                 "messages_inserted": result.messages_inserted,
                 "reports": len(result.report_paths),
@@ -676,6 +679,7 @@ def create_app(
     app.state.operations = operations
     app.state.desktop_bridge = None
     feature_service = add_feature_routes(app, archive=archive, cookie=cookie, require_login=require_login)
+    add_summary_reading_routes(app, archive=archive, config=config, require_login=require_login)
     add_history_inspection_routes(app, archive=archive, config=config,
                                   operations=operations, require_login=require_login)
     add_report_revision_routes(app, archive=archive, config=config,
@@ -1670,6 +1674,7 @@ def create_app(
                 "candidate_count": len(json.loads(row["candidate_ids"])),
                 "created_at": _utc(row["created_at"]),
                 "reference_message_count": _reference_message_count(row["json_path"]),
+                "preview": load_report_preview(row["json_path"]),
                 "completeness": completeness.report(
                     row["json_path"], row["report_kind"], row["window_end_date"]
                 ),

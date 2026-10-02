@@ -32,7 +32,7 @@ class FeatureService:
         values = {key: saved.get(key, True) for key in FEATURES}
         return {'revision': row['revision'], 'values': values,
                 'catalog': [{'key': key, 'title': value[0], 'description': value[1], 'group': value[2]}
-                            for key, value in FEATURES.items()]}
+                            for key, value in FEATURES.items() if key != 'catchup']}
 
     def enabled(self, name):
         if name not in FEATURES:
