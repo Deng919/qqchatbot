@@ -1,5 +1,6 @@
 from pathlib import Path
 
+import os
 import sqlite3
 import struct
 
@@ -36,9 +37,12 @@ def test_stable_snapshot_raises_after_repeated_source_changes(tmp_path: Path, mo
     source.write_bytes(b"0")
 
     def changing_copy(src, dst):
+        before = Path(src).stat()
         value = int(Path(src).read_text()) + 1
         Path(dst).write_text(str(value))
         Path(src).write_text(str(value))
+        # Make the intended metadata change deterministic on fast Windows disks.
+        os.utime(src, ns=(before.st_atime_ns, before.st_mtime_ns + 1_000_000_000))
 
     monkeypatch.setattr(refresh_module.shutil, "copy2", changing_copy)
 

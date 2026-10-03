@@ -1,0 +1,8 @@
+{% set page_path = request.url.path %}
+{% set primary_section = 'reports' if page_path in ['/', '/reports', '/catchup', '/tasks', '/candidates'] else 'search' if page_path == '/search' else 'groups' if page_path in ['/groups','/collect'] else 'settings' %}
+<nav class="global-nav" aria-label="主要导航">
+  <a href="/reports" id="nav-reports" {% if primary_section == 'reports' %}aria-current="page" class="active"{% endif %}>摘要</a>
+  <a href="/search" id="nav-search" {% if primary_section == 'search' %}aria-current="page" class="active"{% endif %}>消息</a>
+  <a href="/groups" id="nav-groups" {% if primary_section == 'groups' %}aria-current="page" class="active"{% endif %}>群聊</a>
+  <a href="/settings" id="nav-settings" {% if primary_section == 'settings' %}aria-current="page" class="active"{% endif %}>设置</a>
+</nav>

@@ -314,18 +314,7 @@
   <header class="global-header">
     <div class="global-header-inner">
       <a class="brand" href="/">群聊简报 <small>QQ Digest</small></a>
-      <nav class="global-nav" aria-label="主要导航">
-        <a href="/" id="nav-dashboard">总览</a>
-        {% if features.get('tasks', true) %}<a href="/tasks" id="nav-tasks">待办</a>{% endif %}
-        {% if features.get('failures', true) %}<a href="/failures" id="nav-failures">异常</a>{% endif %}
-        <a href="/groups" id="nav-groups">群组</a>
-        <a href="/collect" id="nav-collect">采集</a>
-        <a href="/search" id="nav-search">搜索</a>
-        <a href="/reports" id="nav-reports">摘要</a>
-        {% if features.get('review', true) %}<a href="/candidates" id="nav-candidates">审核</a>{% endif %}
-        <a href="/ai-settings" id="nav-ai-settings">AI 设置</a>
-        <a href="/settings" id="nav-settings">设置</a>
-      </nav>
+      {% include "primary_navigation.html" %}
     </div>
   </header>
   <main id="main-content">
@@ -386,13 +375,8 @@
             });
           });
         }
-        (function markActiveNavigation() {
-          var path = window.location.pathname;
-          var id = path === '/' ? 'nav-dashboard' : 'nav-' + path.split('/')[1];
-          var node = document.getElementById(id);
-          if (node) { node.classList.add('active'); node.setAttribute('aria-current', 'page'); }
-        })();
       </script>
+      {% include "section_navigation.html" %}
       {% block content %}{% endblock %}
       <script>
         document.querySelectorAll('input[type="date"]').forEach(function(input) {

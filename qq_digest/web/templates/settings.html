@@ -4,22 +4,27 @@
 {% block page_description %}选择需要的功能，管理存储、备份与启动方式。{% endblock %}
 {% block content %}
 <div class="desktop-settings">
-  <section class="card setting-card" aria-labelledby="features-title">
+  <div data-settings-panel="ai">{% include "ai_connection_settings.html" %}</div>
+  <section class="card setting-card" data-settings-panel="automatic" aria-labelledby="automatic-title">
+    <div class="setting-heading"><div><h2 id="automatic-title">自动运行</h2><p>程序运行时执行，隐藏界面功能不会自动停止后台任务。</p></div></div>
+    <form id="automatic-form"><fieldset id="automatic-options" disabled style="border:0;padding:0;margin:0"><div id="automatic-list">正在读取自动运行设置…</div></fieldset><p id="automatic-schedule" class="setting-help"></p><button class="btn btn-primary" id="automatic-save" disabled>保存自动运行设置</button><p id="automatic-result" class="setting-result" role="status" hidden></p></form>
+  </section>
+  <section class="card setting-card" data-settings-panel="features" aria-labelledby="features-title">
     <div class="setting-heading"><div><h2 id="features-title">功能开关</h2><p>保留常用功能，其他功能按需开启。</p></div><span class="setting-index">功能</span></div>
-    <p class="setting-help">摘要的要点阅读、按群阅读和已读记录始终可用。总览、群组、手动采集、搜索与设置也始终保留。关闭扩展功能不删除已有数据，重新开启即可继续使用。正在执行的任务会完成，后续自动任务按开关状态执行。</p>
+    <p class="setting-help">摘要的要点阅读、按群阅读和已读记录始终可用。消息、群聊、手动更新和设置也始终保留。关闭扩展功能不删除已有数据，重新开启即可继续使用。正在执行的任务会完成，后续自动任务按开关状态执行。</p>
     <p id="feature-redirect" class="setting-result" hidden>刚才访问的功能已关闭，你可以在这里重新开启。</p>
     <form id="features-form">
       <div class="actions"><button type="button" class="btn" id="features-simple" disabled>精简界面</button><button type="button" class="btn" id="features-all" disabled>全部扩展功能</button></div>
-      <p class="setting-muted">上方快捷选择只调整扩展功能，自动任务请在下面单独设置。</p>
+      <p class="setting-muted">上方快捷选择只调整扩展功能，自动任务在“自动运行”分类中单独设置。</p>
       <fieldset id="feature-options" disabled style="border:0;padding:0;margin:0"><div id="features-list"><p>正在读取功能设置…</p></div></fieldset>
-      <p class="setting-help">如需暂停所有自动消息导入，请同时关闭自动采集和自动日报。备份、开机自启仍在下方单独设置。</p>
+      <p class="setting-help">关闭界面扩展不会停止自动任务。开机自启在“自动运行”，自动备份在“备份与恢复”分类。</p>
       <button type="submit" class="btn btn-primary" id="features-save" disabled>保存功能设置</button>
       <p id="features-result" class="setting-result" role="status" hidden></p>
     </form>
   </section>
   <div id="desktop-required" class="card" hidden>这些设置需要在 QQ Digest 桌面程序中打开。</div>
 
-  <section class="card setting-card" aria-labelledby="storage-title">
+  <section class="card setting-card" data-settings-panel="storage" aria-labelledby="storage-title">
     <div class="setting-heading"><div><h2 id="storage-title">存储位置</h2><p>消息、摘要、知识库和工作文件保存在这里。</p></div><span class="setting-index">01</span></div>
     <div class="setting-current"><span>当前位置</span><strong id="current-storage">加载中…</strong></div>
     <button id="open-storage" class="btn btn-sm" type="button" disabled>打开当前位置</button>
@@ -30,7 +35,7 @@
     <p id="migration-result" class="setting-result" role="status" hidden></p>
   </section>
 
-  <section class="card setting-card" aria-labelledby="export-title">
+  <section class="card setting-card" data-settings-panel="storage" aria-labelledby="export-title">
     <div class="setting-heading"><div><h2 id="export-title">消息摘要导出</h2><p>将每日摘要和区间摘要导出到本机文件夹。</p></div><span class="setting-index">02</span></div>
     <label class="setting-label" for="export-folder">导出到</label>
     <div class="setting-row"><input id="export-folder" class="input setting-path" type="text" spellcheck="false"><button id="choose-export" class="btn" type="button">选择文件夹</button></div>
@@ -40,13 +45,13 @@
     <p id="export-result" class="setting-result" role="status" hidden></p>
   </section>
 
-  <section class="card setting-card" aria-labelledby="startup-title">
+  <section class="card setting-card" data-settings-panel="automatic" aria-labelledby="startup-title">
     <div class="setting-heading"><div><h2 id="startup-title">开机自启</h2><p>登录 Windows 后自动打开 QQ Digest 桌面程序。</p></div><span class="setting-index">03</span></div>
     <label class="startup-option"><input id="auto-start" type="checkbox"><span>开机时启动</span></label>
     <p class="setting-help">此开关只影响当前 Windows 用户。</p>
   </section>
 
-  <section class="card setting-card" aria-labelledby="backup-title">
+  <section class="card setting-card" data-settings-panel="backup" aria-labelledby="backup-title">
     <div class="setting-heading"><div><h2 id="backup-title">数据备份</h2><p>将消息数据库、摘要、知识库和配置打包保存。</p></div><span class="setting-index">04</span></div>
     <div class="setting-current"><span>备份目录</span><strong id="backup-folder">加载中…</strong></div>
     <label class="setting-label" for="backup-schedule">自动备份频率</label>
@@ -56,7 +61,7 @@
     <p id="backup-result" class="setting-result" role="status" hidden></p>
   </section>
 
-  <section class="card setting-card" aria-labelledby="restore-title">
+  <section class="card setting-card" data-settings-panel="backup" aria-labelledby="restore-title">
     <div class="setting-heading"><div><h2 id="restore-title">恢复数据</h2><p>先校验并预览备份，再恢复到一个空文件夹。</p></div><span class="setting-index">05</span></div>
     <label class="setting-label" for="recent-backups">最近备份</label>
     <select id="recent-backups" class="input setting-select"><option value="">选择最近备份，或在下方输入完整路径</option></select>
@@ -113,12 +118,13 @@
 <script>
   var savedFeatures = null;
   function setFeatureFormBusy(busy) {
-    ['feature-options','features-simple','features-all','features-save'].forEach(function(id) { document.getElementById(id).disabled=busy; });
+    ['feature-options','features-simple','features-all','features-save','automatic-options','automatic-save'].forEach(function(id) { document.getElementById(id).disabled=busy; });
   }
   api('GET','/api/features').then(function(data) {
     savedFeatures=data;
-    var host=document.getElementById('features-list'); host.textContent=''; var lastGroup='';
+    var host=document.getElementById('features-list');host.textContent='';document.getElementById('automatic-list').textContent='';var lastGroup='';
     data.catalog.forEach(function(item) {
+      host=document.getElementById(item.group==='自动任务'?'automatic-list':'features-list');
       if(item.group!==lastGroup) { var heading=document.createElement('h3'); heading.className='feature-group-title'; heading.textContent=item.group; host.appendChild(heading); lastGroup=item.group; }
       var label=document.createElement('label'); label.className='feature-option';
       var text=document.createElement('span'),title=document.createElement('strong'),description=document.createElement('small');
@@ -135,13 +141,19 @@
   }
   document.getElementById('features-simple').onclick=function() { selectFeaturePreset(false); };
   document.getElementById('features-all').onclick=function() { selectFeaturePreset(true); };
-  document.getElementById('features-form').onsubmit=function(event) {
-    event.preventDefault(); if(!savedFeatures)return; setFeatureFormBusy(true); var values={};
-    savedFeatures.catalog.forEach(function(item) { values[item.key]=document.getElementById('feature-'+item.key).checked; });
-    api('PUT','/api/features',{values:values,expected_revision:savedFeatures.revision}).then(function() { location.href='/settings?saved=features'; })
-      .catch(function(error) { setResult('features-result',error.message+'；你的选择尚未保存。'); setFeatureFormBusy(false); });
-  };
-  if(new URLSearchParams(location.search).get('saved')==='features')setResult('features-result','功能设置已保存，入口和自动任务按新设置生效。');
+  function saveFeatureCategory(event,automatic) {
+    event.preventDefault();if(!savedFeatures)return;setFeatureFormBusy(true);var values={};
+    savedFeatures.catalog.filter(function(item){return (item.group==='自动任务')===automatic;}).forEach(function(item){values[item.key]=document.getElementById('feature-'+item.key).checked;});
+    api('PUT','/api/features',{values:values,expected_revision:savedFeatures.revision}).then(function(data){savedFeatures=data;featureFlags=data.values;updateWorkspaceTools();if(automatic)refreshAutomaticSchedule();setResult(automatic?'automatic-result':'features-result',automatic?'自动运行设置已保存，立即生效。':'功能设置已保存，入口按新设置生效。');setFeatureFormBusy(false);history.replaceState(null,'','/settings?section='+(automatic?'automatic':'features'));})
+      .catch(function(error){setResult(automatic?'automatic-result':'features-result',error.message+'；你的选择尚未保存。');setFeatureFormBusy(false);});
+  }
+  document.getElementById('features-form').onsubmit=function(event){saveFeatureCategory(event,false);};
+  document.getElementById('automatic-form').onsubmit=function(event){saveFeatureCategory(event,true);};
+  var savedCategory=new URLSearchParams(location.search).get('saved');
+  if(savedCategory==='features')setResult('features-result','功能设置已保存，入口按新设置生效。');
+  if(savedCategory==='automatic')setResult('automatic-result','自动运行设置已保存，立即生效。');
+  function refreshAutomaticSchedule(){return api('GET','/api/scheduler').then(function(data){document.getElementById('automatic-schedule').textContent='每日摘要时间 '+data.schedule+'（'+data.timezone+'） · 消息更新间隔 '+data.collection.interval_minutes+' 分钟。'+(!data.collection.enabled?'当前消息自动更新未运行，需关注群聊、启用自动更新并配置 QQ 数据源。':'');}).catch(function(){document.getElementById('automatic-schedule').textContent='运行状态暂时无法读取，可到运行记录重试查看。';});}
+  refreshAutomaticSchedule();
   var restorePreview = null;
   function settingsError(error) { toast(error && error.message ? error.message : String(error), 'error'); }
   function setResult(id, message) { var node = document.getElementById(id); node.textContent = message; node.hidden = false; }
@@ -187,8 +199,10 @@
       document.getElementById('choose-backup').disabled = false;
       document.getElementById('preview-backup').disabled = false;
     }).catch(function(error) {
+      document.getElementById('desktop-required').dataset.unavailable='true';
       document.getElementById('desktop-required').textContent = error.message;
-      document.getElementById('desktop-required').hidden = false;
+      var section=new URLSearchParams(location.search).get('section');
+      document.getElementById('desktop-required').hidden = !['automatic','storage','backup'].includes(section);
       document.getElementById('current-storage').textContent = '请启动桌面程序后刷新';
     });
   }
@@ -308,4 +322,5 @@
   document.getElementById('auto-start').disabled = true;
   initDesktopSettings();
 </script>
+{% include "settings_categories_script.html" %}
 {% endblock %}

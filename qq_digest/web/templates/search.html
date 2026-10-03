@@ -1,24 +1,26 @@
 {% extends "base.html" %}
-{% block title %}全局搜索 - QQ Digest{% endblock %}
-{% block page_title %}全局搜索{% endblock %}
-{% block page_description %}在归档消息、摘要报告和已入库知识中查找，并查看消息原文。{% endblock %}
+{% block title %}消息 - QQ Digest{% endblock %}
+{% block page_title %}消息{% endblock %}
+{% block page_description %}浏览本机已保存的聊天记录，输入关键词查找消息、摘要或知识。{% endblock %}
 {% block content %}
+<div class="actions message-dates"><button class="btn btn-sm" onclick="setMessageDates('today')">今天</button><button class="btn btn-sm" onclick="setMessageDates('week')">最近七天</button><button class="btn btn-sm" onclick="browseOnly()">清除关键词，浏览消息</button></div>
 <form class="filter-toolbar search-toolbar" id="search-form" onsubmit="submitSearch(event)">
-  <div class="field search-query"><label for="search-q">搜索内容</label><input class="input" id="search-q" type="search" minlength="2" maxlength="100" placeholder="输入至少两个字" required></div>
+  <div class="field search-query"><label for="search-q">搜索内容</label><input class="input" id="search-q" type="search" minlength="2" maxlength="100" placeholder="可留空浏览，搜索请输入至少两个字"></div>
   <div class="field"><label for="search-kind">范围</label><select id="search-kind"><option value="all">全部内容</option><option value="message">聊天消息</option><option value="report">摘要报告</option><option value="knowledge">已入库知识</option></select></div>
   <div class="field"><label for="search-group">来源群</label><select id="search-group"><option value="">全部群</option></select></div>
   <div class="field"><label for="search-from">开始日期</label><input class="input" id="search-from" type="date"></div>
   <div class="field"><label for="search-to">结束日期</label><input class="input" id="search-to" type="date"></div>
-  <button class="btn btn-primary" type="submit">搜索</button>
+  <button class="btn btn-primary" type="submit">查看消息／搜索</button>
 </form>
 <section class="card search-card" aria-live="polite">
-  <div class="card-header">搜索结果 <span class="header-meta" id="search-count">输入关键词开始搜索</span></div>
+  <div class="card-header"><span id="search-result-title">聊天记录</span><span class="header-meta" id="search-count">正在读取最近七天消息…</span></div>
   <div id="search-results"><div class="empty">可搜索本地归档的聊天消息、报告正文和已确认的知识条目。</div></div>
   <div class="search-pages" id="search-pages" hidden><button class="btn btn-sm" id="search-prev" type="button" onclick="searchPage(-1)">上一页</button><span id="search-page-label"></span><button class="btn btn-sm" id="search-next" type="button" onclick="searchPage(1)">下一页</button></div>
 </section>
 <style>
   .search-toolbar { grid-template-columns: minmax(240px, 2fr) repeat(4, minmax(130px, 1fr)) auto; align-items: end; }
   .search-card { min-height: 280px; }
+  .message-dates { margin-bottom:15px; }
   .search-result { padding: 17px 0; border-bottom: 1px solid var(--border); }
   .search-result:last-child { border-bottom: 0; }
   .search-result-head { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
@@ -48,6 +50,8 @@
   }
   function submitSearch(event) { event.preventDefault(); currentSearchPage = 1; loadSearch(); }
   function searchPage(step) { currentSearchPage += step; loadSearch(); window.scrollTo({top: 0, behavior: 'smooth'}); }
+  function setMessageDates(mode){var end=new Date(),start=new Date();if(mode==='week')start.setDate(start.getDate()-6);function day(d){return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}document.getElementById('search-from').value=day(start);document.getElementById('search-to').value=day(end);refreshDateHints();currentSearchPage=1;loadSearch();}
+  function browseOnly(){document.getElementById('search-q').value='';document.getElementById('search-kind').value='message';currentSearchPage=1;loadSearch();}
   function renderSearchResult(item) {
     var labels = {message: '消息', report: '报告', knowledge: '知识'};
     var reviewHidden = featureFlags.review === false && item.kind === 'knowledge';
@@ -56,23 +60,25 @@
     var action = item.kind === 'message' ? '<button class="btn btn-sm" type="button" data-group="' + Number(item.group_id) + '" data-message="' + escapeHtml(item.id) + '" onclick="showSearchContext(this)">查看上下文</button> <a class="btn btn-sm" href="' + escapeHtml(taskHref) + '">加入待办</a>' : '<a class="btn btn-sm" href="' + escapeHtml(item.url) + '">查看详情</a>';
     if (featureFlags.tasks === false) action = action.replace(/ <a class="btn btn-sm"[^>]*>加入待办<\/a>/, '');
     if (reviewHidden) action = '<span class="header-meta">知识记录已保留；如需整理，可在设置中开启审核。</span>';
-    return '<article class="search-result"><div class="search-result-head"><span class="badge badge-dim">' + labels[item.kind] + '</span>' + heading + '</div><div class="search-result-meta">' + escapeHtml(item.group_name) + ' · ' + escapeHtml(item.date) + '</div><p class="search-result-snippet">' + escapeHtml(item.snippet) + '</p>' + action + '<div class="search-context" hidden></div></article>';
+    return '<article class="search-result"><div class="search-result-head"><span class="badge badge-dim">' + labels[item.kind] + '</span>' + heading + '</div><div class="search-result-meta">' + escapeHtml(item.group_name) + ' · ' + escapeHtml(item.timestamp?new Date(item.timestamp).toLocaleString('zh-CN'):item.date) + '</div><p class="search-result-snippet">' + escapeHtml(item.timestamp?item.text:item.snippet) + '</p>' + action + '<div class="search-context" hidden></div></article>';
   }
   function loadSearch() {
-    var params = searchParams(), q = params.get('q');
-    if (q.length < 2) { toast('请输入至少两个字', 'error'); return; }
     var token = ++searchToken;
-    document.getElementById('search-count').textContent = '搜索中...';
-    api('GET', '/api/search?' + params.toString()).then(function(data) {
+    var params = searchParams(), q = params.get('q');
+    if (q.length === 1) { document.getElementById('search-count').textContent='搜索请输入至少两个字，或清除关键词浏览消息。';document.getElementById('search-results').textContent='请调整关键词后重新搜索。';document.getElementById('search-pages').hidden=true;return; }
+    if(!q){params.set('kind','message');document.getElementById('search-kind').value='message';}
+    document.getElementById('search-count').textContent = q?'搜索中…':'正在读取已保存消息…';
+    document.getElementById('search-result-title').textContent=q?'搜索结果':'聊天记录';
+    api('GET', (q?'/api/search?':'/api/messages?') + params.toString()).then(function(data) {
       if (token !== searchToken) return;
       document.getElementById('search-count').textContent = '共 ' + formatNumber(data.total) + ' 条';
-      document.getElementById('search-results').innerHTML = data.results.length ? data.results.map(renderSearchResult).join('') : '<div class="empty">没有找到匹配内容，可调整关键词或筛选范围。</div>';
+      document.getElementById('search-results').innerHTML = data.results.length ? data.results.map(renderSearchResult).join('') : '<div class="empty">'+(q?'没有找到匹配内容，可调整关键词或筛选范围。':'所选日期暂无已保存消息，可调整日期，或到群聊中更新消息。')+' <a href="/groups">打开群聊</a></div>';
       var pages = document.getElementById('search-pages'); pages.hidden = data.total <= data.page_size;
       document.getElementById('search-page-label').textContent = '第 ' + data.page + ' / ' + Math.max(1, Math.ceil(data.total / data.page_size)) + ' 页';
       document.getElementById('search-prev').disabled = data.page <= 1;
       document.getElementById('search-next').disabled = data.page * data.page_size >= data.total;
       history.replaceState(null, '', '/search?' + params.toString());
-    }).catch(function(error) { document.getElementById('search-count').textContent = '搜索失败'; toast(error.message, 'error'); });
+    }).catch(function(error) { if(token!==searchToken)return;document.getElementById('search-count').textContent='读取失败：'+error.message+'；请调整条件或重新提交。';document.getElementById('search-results').textContent='本次结果未能读取。';document.getElementById('search-pages').hidden=true; });
   }
   function showSearchContext(button) {
     var host = button.closest('.search-result').querySelector('.search-context');
@@ -85,6 +91,7 @@
   }
   (function restoreSearch() {
     var p = new URLSearchParams(location.search);
+    var end=new Date(),start=new Date();start.setDate(start.getDate()-6);function day(d){return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}document.getElementById('search-from').value=day(start);document.getElementById('search-to').value=day(end);document.getElementById('search-kind').value='message';
     var fields = {q: 'search-q', kind: 'search-kind', date_from: 'search-from', date_to: 'search-to'};
     Object.keys(fields).forEach(function(key) { if (p.has(key)) document.getElementById(fields[key]).value = p.get(key); });
     currentSearchPage = Math.max(1, Number(p.get('page')) || 1);
@@ -92,7 +99,7 @@
       var select = document.getElementById('search-group');
       data.groups.forEach(function(group) { var option = document.createElement('option'); option.value = group.group_id; option.textContent = group.name; select.appendChild(option); });
       if (p.has('group_id')) select.value = p.get('group_id');
-    }).catch(function() {}).finally(function() { if ((p.get('q') || '').trim().length >= 2) loadSearch(); });
+    }).catch(function(){document.getElementById('search-count').textContent='群聊筛选读取失败，正在读取全部群消息。';}).finally(function() { loadSearch(); });
   })();
 </script>
 {% endblock %}

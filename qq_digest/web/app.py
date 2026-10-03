@@ -44,6 +44,7 @@ from .history_inspection import add_history_inspection_routes, history_inspectio
 from .report_revisions import add_report_revision_routes
 from .features import add_feature_routes
 from .summary_reading_routes import add_summary_reading_routes
+from .message_routes import add_message_routes
 
 templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"),
                            context_processors=[lambda request: {'features': getattr(request.state, 'features', {})}])
@@ -680,6 +681,7 @@ def create_app(
     app.state.desktop_bridge = None
     feature_service = add_feature_routes(app, archive=archive, cookie=cookie, require_login=require_login)
     add_summary_reading_routes(app, archive=archive, config=config, require_login=require_login)
+    add_message_routes(app, archive=archive, config=config, require_login=require_login)
     add_history_inspection_routes(app, archive=archive, config=config,
                                   operations=operations, require_login=require_login)
     add_report_revision_routes(app, archive=archive, config=config,
@@ -725,6 +727,12 @@ def create_app(
     # ------------------------------------------------------------------
     @app.get("/")
     async def dashboard(request: Request):
+        if not cookie.verify(request.cookies.get("qq_digest_session")):
+            return RedirectResponse("/login", status_code=303)
+        return templates.TemplateResponse(request, "reports.html", {})
+
+    @app.get("/overview")
+    async def overview_page(request: Request):
         if not cookie.verify(request.cookies.get("qq_digest_session")):
             return RedirectResponse("/login", status_code=303)
         return templates.TemplateResponse(request, "dashboard.html", {})

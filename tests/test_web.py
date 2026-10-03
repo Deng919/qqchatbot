@@ -259,7 +259,7 @@ def test_report_completeness_is_exposed_in_list_detail_and_health(web_client, tm
     assert day["status"] == "limited"
     assert day["limited_input_groups"] == 1
     assert "report-completeness" in client.get("/reports").text
-    assert "daily-coverage" in client.get("/").text
+    assert "daily-coverage" in client.get("/overview").text
 
 
 @pytest.mark.parametrize("contents", ["broken", "[]", "{}"])
@@ -870,7 +870,7 @@ def test_dashboard_renders_job_errors_with_html_escaping(web_client):
     client, _, _ = web_client
     client.post("/login", data={"password": "password123"}, follow_redirects=False)
 
-    response = client.get("/")
+    response = client.get("/overview")
 
     assert response.status_code == 200
     assert "job-error" in response.text
@@ -1741,11 +1741,11 @@ def test_operational_ui_contains_group_search_and_safe_render_helpers(web_client
     client, _, _ = web_client
     client.post("/login", data={"password": "password123"}, follow_redirects=False)
 
-    dashboard = client.get("/")
+    dashboard = client.get("/overview")
     groups = client.get("/groups")
 
     assert dashboard.status_code == 200
-    assert "工作台总览" in dashboard.text
+    assert "运行记录" in dashboard.text
     assert "function escapeHtml" in dashboard.text
     assert "function dailyResultMessage" in dashboard.text
     assert "data.detail.message" in dashboard.text
@@ -1753,8 +1753,8 @@ def test_operational_ui_contains_group_search_and_safe_render_helpers(web_client
     assert groups.status_code == 200
     assert 'id="group-search"' in groups.text
     assert "扫描本地群聊" in groups.text
-    assert "group-keywords" in groups.text
-    assert "collection-window" in groups.text
+    assert 'id="group-keywords"' in groups.text
+    assert 'id="group-window"' in groups.text
 
 
 def test_pages_use_top_navigation_shell(web_client):
@@ -1774,7 +1774,7 @@ def test_dashboard_has_responsive_job_table(web_client):
     client, _, _ = web_client
     client.post("/login", data={"password": "password123"}, follow_redirects=False)
 
-    dashboard = client.get("/")
+    dashboard = client.get("/overview")
 
     assert 'class="table responsive-table job-table"' in dashboard.text
     assert 'class="dashboard-grid"' in dashboard.text
@@ -1791,7 +1791,7 @@ def test_operational_pages_use_responsive_layout_classes(web_client):
     collect = client.get("/collect")
     reports = client.get("/reports")
 
-    assert 'class="table group-config-table"' in groups.text
+    assert 'class="table responsive-table group-reading-table"' in groups.text
     assert 'class="filter-toolbar collect-toolbar"' in collect.text
     assert 'class="report-layout"' in reports.text
     assert 'class="table responsive-table report-table"' in reports.text

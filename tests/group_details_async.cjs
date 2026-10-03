@@ -1,0 +1,22 @@
+const fs=require('fs'),vm=require('vm'),assert=require('node:assert/strict');
+const source=fs.readFileSync('qq_digest/web/templates/groups.html','utf8');
+global.configuredGroups=[{group_id:123,name:'Synthetic A'},{group_id:456,name:'Synthetic B'}];
+global.selectedGroupId=123;
+global.confirm=()=>true;
+global.closeGroupDetail=()=>{selectedGroupId=null;};
+global.groupResult=()=>{};global.loadGroups=()=>{};global.toast=()=>{};global.formatNumber=String;
+let resolveDelete;
+global.api=()=>new Promise(resolve=>{resolveDelete=resolve;});
+vm.runInThisContext(source.slice(source.indexOf('  function deleteGroup('),source.lastIndexOf('  loadGroups();')));
+(async()=>{
+  deleteGroup(123);
+  selectedGroupId=456;
+  resolveDelete({deleted:{messages:1}});
+  await new Promise(setImmediate);
+  assert.equal(selectedGroupId,456,'a delayed deletion must not close another group draft');
+  deleteGroup(456);
+  resolveDelete({deleted:{messages:1}});
+  await new Promise(setImmediate);
+  assert.equal(selectedGroupId,null,'the deleted group detail should close');
+  console.log('Delayed group deletion preserves unrelated detail drafts');
+})().catch(error=>{console.error(error);process.exitCode=1;});

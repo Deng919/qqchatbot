@@ -1,0 +1,55 @@
+{% set page_path = request.url.path %}
+<div class="workspace-context">
+  <a class="workspace-status" href="/overview" id="workspace-status" aria-label="查看运行记录">正在读取运行状态…</a>
+  <div id="workspace-tools-area">
+  {% if features.get('tasks',true) or features.get('review',true) %}
+  <details class="workspace-tools"><summary>更多工具</summary><nav aria-label="更多工具">
+    {% if features.get('tasks',true) %}<a href="/tasks">待办<span>确认行动事项和截止日期</span></a>{% endif %}
+    {% if features.get('review',true) %}<a href="/candidates">知识整理<span>确认有用内容并保存到知识库</span></a>{% endif %}
+  </nav></details>
+  {% endif %}
+  </div>
+</div>
+{% if page_path in ['/settings','/ai-settings','/overview','/failures'] %}
+{% set settings_section = 'ai' if page_path == '/ai-settings' else 'records' if page_path in ['/overview','/failures'] else 'features' if request.query_params.get('feature') or request.query_params.get('saved') == 'features' else request.query_params.get('section','ai') %}
+<nav class="section-nav" aria-label="设置分类">
+  {% for key,label,url in [('ai','AI 连接','/settings?section=ai'),('automatic','自动运行','/settings?section=automatic'),('features','界面与功能','/settings?section=features'),('storage','存储与导出','/settings?section=storage'),('backup','备份与恢复','/settings?section=backup'),('records','运行记录','/overview')] %}
+  <a href="{{ url }}" data-settings-section="{{ key }}" {% if key == settings_section %}aria-current="page" class="active"{% endif %}>{{ label }}</a>
+  {% endfor %}
+</nav>
+{% elif page_path in ['/groups','/collect'] %}
+<nav class="section-nav" aria-label="群聊操作">
+  <a href="/groups" {% if page_path == '/groups' %}aria-current="page" class="active"{% endif %}>关注的群聊</a>
+  <a href="/collect" {% if page_path == '/collect' %}aria-current="page" class="active"{% endif %}>更新与高级维护</a>
+</nav>
+{% elif page_path in ['/tasks','/candidates'] %}
+<a class="section-back" href="/reports">← 返回摘要阅读</a>
+{% endif %}
+<style>
+  [hidden] { display:none !important; }
+  .workspace-context { display:flex; align-items:center; justify-content:space-between; gap:16px; margin-bottom:20px; font-size:12px; color:var(--text-soft); }
+  .workspace-status { color:var(--text-soft); text-decoration:none; overflow-wrap:anywhere; }
+  .workspace-status:hover { color:var(--primary); text-decoration:underline; }
+  .workspace-status[data-warning] { color:#805321; }
+  .workspace-tools { position:relative; flex-shrink:0; }
+  .workspace-tools summary { cursor:pointer; padding:6px 8px; }
+  .workspace-tools nav { position:absolute; right:0; z-index:20; width:240px; background:var(--surface); border:1px solid var(--border); border-radius:10px; box-shadow:0 8px 25px rgb(28 48 34 / .1); padding:8px; }
+  .workspace-tools a { display:block; padding:10px; color:var(--text); text-decoration:none; font-weight:600; }
+  .workspace-tools a:hover { background:var(--primary-soft); }
+  .workspace-tools span { display:block; font-size:12px; font-weight:400; color:var(--text-soft); margin-top:4px; }
+  .section-nav { display:flex; flex-wrap:wrap; gap:5px; border-bottom:1px solid var(--border); margin-bottom:24px; padding-bottom:8px; }
+  .section-nav a { padding:9px 12px; color:var(--text-soft); text-decoration:none; font-size:13px; border-radius:7px; }
+  .section-nav a:hover,.section-nav a.active { color:var(--primary-dark); background:var(--primary-soft); }
+  .section-back { display:inline-block; color:var(--primary); margin:0 0 20px; font-size:13px; }
+</style>
+<script>
+  function updateWorkspaceTools(){var host=document.getElementById('workspace-tools-area');host.textContent='';var items=[];if(featureFlags.tasks!==false)items.push(['/tasks','待办','确认行动事项和截止日期']);if(featureFlags.review!==false)items.push(['/candidates','知识整理','确认有用内容并保存到知识库']);if(!items.length)return;var details=document.createElement('details');details.className='workspace-tools';var summary=document.createElement('summary');summary.textContent='更多工具';details.appendChild(summary);var nav=document.createElement('nav');nav.setAttribute('aria-label','更多工具');items.forEach(function(item){var link=document.createElement('a');link.href=item[0];link.textContent=item[1];var hint=document.createElement('span');hint.textContent=item[2];link.appendChild(hint);nav.appendChild(link);});details.appendChild(nav);host.appendChild(details);}
+  function loadWorkspaceStatus() {
+    api('GET','/api/health').then(function(data) {
+      var node=document.getElementById('workspace-status'),warning=data.latest_job_status==='failed'||data.latest_job_status==='partial_success'||data.latest_daily_status==='failed'||data.latest_daily_status==='partial_success'||data.failed_notifications>0||(data.daily_coverage&&data.daily_coverage.status==='limited');
+      node.textContent=(data.last_sync_at?'最近更新 '+new Date(data.last_sync_at).toLocaleString('zh-CN'):'尚未更新消息')+(warning?' · 有结果需要检查，查看运行记录':' · 查看运行记录');
+      node.toggleAttribute('data-warning',warning);
+    }).catch(function(){document.getElementById('workspace-status').textContent='运行状态读取失败 · 查看运行记录';});
+  }
+  loadWorkspaceStatus();
+</script>

@@ -18,6 +18,8 @@ TEMPLATES = (
     "catchup.html", "dashboard.html", "failures.html", "groups.html", "login.html", "reports.html", "search.html", "tasks.html",
     "settings.html", "summary_reading_controls.html", "summary_reading_style.html",
     "summary_reading_script.html",
+    "primary_navigation.html", "section_navigation.html", "group_details.html",
+    "ai_connection_settings.html", "settings_categories_script.html",
 )
 
 

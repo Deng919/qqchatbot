@@ -1,0 +1,45 @@
+<section class="card" id="group-detail" aria-labelledby="group-detail-title" hidden>
+  <div class="card-header"><span id="group-detail-title">群聊详情</span><button class="btn btn-sm" type="button" onclick="closeGroupDetail()">关闭详情</button></div>
+  <p id="group-detail-stats" class="header-meta"></p><div class="actions" id="group-detail-links"></div>
+  <form id="group-detail-form" onsubmit="saveGroupDetail(event)">
+    <label class="group-check"><input id="group-daily" type="checkbox"> 为这个群生成每日日报</label>
+    <p class="header-meta">只对已关注的群生效，执行时间在设置 → 自动运行中查看。</p>
+    <details class="group-advanced"><summary>高级设置</summary>
+      <div class="group-detail-fields">
+        <div class="field"><label for="group-category">群分类</label><select id="group-category"><option value="tech">技术</option><option value="resource">资源</option><option value="project">项目</option><option value="study">学习</option><option value="general">综合</option></select></div>
+        <div class="field"><label for="group-keywords">重点关键词</label><input class="input" id="group-keywords" placeholder="用逗号分隔"></div>
+        <div class="field"><label for="group-window">首次导入天数</label><input class="input" id="group-window" type="number" min="1" max="365" required></div>
+      </div>
+      <label class="group-check" {% if not features.get('review',true) %}data-feature-off{% endif %}><input id="group-knowledge" type="checkbox"> 提取有用内容，交给知识整理确认</label>
+      <p class="header-meta">历史补采与巡检在“更新与高级维护”中。</p>
+      <a id="group-repair" class="btn btn-sm" href="/collect">历史补采与缺口检查</a>
+      <div class="group-danger"><p>删除群聊会同时删除归档消息、摘要与知识候选，请先备份。</p><button class="btn btn-danger btn-sm" type="button" onclick="deleteGroup(selectedGroupId)">删除群聊及数据</button></div>
+    </details>
+    <button class="btn btn-primary" id="group-detail-save" type="submit">保存群聊设置</button>
+    <p id="group-detail-result" class="group-result" role="status" hidden></p>
+  </form>
+</section>
+<style>
+  #discover-card,#group-detail { margin-bottom:20px; }
+  .group-reading-table td { vertical-align:top; }
+  .group-reading-table .actions { gap:7px; }
+  .group-name { color:var(--primary-dark); font-weight:700; border:0; background:transparent; padding:0; cursor:pointer; text-align:left; overflow-wrap:anywhere; }
+  .group-result { white-space:pre-wrap; overflow-wrap:anywhere; padding:13px 16px; background:var(--primary-soft); border-radius:8px; font-size:13px; }
+  .group-result[data-error] { background:#fff5e4; color:#805321; }
+  .group-check { display:flex; align-items:center; gap:10px; margin:20px 0 10px; font-size:14px; }
+  .group-check input { width:18px; height:18px; accent-color:var(--primary); }
+  .group-detail-fields { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:14px; margin:20px 0; }
+  .group-advanced { margin:22px 0; } .group-advanced summary { cursor:pointer; color:var(--primary); font-size:14px; }
+  .group-danger { border-top:1px solid var(--border); padding-top:12px; margin-top:24px; font-size:12px; color:var(--text-soft); }
+  @media(max-width:700px) { .group-detail-fields { grid-template-columns:1fr; } }
+</style>
+<script>
+  var selectedGroupId=null,groupSaveBusy=false;
+  function groupResult(message,error,id){var node=document.getElementById(id||'group-result');node.textContent=message;node.hidden=false;node.toggleAttribute('data-error',!!error);}
+  function groupDate(date){return date.getFullYear()+'-'+String(date.getMonth()+1).padStart(2,'0')+'-'+String(date.getDate()).padStart(2,'0');}
+  function updateUrl(group){var end=new Date(),start=new Date();start.setDate(start.getDate()-(group.message_count?6:(group.collection_window_days||30)-1));return '/collect?'+new URLSearchParams({group_id:group.group_id,start:groupDate(start),end:groupDate(end),update:'1'}).toString();}
+  function openAddGroups(){document.getElementById('discover-card').hidden=false;document.getElementById('discover-card').scrollIntoView({block:'start',behavior:'instant'});document.getElementById('discover-btn').focus();}
+  function closeGroupDetail(){if(groupSaveBusy)return;document.getElementById('group-detail').hidden=true;selectedGroupId=null;document.getElementById('group-search').focus();}
+  function openGroupDetail(id){if(groupSaveBusy)return;var g=configuredGroups.find(function(item){return item.group_id===id;});if(!g)return;selectedGroupId=id;document.getElementById('group-detail-title').textContent=g.name+' · '+id;document.getElementById('group-detail-stats').textContent='已保存 '+formatNumber(g.message_count)+' 条消息 · 最近消息 '+(g.latest_message_at?new Date(g.latest_message_at).toLocaleString('zh-CN'):'暂无');document.getElementById('group-daily').checked=g.daily_summary;document.getElementById('group-category').value=g.category;document.getElementById('group-keywords').value=(g.keywords||[]).join('，');document.getElementById('group-window').value=g.collection_window_days||30;document.getElementById('group-knowledge').checked=g.important_candidates;document.getElementById('group-repair').href=repairUrl(g);document.getElementById('group-detail-links').innerHTML='<a class="btn btn-sm" href="/search?group_id='+id+'">查看消息</a><a class="btn btn-sm" href="/reports?view=groups&group_id='+id+'&date_from=&date_to=">查看摘要</a><a class="btn btn-sm" href="'+escapeHtml(updateUrl(g))+'">更新消息</a>';document.getElementById('group-detail-result').hidden=true;document.querySelector('.group-advanced').open=false;document.getElementById('group-detail').hidden=false;document.getElementById('group-detail').scrollIntoView({block:'start',behavior:'instant'});}
+  function saveGroupDetail(event){event.preventDefault();if(groupSaveBusy||!selectedGroupId)return;var id=selectedGroupId,patch={daily_summary:document.getElementById('group-daily').checked,category:document.getElementById('group-category').value,keywords:Array.from(new Set(document.getElementById('group-keywords').value.split(/[,，]/).map(function(v){return v.trim();}).filter(Boolean))),collection_window_days:Number(document.getElementById('group-window').value),important_candidates:document.getElementById('group-knowledge').checked};groupSaveBusy=true;document.getElementById('group-detail-save').disabled=true;api('PATCH','/api/groups/'+id,patch).then(function(){Object.assign(configuredGroups.find(function(g){return g.group_id===id;}),patch);renderConfiguredGroups();groupResult('群聊设置已保存。',false,'group-detail-result');}).catch(function(e){groupResult('设置未保存：'+e.message,true,'group-detail-result');}).finally(function(){groupSaveBusy=false;document.getElementById('group-detail-save').disabled=false;});}
+</script>

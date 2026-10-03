@@ -1,8 +1,9 @@
 {% extends "base.html" %}
-{% block title %}消息采集 - QQ Digest{% endblock %}
-{% block page_title %}消息采集{% endblock %}
-{% block page_description %}按群组和日期查看消息，也可以刷新本地数据库。{% endblock %}
+{% block title %}更新消息与维护 - QQ Digest{% endblock %}
+{% block page_title %}更新消息与维护{% endblock %}
+{% block page_description %}将指定群和日期的消息保存到本机；历史补采和缺口检查也在这里。{% endblock %}
 {% block content %}
+<details class="collection-maintenance" {% if not features.get('history_inspection',true) %}hidden{% endif %}><summary>高级维护：历史缺口巡检</summary>
 <section class="card history-inspection" id="history-inspection" aria-label="多群历史缺口巡检" {% if not features.get('history_inspection',true) %}data-feature-off{% endif %}>
   <div class="card-header"><span>历史缺口巡检 <small class="header-meta">全部已启用群</small></span><button class="btn btn-sm" id="inspection-run" type="button" onclick="runHistoryInspection()">立即巡检</button></div>
   <div class="inspection-body">
@@ -25,24 +26,29 @@
   </table></div>
   <div class="inspection-pages" id="inspection-pages" hidden><button class="btn btn-sm" id="inspection-prev" onclick="changeInspectionPage(-1)">上一页</button><span id="inspection-page-label"></span><button class="btn btn-sm" id="inspection-next" onclick="changeInspectionPage(1)">下一页</button></div>
 </section>
+</details>
 <div class="status-line" id="repair-hint" hidden>已预填补采范围。点击“刷新并补采”会先读取 QQ 最新数据库，再补齐所选日期的消息。</div>
 <section class="filter-toolbar collect-toolbar" id="manual-collect-controls" aria-label="采集条件">
   <div class="field group-field"><label for="collect-group">群聊</label><select id="collect-group" class="input"><option value="">选择群...</option></select></div>
   <div class="field"><label for="collect-start">开始日期</label><input type="date" id="collect-start" class="input"></div>
   <div class="field"><label for="collect-end">结束日期</label><input type="date" id="collect-end" class="input"></div>
-  <button class="btn toolbar-action" id="check-gaps" onclick="checkGaps()">检查缺口</button>
-  <button class="btn btn-primary toolbar-action" id="collect-action" onclick="collectMessages()">采集消息</button>
-  <button class="btn toolbar-action" id="btn-refresh" onclick="refreshDatabase()">刷新数据库</button>
+  <button class="btn btn-primary toolbar-action" id="collect-action" onclick="collectMessages()">更新消息</button>
 </section>
+<details class="collection-maintenance"><summary>高级操作：检查缺口与刷新数据库</summary><div class="actions"><button class="btn" id="check-gaps" onclick="checkGaps()">检查缺口</button><button class="btn" id="btn-refresh" onclick="refreshDatabase()">刷新数据库</button></div></details>
+<p class="header-meta">更新会先读取本机 QQ 最新数据库，再保存所选日期的消息；需要 QQ 正在运行。不会自动生成摘要。</p>
+<p class="group-result" id="collect-operation-result" role="status" hidden></p>
 <section class="card">
-  <div class="card-header">采集结果 <span id="collect-count" class="header-meta"></span></div>
+  <div class="card-header">更新结果 <span id="collect-count" class="header-meta"></span></div>
   <div class="status-line" id="collect-gap-summary" hidden></div>
   <div class="msg-list" id="collect-results">
-    <div class="empty" id="collect-empty">选择群和日期范围后点击采集</div>
+    <div class="empty" id="collect-empty">选择群和日期范围后点击更新消息</div>
   </div>
+  <div id="collect-next" class="actions" hidden></div>
 </section>
 <style>
   .history-inspection { margin-bottom: 24px; }
+  .collection-maintenance { margin-bottom:18px; } .collection-maintenance > summary { cursor:pointer; font-size:13px; color:var(--primary); margin-bottom:14px; }
+  #collect-operation-result { padding:14px; background:var(--primary-soft); border-radius:8px; white-space:pre-wrap; font-size:13px; }
   .inspection-body { padding: 4px 20px 18px; }
   .inspection-body > p { font-size: 13px; line-height: 1.7; }
   .inspection-note { color: var(--text-soft); font-size: 12px; line-height: 1.7; overflow-wrap: anywhere; }
@@ -153,7 +159,10 @@
     button.disabled = true;
     button.textContent = repair ? '刷新并补采中...' : '采集中...';
     toast(repair ? '正在刷新数据库并补采，可能需要几分钟' : '采集中...', '');
-    api('POST', '/api/collect', {group_id: parseInt(gid, 10), start: start, end: end, refresh: repair}).then(function(d) {
+    var result=document.getElementById('collect-operation-result');result.hidden=false;result.textContent='正在更新消息，请等待；完成后会显示结果。';document.getElementById('collect-next').hidden=true;
+    api('POST', '/api/collect', {group_id: parseInt(gid, 10), start: start, end: end, refresh: true}).then(function(d) {
+      result.textContent='消息更新完成：读取 '+formatNumber(d.total)+' 条，新增 '+formatNumber(d.inserted)+' 条。';
+      document.getElementById('collect-next').innerHTML='<a class="btn btn-sm" href="/search?'+escapeHtml(new URLSearchParams({group_id:gid,date_from:start,date_to:end}).toString())+'">查看已保存消息</a><a class="btn btn-sm" href="/reports?'+escapeHtml(new URLSearchParams({group_id:gid,date_from:start,date_to:end,view:'groups'}).toString())+'">查看或生成摘要</a>';document.getElementById('collect-next').hidden=false;
       var el = document.getElementById('collect-results');
       var gap = document.getElementById('collect-gap-summary');
       var days = d.missing_days || [];
@@ -174,8 +183,8 @@
         return '<div class="msg-item"><span class="msg-time">' + escapeHtml(d2) + ' ' + escapeHtml(t) + '</span><span class="msg-sender">' + escapeHtml(m.sender_qq) + '</span><span class="badge ' + typeBadge + '">' + escapeHtml(m.message_type) + '</span><span class="msg-text">' + escapeHtml(m.text) + '</span></div>';
       }).join('');
       toast('采集到 ' + formatNumber(d.total) + ' 条消息，新增 ' + formatNumber(d.inserted) + ' 条', 'success');
-    }).catch(function(e) { toast('采集失败: ' + e.message, 'error'); })
-      .finally(function() { button.disabled = false; button.textContent = repair ? '刷新并补采' : '采集消息'; });
+    }).catch(function(e) { result.textContent='消息更新失败：'+e.message+'。已有归档保留，可检查 QQ 和数据源后重试。'; })
+      .finally(function() { button.disabled = false; button.textContent = repair ? '刷新并补采' : '更新消息'; });
   }
   function checkGaps() {
     var gid = document.getElementById('collect-group').value;
@@ -229,7 +238,7 @@
   var params = new URLSearchParams(window.location.search);
   var today = localDate(new Date());
   var weekDate = new Date();
-  weekDate.setDate(weekDate.getDate() - 7);
+  weekDate.setDate(weekDate.getDate() - 6);
   var weekAgo = localDate(weekDate);
   document.getElementById('collect-start').value = weekAgo;
   document.getElementById('collect-end').value = today;
