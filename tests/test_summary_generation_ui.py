@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 
 
-@pytest.mark.parametrize('script',['summary_generation.cjs','summary_selection.cjs'])
+@pytest.mark.parametrize('script',['summary_generation.cjs','summary_selection.cjs','summary_progress.cjs'])
 def test_generation_preview_and_busy_flow(script):
     node = shutil.which('node')
     if not node:

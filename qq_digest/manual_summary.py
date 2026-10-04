@@ -99,11 +99,11 @@ class ManualSummaryService:
         self.knowledge_paths = knowledge_paths or {}
         self.single_day_as_daily = single_day_as_daily
 
-    def run(self, request: ManualSummaryRequest) -> ManualSummaryResult:
+    def run(self, request: ManualSummaryRequest, *, on_progress=None) -> ManualSummaryResult:
         job_id = self.archive.start_job("manual_summary")
         try:
             groups = self._selected_groups(request.group_ids)
-            result = self._run_groups(request, groups)
+            result = self._run_groups(request, groups, on_progress=on_progress)
         except Exception as exc:
             self.archive.finish_job(job_id, "failed", self._safe_error(exc))
             raise
@@ -129,7 +129,7 @@ class ManualSummaryService:
             raise ValueError(f"群 {joined} 不存在或未启用")
         return [enabled[group_id] for group_id in group_ids]
 
-    def _run_groups(self, request, groups) -> ManualSummaryResult:
+    def _run_groups(self, request, groups, *, on_progress=None) -> ManualSummaryResult:
         start, end = range_window(request, self.timezone)
         start_date = request.start_date.isoformat()
         end_date = request.end_date.isoformat()
@@ -139,7 +139,12 @@ class ManualSummaryService:
         builder = GroupSummaryBuilder(self.summarizer)
         knowledge_base = self._load_knowledge_base()
 
+        def progress(group, stage):
+            if on_progress is not None:
+                on_progress(group_id=group.group_id, group_name=group.name, stage=stage)
+
         for group in groups:
+            progress(group, 'scanning')
             messages = self.archive.messages_in_window(group.group_id, start, end)
             if not messages:
                 result.skipped_groups.append(
@@ -149,6 +154,7 @@ class ManualSummaryService:
                         "reason": "所选范围没有归档消息",
                     }
                 )
+                progress(group, 'skipped')
                 continue
             fingerprint = summary_input_fingerprint(
                 group=group,
@@ -173,10 +179,12 @@ class ManualSummaryService:
                 and (kind != 'daily' or self._compatible_day(existing,start,end))
             ):
                 result.reused_reports.append(self._report_result(existing, group, kind))
+                progress(group, 'reused')
                 continue
 
             stage = "summary"
             try:
+                progress(group, 'summary')
                 artifact = builder.build(
                     group=group,
                     window_start=start,
@@ -189,6 +197,7 @@ class ManualSummaryService:
                     report_kind=kind,
                 )
                 stage = "publication"
+                progress(group, 'publication')
                 stem = (
                     f"range__{start_date}__{end_date}__"
                     f"{group.group_id}__adaptive"
@@ -242,6 +251,7 @@ class ManualSummaryService:
                 if row is None:
                     raise RuntimeError("范围报告记录不存在")
                 result.created_reports.append(self._report_result(row, group, kind))
+                progress(group, 'created')
             except Exception as exc:
                 logger.error(
                     "群 %s 手动范围总结失败: %s",
@@ -257,6 +267,7 @@ class ManualSummaryService:
                         error=self._safe_error(exc),
                     )
                 )
+                progress(group, 'failed')
         return result
 
     def _load_knowledge_base(self) -> str:

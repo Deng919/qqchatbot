@@ -369,7 +369,7 @@
                 if (detail && typeof detail === 'object') {
                   detail = data.detail.message;
                 }
-                throw new Error(detail || ('请求失败（' + response.status + '）'));
+                var error=new Error(detail || ('请求失败（' + response.status + '）'));error.status=response.status;throw error;
               }
               return data;
             });

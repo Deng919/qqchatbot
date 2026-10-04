@@ -1,14 +1,12 @@
 <script>
   var rangeGroups=[], rangeBusy=false, rangeOpener=null, rangeInitialized=false, rangePreferredGroup='';
   var rangeGroupsLoading=false,rangeGroupsLoaded=false,rangePreviewTimer=null,rangePreviewToken=0,rangePreviewData=null,rangePreviewKey='';
-  var summaryGenerationBusy=false,summaryGenerationTimer=null,summaryGenerationStarted=0;
+  var summaryGenerationBusy=false,summaryGenerationStarted=0;
   function rangePayload(){return {group_ids:selectedRangeGroupIds(),start_date:document.getElementById('range-start-date').value,end_date:document.getElementById('range-end-date').value};}
   function rangeScopeKey(){return JSON.stringify(rangePayload());}
-  function updateGenerationControls(){document.getElementById('range-open-btn').disabled=summaryGenerationBusy;document.getElementById('range-submit-btn').disabled=summaryGenerationBusy||!rangePreviewData||rangePreviewData.total_messages===0||rangePreviewKey!==rangeScopeKey();}
+  function updateGenerationControls(){document.getElementById('range-open-btn').disabled=false;document.getElementById('range-submit-btn').disabled=summaryGenerationBusy||!rangePreviewData||rangePreviewData.total_messages===0||rangePreviewKey!==rangeScopeKey();}
   function generationLink(host,text,url){var link=document.createElement('a');link.className='btn btn-sm';link.textContent=text;link.href=url;host.appendChild(link);}
-  function generationNextSteps(groups){var host=document.getElementById('summary-run-actions');generationLink(host,'查看运行记录','/overview');generationLink(host,'检查 AI 连接','/settings?section=ai');generationLink(host,'更新消息',groups&&groups.length===1?'/collect?'+new URLSearchParams({group_id:groups[0],start:document.getElementById('range-start-date').value,end:document.getElementById('range-end-date').value}):'/groups');}
-  function beginSummaryGeneration(message){if(summaryGenerationBusy)return false;summaryGenerationBusy=true;summaryGenerationStarted=Date.now();updateGenerationControls();summaryShowResult(message,'running');var progress=document.getElementById('summary-run-progress');progress.hidden=false;function tick(){progress.textContent='已等待 '+Math.floor((Date.now()-summaryGenerationStarted)/1000)+' 秒 · 可以收起面板阅读已有摘要。离开或刷新页面会失去本次结果反馈。';}tick();summaryGenerationTimer=setInterval(tick,1000);return true;}
-  function endSummaryGeneration(){summaryGenerationBusy=false;clearInterval(summaryGenerationTimer);document.getElementById('summary-run-progress').hidden=true;updateGenerationControls();}
+  function generationNextSteps(groups,scope){var host=document.getElementById('summary-run-actions');generationLink(host,'查看运行记录','/overview');generationLink(host,'检查 AI 连接','/settings?section=ai');generationLink(host,'更新消息',groups&&groups.length===1?'/collect?'+new URLSearchParams({group_id:groups[0],start:scope?scope.start_date:document.getElementById('range-start-date').value,end:scope?scope.end_date:document.getElementById('range-end-date').value}):'/groups');}
   function setRangeDates(mode){var dates=recentWeekDates();document.getElementById('range-time-mode').value=mode;if(mode!=='custom'){document.getElementById('range-start-date').value=mode==='today'?dates.end:dates.start;document.getElementById('range-end-date').value=dates.end;}refreshDateHints();updateRangeSelectionSummary();}
   function onRangeDateChange(){document.getElementById('range-time-mode').value='custom';updateRangeSelectionSummary();}
   function rangePreviewNextSteps(){var host=document.getElementById('range-preview-actions');host.textContent='';var payload=rangePayload();generationLink(host,'更新所选群消息',payload.group_ids.length===1?'/collect?'+new URLSearchParams({group_id:payload.group_ids[0],start:payload.start_date,end:payload.end_date}):'/groups');var retry=document.createElement('button');retry.className='btn btn-sm';retry.type='button';retry.textContent='重新检查数量';retry.onclick=refreshRangePreview;host.appendChild(retry);}
@@ -74,21 +72,33 @@
   }
   function setRangeBusy(busy) { rangeBusy = busy; document.getElementById('range-summary-fields').disabled = busy; var button = document.getElementById('range-submit-btn'); button.disabled = busy; button.textContent = busy ? '摘要生成中...' : '开始生成'; }
   function rangeResultMessage(data) { return '生成 ' + formatNumber(data.created_reports.length) + ' 份，复用 ' + formatNumber(data.reused_reports.length) + ' 份，跳过 ' + formatNumber(data.skipped_groups.length) + ' 个群，失败 ' + formatNumber(data.failed_groups.length) + ' 个群'; }
+  function renderSummaryOutcome(data,scope){
+    var start=scope.start_date,end=scope.end_date,groupIds=scope.group_ids;
+    var message=rangeResultMessage(data),failures=data.failed_groups.map(function(item){return item.group_name+'：'+item.error;}),result=document.getElementById('range-result');
+    result.textContent=message+(failures.length?'\n'+failures.join('\n'):'');result.hidden=false;
+    var readable=data.created_reports.length+data.reused_reports.length;
+    if(readable)result.appendChild(summaryButton('阅读本次摘要',function(){summaryReadRangeResults(start,end,groupIds);},'btn btn-sm'));
+    summaryShowResult(message+(failures.length?'\n'+failures.join('\n'):'')+(!readable?'\n本次没有可阅读的摘要。':''),data.status==='partial_success'?'failed':'success',readable?function(){summaryReadRangeResults(start,end,groupIds);}:null);
+    if(failures.length||!readable)generationNextSteps(groupIds,scope);loadReports();
+  }
   function submitRangeSummary(event) {
     event.preventDefault();if(summaryGenerationBusy)return; var groupIds = selectedRangeGroupIds(), start = document.getElementById('range-start-date').value, end = document.getElementById('range-end-date').value, days = rangeDayCount();
     if (!groupIds.length) { toast('请至少选择一个群', 'error'); return; }
     if (!start || !end || days < 1) { toast('开始日期不得晚于结束日期', 'error'); return; }
     if (days > 7) { toast('单次最多选择 7 个自然日', 'error'); return; }
     if(!rangePreviewData||!rangePreviewData.total_messages||rangePreviewKey!==rangeScopeKey()){document.getElementById('range-preview-status').textContent='请先确认所选范围有本地消息，再开始生成。';return;}
-    if(!beginSummaryGeneration('正在生成 '+groupIds.length+' 个群的摘要：'+start+' 至 '+end+'。'))return;
+    var scope={group_ids:groupIds,start_date:start,end_date:end},identifier=summaryNewGenerationId();
+    if(!beginSummaryGeneration('正在生成 '+groupIds.length+' 个群的摘要：'+start+' 至 '+end+'。',identifier,scope))return;
     setRangeBusy(true); document.getElementById('range-result').hidden = true;
-    api('POST', '/api/summaries', {group_ids: groupIds, start_date: start, end_date: end}).then(function(data) {
-      var message = rangeResultMessage(data), failures = data.failed_groups.map(function(item) { return item.group_name + '：' + item.error; }), result = document.getElementById('range-result');
-      result.textContent = message + (failures.length ? '\n' + failures.join('\n') : ''); result.hidden = false;
-      var readable=data.created_reports.length+data.reused_reports.length;
-      if(readable)result.appendChild(summaryButton('阅读本次摘要',function(){summaryReadRangeResults(start,end,groupIds);},'btn btn-sm'));
-      summaryShowResult(message+(failures.length?'\n'+failures.join('\n'):'')+(!readable?'\n本次没有可阅读的摘要。':''),data.status==='partial_success'?'failed':'success',readable?function(){summaryReadRangeResults(start,end,groupIds);}:null);if(failures.length||!readable)generationNextSteps(groupIds);loadReports();
-    }).catch(function(e) { var result=document.getElementById('range-result');result.textContent='生成失败：'+e.message;result.hidden=false;summaryShowResult('摘要生成失败：'+e.message,'failed');generationNextSteps(groupIds); }).finally(function() { setRangeBusy(false);endSummaryGeneration(); });
+    api('POST','/api/summaries',Object.assign({generation_id:identifier},scope)).then(function(data){
+      if(identifier!==summaryProgressId)return;
+      var counts={created:data.created_reports.length,reused:data.reused_reports.length,skipped:data.skipped_groups.length,failed:data.failed_groups.length};
+      summaryProgressConnection('');summaryDrawProgress({status:data.status,stage:'finished',completed:counts.created+counts.reused+counts.skipped+counts.failed,total:groupIds.length,counts:counts,elapsed_seconds:Math.floor((Date.now()-summaryGenerationStarted)/1000)});
+      summaryFinishProgress(identifier,data,scope);
+    }).catch(function(error){
+      if(identifier!==summaryProgressId||summaryProgressFinished===identifier)return;
+      if(error.status){summaryProgressConnection('提交失败：'+error.message);summaryFinishProgress(identifier,null,scope,error.message);}
+      else {summaryProgressConnection('连接中断，正在查询后台进度；请勿重复提交。');summaryPollProgress(identifier);}
+    });
   }
-  window.addEventListener('beforeunload',function(event){if(summaryGenerationBusy){event.preventDefault();event.returnValue='';}});
 </script>

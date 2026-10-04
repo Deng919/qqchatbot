@@ -24,7 +24,14 @@
     <p id="summary-reading-note" class="header-meta">汇集所选日期内已生成的摘要要点，不重复调用 AI。</p>
   </div>
 </section>
-<section id="summary-run-result" class="summary-result" role="status" hidden><p id="summary-run-message"></p><p id="summary-run-progress" class="header-meta" aria-live="off" hidden></p><div id="summary-run-actions" class="actions"></div></section>
+<section id="summary-run-result" class="summary-result" role="status" hidden><p id="summary-run-message"></p>
+  <div id="summary-generation-progress" class="generation-progress" hidden>
+    <div class="generation-progress-heading"><strong id="summary-progress-stage" aria-live="polite"></strong><span id="summary-progress-count"></span></div>
+    <progress id="summary-progress-bar" max="1" value="0" aria-label="摘要生成进度"></progress>
+    <div class="generation-progress-meta"><span id="summary-progress-counts"></span><span id="summary-progress-time"></span></div>
+    <p id="summary-progress-connection" class="generation-progress-connection" aria-live="polite"></p>
+  </div><div id="summary-run-actions" class="actions"></div>
+</section>
 <section id="summary-reading-section" aria-label="摘要内容">
   <p id="summary-reading-count" class="header-meta" aria-live="polite"></p>
   <p id="summary-reading-warning" class="summary-warning" role="status" hidden></p>

@@ -432,7 +432,7 @@ def create_app(
             if worker_archive is not None:
                 worker_archive.connection.close()
 
-    def _run_manual_summary_task(cfg, payload: ManualRangePayload, *, single_day_as_daily=False):
+    def _run_manual_summary_task(cfg, payload: ManualRangePayload, *, single_day_as_daily=False, on_progress=None):
         from ..ai.factory import build_ai_client
         from ..manual_summary import ManualSummaryRequest, ManualSummaryService
 
@@ -454,7 +454,8 @@ def create_app(
                     group_ids=payload.group_ids,
                     start_date=payload.start_date,
                     end_date=payload.end_date,
-                )
+                ),
+                on_progress=on_progress,
             )
             return {
                 "status": result.status,

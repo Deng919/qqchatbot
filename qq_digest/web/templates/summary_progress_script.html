@@ -1,0 +1,60 @@
+<script>
+  var summaryProgressId=null,summaryProgressScope=null,summaryProgressTimer=null,summaryProgressPolling=null,summaryProgressFinished=null,summaryProgressSnapshot=null;
+  function summaryNewGenerationId(){return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g,function(c){var r=Math.floor(Math.random()*16);return (c==='x'?r:(r&3|8)).toString(16);});}
+  function summaryProgressConnection(message){['summary','range'].forEach(function(prefix){document.getElementById(prefix+'-progress-connection').textContent=message;});}
+  function summaryDrawProgress(data){
+    summaryProgressSnapshot=data;
+    var counts=data.counts,stage={preparing:'准备生成',scanning:'检查本地消息',summary:'AI 正在生成摘要',publication:'保存摘要',created:'已生成',reused:'已复用已有摘要',skipped:'无消息，已跳过',failed:'处理失败，继续下一个群'}[data.stage]||'正在处理';
+    if(data.status!=='running')stage=data.status==='success'?'生成完成':data.status==='partial_success'?'处理结束，部分失败':'生成已中断';
+    else if(data.current_group)stage=data.current_group.group_name+' · '+stage;
+    ['summary','range'].forEach(function(prefix){
+      document.getElementById(prefix==='summary'?'summary-generation-progress':'range-generation-progress').hidden=false;
+      var bar=document.getElementById(prefix+'-progress-bar');bar.max=Math.max(data.total,1);bar.value=data.completed;bar.setAttribute('aria-valuetext','已处理 '+data.completed+' / '+data.total+' 个群');
+      document.getElementById(prefix+'-progress-count').textContent='已处理 '+data.completed+' / '+data.total+' 个群 · '+Math.floor(data.completed/Math.max(data.total,1)*100)+'%';
+      document.getElementById(prefix+'-progress-stage').textContent=stage;
+      document.getElementById(prefix+'-progress-counts').textContent='生成 '+counts.created+' · 复用 '+counts.reused+' · 跳过 '+counts.skipped+' · 失败 '+counts.failed;
+      document.getElementById(prefix+'-progress-time').textContent='已用时 '+data.elapsed_seconds+' 秒'+(data.status==='running'?' · 可收起面板，刷新后可重新查看进度':'');
+    });
+  }
+  function beginSummaryGeneration(message,identifier,scope){
+    if(summaryGenerationBusy)return false;
+    summaryGenerationBusy=true;summaryGenerationStarted=Date.now();summaryProgressId=identifier;summaryProgressScope=scope;summaryProgressFinished=null;
+    clearTimeout(summaryProgressTimer);summaryProgressConnection('');updateGenerationControls();summaryShowResult(message,'running');
+    summaryDrawProgress({status:'running',stage:'preparing',completed:0,total:scope.group_ids.length,counts:{created:0,reused:0,skipped:0,failed:0},elapsed_seconds:0});
+    summaryProgressTimer=setTimeout(function(){summaryPollProgress(identifier);},1000);return true;
+  }
+  function endSummaryGeneration(){summaryGenerationBusy=false;clearTimeout(summaryProgressTimer);setRangeBusy(false);updateGenerationControls();}
+  function summaryFinishProgress(identifier,result,scope,error){
+    if(identifier!==summaryProgressId||summaryProgressFinished===identifier)return;
+    summaryProgressFinished=identifier;endSummaryGeneration();
+    if(result)renderSummaryOutcome(result,scope);
+    else {if(summaryProgressSnapshot)summaryDrawProgress(Object.assign({},summaryProgressSnapshot,{status:'failed',stage:'finished'}));summaryShowResult(error||'生成已中断，请检查运行记录。','failed');document.getElementById('range-result').textContent=error||'生成已中断';document.getElementById('range-result').hidden=false;generationNextSteps(scope.group_ids,scope);}
+  }
+  function summaryPollProgress(identifier){
+    if(identifier!==summaryProgressId||summaryProgressFinished===identifier||summaryProgressPolling===identifier)return Promise.resolve();
+    summaryProgressPolling=identifier;
+    return api('GET','/api/summaries/progress?'+new URLSearchParams({generation_id:identifier})).then(function(data){
+      if(identifier!==summaryProgressId||summaryProgressFinished===identifier)return;
+      summaryProgressConnection('');summaryDrawProgress(data.generation);
+      if(data.generation.status!=='running')summaryFinishProgress(identifier,data.generation.result,data.generation.scope,data.generation.error);
+    }).catch(function(error){
+      if(identifier!==summaryProgressId||summaryProgressFinished===identifier)return;
+      if(error.status===404){summaryProgressConnection('本次进度已不存在，程序可能已重启。');summaryFinishProgress(identifier,null,summaryProgressScope,error.message);}
+      else summaryProgressConnection('暂时无法读取状态，正在重新连接；生成任务可能仍在运行。');
+    }).finally(function(){
+      if(summaryProgressPolling===identifier)summaryProgressPolling=null;
+      if(identifier===summaryProgressId&&summaryGenerationBusy){clearTimeout(summaryProgressTimer);summaryProgressTimer=setTimeout(function(){summaryPollProgress(identifier);},1000);}
+    });
+  }
+  function summaryRestoreGeneration(){
+    return api('GET','/api/summaries/progress').then(function(data){
+      if(!data.generation||summaryGenerationBusy||summaryProgressId)return;
+      var run=data.generation;summaryProgressId=run.generation_id;summaryProgressScope=run.scope;summaryProgressFinished=null;
+      rangeInitialized=true;rangePreferredGroup=run.scope.group_ids.join(',');
+      document.getElementById('range-start-date').value=run.scope.start_date;document.getElementById('range-end-date').value=run.scope.end_date;
+      summaryShowResult('最近一次摘要生成：'+run.scope.start_date+' 至 '+run.scope.end_date,'running');summaryDrawProgress(run);
+      if(run.status==='running'){summaryGenerationBusy=true;summaryGenerationStarted=Date.now()-run.elapsed_seconds*1000;setRangeBusy(true);updateGenerationControls();summaryProgressTimer=setTimeout(function(){summaryPollProgress(run.generation_id);},1000);}
+      else summaryFinishProgress(run.generation_id,run.result,run.scope,run.error);
+    }).catch(function(){summaryProgressConnection('暂时无法恢复生成状态，请刷新后重试。');});
+  }
+</script>
