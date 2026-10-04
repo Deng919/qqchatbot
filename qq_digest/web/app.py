@@ -32,6 +32,7 @@ from ..scheduler import (
     daily_retry_state, pending_catchup_date, run_at_for_report_date, summary_window,
 )
 from ..search import search_archive
+from ..message_context import message_context
 from ..report_qa import (
     NoReportEvidence, ReportNotFound, answer_report_question, load_report_evidence,
 )
@@ -1187,32 +1188,16 @@ def create_app(
             raise HTTPException(status_code=422, detail=str(exc)) from exc
 
     @app.get("/api/search/messages/{group_id}/{msg_id}/context")
-    async def api_search_message_context(request: Request, group_id: int, msg_id: str):
+    async def api_search_message_context(request: Request, group_id: int, msg_id: str,
+                                         direction: str = "around", cursor: str | None = None):
         require_login(request)
-        ar = _archive(request)
-        message = ar.connection.execute(
-            "SELECT timestamp FROM messages WHERE group_id=? AND msg_id=?",
-            (group_id, msg_id),
-        ).fetchone()
-        if message is None:
-            raise HTTPException(status_code=404, detail="消息不存在")
-        before = ar.connection.execute(
-            "SELECT msg_id, sender_qq, timestamp, text FROM messages "
-            "WHERE group_id=? AND (timestamp < ? OR (timestamp=? AND msg_id < ?)) "
-            "ORDER BY timestamp DESC, msg_id DESC LIMIT 2",
-            (group_id, message["timestamp"], message["timestamp"], msg_id),
-        ).fetchall()
-        after = ar.connection.execute(
-            "SELECT msg_id, sender_qq, timestamp, text FROM messages "
-            "WHERE group_id=? AND (timestamp > ? OR (timestamp=? AND msg_id > ?)) "
-            "ORDER BY timestamp, msg_id LIMIT 2",
-            (group_id, message["timestamp"], message["timestamp"], msg_id),
-        ).fetchall()
-        current = ar.connection.execute(
-            "SELECT msg_id, sender_qq, timestamp, text FROM messages WHERE group_id=? AND msg_id=?",
-            (group_id, msg_id),
-        ).fetchone()
-        return {"messages": [dict(row) for row in [*reversed(before), current, *after]]}
+        try:
+            return message_context(_archive(request), group_id, msg_id,
+                                   direction=direction, cursor=cursor)
+        except LookupError as exc:
+            raise HTTPException(404, detail=str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(422, detail=str(exc)) from exc
 
     # ------------------------------------------------------------------
     # API: Jobs
@@ -1790,7 +1775,8 @@ def create_app(
     @app.get("/api/reports/{report_kind}/{report_id}/sources/{msg_id}")
     async def api_report_source_context(
         request: Request, report_kind: str, report_id: int, msg_id: str,
-        version: int | None = Query(default=None, ge=0)
+        version: int | None = Query(default=None, ge=0),
+        direction: str = "around", cursor: str | None = None,
     ):
         require_login(request)
         ar = _archive(request)
@@ -1825,7 +1811,8 @@ def create_app(
             msg_id in item["source_ids"] for item in evidence_items
         ):
             raise HTTPException(status_code=404, detail="报告未引用这条消息")
-        return await api_search_message_context(request, row["group_id"], msg_id)
+        return await api_search_message_context(request, row["group_id"], msg_id,
+                                                direction=direction, cursor=cursor)
 
     @app.post("/api/reports/{report_kind}/{report_id}/ask")
     async def api_ask_report(

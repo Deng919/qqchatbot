@@ -4,7 +4,7 @@ const elements={},requests=[]; const get=id=>elements[id]??=node();
 get('search-kind').value='message';get('search-group').options=[{value:'',textContent:'全部群'}];
 const scope={console,URLSearchParams,Date,Number,Array,JSON,Promise,String,featureFlags:{tasks:false,review:false},escapeHtml:s=>String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'),formatNumber:String,refreshDateHints(){},location:{search:''},history:{replaceState(){}},localStorage:{getItem(){return null},setItem(){}},document:{body:{style:{overflow:''}},getElementById:get,querySelectorAll(){return []},addEventListener(){},createElement:node},api(method,url){return new Promise((resolve,reject)=>requests.push({url,resolve,reject}));}};
 vm.createContext(scope);
-for(const file of ['find_helpers.html','find_script.html'])vm.runInContext(fs.readFileSync('qq_digest/web/templates/'+file,'utf8').replace(/<\/?script>/g,''),scope);
+for(const file of ['message_context_script.html','find_helpers.html','find_script.html'])vm.runInContext(fs.readFileSync('qq_digest/web/templates/'+file,'utf8').replace(/<style>[\s\S]*?<\/style>/,'').replace(/<\/?script>/g,''),scope);
 (async()=>{
   requests.shift().resolve({groups:[]});await new Promise(resolve=>setImmediate(resolve));
   assert.equal(requests.length,0,'Opening empty find page does not read messages or search');

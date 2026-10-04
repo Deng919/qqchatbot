@@ -97,10 +97,11 @@
     var choices=document.getElementById('summary-source-choices');choices.textContent='';item.source_ids.forEach(function(id,index){choices.appendChild(summaryButton('来源 '+(index+1),function(){summaryLoadSource(item,id);}));});summaryLoadSource(item,item.source_ids[0]);document.getElementById('summary-source-close').focus();
   }
   function summaryLoadSource(item,id) {
-    var token=++summarySourceToken,host=document.getElementById('summary-source-messages');host.textContent='正在读取原消息…';
-    api('GET','/api/reports/daily/'+item.report_id+'/sources/'+encodeURIComponent(id)).then(function(data){if(token!==summarySourceToken)return;host.textContent='';(data.messages||[]).forEach(function(message){var row=summaryNode('div','report-source-row'+(message.msg_id===id?' is-cited':''));row.appendChild(summaryNode('div','report-source-meta',new Date(message.timestamp).toLocaleString('zh-CN')+' · '+(message.sender_qq||'未知发送者')));row.appendChild(summaryNode('div','report-source-text',message.text));host.appendChild(row);});}).catch(function(e){if(token===summarySourceToken)host.textContent='原消息读取失败：'+e.message;});
+    var token=++summarySourceToken,host=document.getElementById('summary-source-messages');
+    mountMessageContext(host,{citedId:id,url:'/api/reports/daily/'+item.report_id+'/sources/'+encodeURIComponent(id),
+      isCurrent:function(){return token===summarySourceToken&&!document.getElementById('summary-source-panel').hidden;}});
   }
-  function summaryCloseSource() { summarySourceToken++;document.getElementById('summary-source-panel').hidden=true;document.getElementById('summary-source-backdrop').hidden=true;if(summarySourceOpener&&summarySourceOpener.isConnected)summarySourceOpener.focus(); }
+  function summaryCloseSource() { summarySourceToken++;destroyMessageContext(document.getElementById('summary-source-messages'));document.getElementById('summary-source-panel').hidden=true;document.getElementById('summary-source-backdrop').hidden=true;if(summarySourceOpener&&summarySourceOpener.isConnected)summarySourceOpener.focus(); }
   function summaryShowResult(message,status,action) { var result=document.getElementById('summary-run-result');result.hidden=false;result.dataset.status=status||'success';document.getElementById('summary-run-message').textContent=message;var actions=document.getElementById('summary-run-actions');actions.textContent='';if(action)actions.appendChild(summaryButton('阅读新摘要',action,'btn btn-primary')); }
   function summaryRenderMarkdown(markdown) {
     var host=document.getElementById('report-content');host.textContent='';var paragraph=[],list=null,code=null;

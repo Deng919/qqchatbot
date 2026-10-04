@@ -9,6 +9,7 @@
   </div></details>
 {% endblock %}
 {% block content %}
+{% include "message_context_script.html" %}
 {% include "summary_reading_controls.html" %}
 <div class="report-layout" id="report-layout">
   <section class="card" id="report-table-card" hidden>
@@ -350,19 +351,11 @@
   }
   function openReportSource(messageId) {
     if (!qaReport || !revisionIsCurrent()) return;
-    var report = qaReport, token = ++sourceRequestToken;
-    api('GET', '/api/reports/' + report.kind + '/' + report.id + '/sources/' + encodeURIComponent(messageId)+'?version='+report.current_version).then(function(data) {
-      if (token !== sourceRequestToken || qaReport !== report) return;
-      var host = document.getElementById('report-source-context'); host.textContent = '';
-      var header = document.createElement('h3'); header.textContent = '原消息与上下文'; host.appendChild(header);
-      (data.messages || []).forEach(function(item) {
-        var row = document.createElement('div'); row.className = 'report-source-row' + (item.msg_id === messageId ? ' is-cited' : '');
-        var meta = document.createElement('div'); meta.className = 'report-source-meta'; meta.textContent = new Date(item.timestamp).toLocaleString('zh-CN') + ' · ' + (item.sender_qq || '未知发送者');
-        var body = document.createElement('div'); body.className = 'report-source-text'; body.textContent = item.text;
-        row.appendChild(meta); row.appendChild(body); host.appendChild(row);
-      });
-      host.hidden = false; host.scrollIntoView({block: 'nearest'});
-    }).catch(function(error) { if (token === sourceRequestToken) toast('无法打开原消息：' + error.message, 'error'); });
+    var report=qaReport,token=++sourceRequestToken,host=document.getElementById('report-source-context');host.hidden=false;
+    mountMessageContext(host,{title:'原消息与上下文',citedId:messageId,
+      url:'/api/reports/'+report.kind+'/'+report.id+'/sources/'+encodeURIComponent(messageId)+'?version='+report.current_version,
+      isCurrent:function(){return token===sourceRequestToken&&qaReport===report&&revisionIsCurrent()&&!host.hidden;}});
+    host.scrollIntoView({block:'nearest'});
   }
   function openReportQA() {
     if (!reportFeatureEnabled('report_qa')) return;
