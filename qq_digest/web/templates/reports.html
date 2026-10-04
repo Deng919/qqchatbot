@@ -4,8 +4,8 @@
 {% block page_description %}直接阅读各群要点，也可以按群查看完整摘要。{% endblock %}
 {% block actions %}
   <details class="summary-generate" id="summary-generate"><summary class="btn btn-primary">生成摘要</summary><div class="summary-generate-options">
-    <button class="btn" id="report-run-btn" type="button" onclick="runDaily()">生成今日日报</button><span class="header-meta">按已配置的日报群和时间窗执行，会先更新消息。</span>
-    <button class="btn" id="range-open-btn" type="button" onclick="openRangeSummary()">选择群聊和日期</button><span class="header-meta">使用本地已保存消息生成范围摘要，最多七天。</span>
+    <button class="btn" id="report-run-btn" type="button" onclick="runDaily()">生成今日日报</button><span class="header-meta">对所有已关注且启用日报的群执行，先更新消息；不使用上方阅读筛选。</span>
+    <button class="btn" id="range-open-btn" type="button" onclick="openRangeSummary()">选择群聊和日期</button><span class="header-meta">沿用当前阅读范围，可调整；仅使用本地消息，最多七天。</span>
   </div></details>
 {% endblock %}
 {% block content %}
@@ -58,7 +58,7 @@
 <div id="range-summary-backdrop" class="range-summary-backdrop" hidden onclick="closeRangeSummary()"></div>
 <aside id="range-summary-panel" class="range-summary-panel" hidden aria-labelledby="range-summary-title" aria-modal="true" role="dialog">
   <div class="range-panel-header">
-    <div><h2 id="range-summary-title">生成范围摘要</h2><p>只读取已经归档到本地的消息，每个群独立生成报告。</p></div>
+    <div><h2 id="range-summary-title">生成范围摘要</h2><p>核对群和日期，再查看本地消息数量。每个群独立生成报告。</p></div>
     <button class="btn btn-sm" type="button" aria-label="关闭范围摘要面板" onclick="closeRangeSummary()">关闭</button>
   </div>
   <form id="range-summary-form" onsubmit="submitRangeSummary(event)">
@@ -70,10 +70,12 @@
         <div class="field"><label for="range-start-date">开始日期</label><input class="input" id="range-start-date" type="date" required onchange="updateRangeSelectionSummary()"></div>
         <div class="field"><label for="range-end-date">结束日期</label><input class="input" id="range-end-date" type="date" required onchange="updateRangeSelectionSummary()"></div>
       </div>
+      <div class="actions"><button class="btn btn-sm" type="button" onclick="setRangeDates('today')">今天</button><button class="btn btn-sm" type="button" onclick="setRangeDates('week')">最近七天</button></div>
       <div id="range-selection-summary" class="range-selection-summary">已选择 0 个群，共 1 天</div>
+      <section class="range-input-preview" aria-label="本地消息预览"><p id="range-preview-status" role="status">选择群聊后查看消息数量。</p><div id="range-preview-groups"></div><p class="header-meta">这里只统计本地归档。预处理与上下文限制可能减少实际纳入数量；不会自动更新 QQ 消息。</p><div id="range-preview-actions" class="actions"></div></section>
       <div id="range-result" class="range-result" hidden></div>
     </fieldset>
-    <div class="range-panel-footer"><button class="btn" type="button" onclick="closeRangeSummary()">取消</button><button class="btn btn-primary" id="range-submit-btn" type="submit">开始生成</button></div>
+    <div class="range-panel-footer"><button class="btn" type="button" onclick="closeRangeSummary()">收起，继续阅读</button><button class="btn btn-primary" id="range-submit-btn" type="submit" disabled>开始生成</button></div>
   </form>
 </aside>
 
@@ -140,6 +142,8 @@
   .range-date-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 12px; }
   .range-selection-summary { margin-top: 12px; padding: 9px 11px; background: var(--surface-subtle); border: 1px solid #e3e7e2; border-radius: var(--radius); color: var(--text-soft); font-size: 12px; }
   .range-result { margin-top: 10px; padding: 10px 11px; background: var(--primary-soft); border-radius: var(--radius); color: var(--primary-dark); font-size: 12px; white-space: pre-wrap; }
+  .range-input-preview { padding:12px; margin-top:12px; border:1px solid var(--border); border-radius:8px; font-size:13px; line-height:1.65; }
+  .range-input-preview p { margin:0 0 8px; } .range-preview-row { display:flex; justify-content:space-between; gap:12px; overflow-wrap:anywhere; border-top:1px solid var(--border); padding:6px 0; }
   .range-panel-footer { position: sticky; bottom: -18px; margin: 18px -18px -18px; padding: 12px 18px; display: flex; justify-content: flex-end; gap: 8px; background: var(--surface); border-top: 1px solid var(--border); }
   .report-qa-dialog { position: fixed; z-index: 41; right: 18px; top: 70px; bottom: 18px; width: min(560px, calc(100vw - 36px)); display: flex; flex-direction: column; gap: 12px; padding: 18px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: 0 24px 64px rgb(18 25 21 / .24); }
   .report-qa-dialog[hidden] { display: none; }
@@ -158,7 +162,6 @@
 </style>
 {% include "summary_reading_style.html" %}
 <script>
-  var rangeGroups = [], rangeBusy = false, rangeOpener = null;
   var qaReport = null, qaHistory = [], qaOpener = null, qaRequestToken = 0, qaBusy = false, reportSelectionToken = 0, sourceRequestToken = 0;
   var reportPage = 1, reportLoadToken = 0;
   var revisionReport = null, revisionPage = 1, revisionLoadToken = 0, revisionBusy = false;
@@ -413,74 +416,8 @@
     }).catch(function(error) { if (requestToken === qaRequestToken) toast('问答失败: ' + error.message, 'error'); })
       .finally(function() { if (requestToken === qaRequestToken) { qaBusy = false; document.getElementById('report-qa-submit').disabled = false; input.focus(); } });
   }
-  function localDateValue(value) { return value.getFullYear() + '-' + String(value.getMonth() + 1).padStart(2, '0') + '-' + String(value.getDate()).padStart(2, '0'); }
-  function recentWeekDates() {
-    var today = new Date(), start = new Date(today);
-    start.setDate(start.getDate() - 6);
-    return {start: localDateValue(start), end: localDateValue(today)};
-  }
-  function openRangeSummary() {
-    document.getElementById('summary-generate').open=false;
-    rangeOpener = document.activeElement; var dates = recentWeekDates();
-    if (!document.getElementById('range-start-date').value) document.getElementById('range-start-date').value = dates.start;
-    if (!document.getElementById('range-end-date').value) document.getElementById('range-end-date').value = dates.end;
-    refreshDateHints();
-    document.getElementById('range-summary-panel').hidden = false; document.getElementById('range-summary-backdrop').hidden = false; document.getElementById('range-result').hidden = true;
-    if (!rangeGroups.length) loadRangeGroups(); updateRangeSelectionSummary(); document.getElementById('range-group-search').focus();
-  }
-  function closeRangeSummary() {
-    if (rangeBusy) return;
-    document.getElementById('range-summary-panel').hidden = true; document.getElementById('range-summary-backdrop').hidden = true;
-    if (rangeOpener && typeof rangeOpener.focus === 'function') rangeOpener.focus();
-  }
-  function loadRangeGroups() {
-    api('GET', '/api/groups').then(function(d) { rangeGroups = d.groups.filter(function(group) { return group.enabled; }); renderRangeGroups(); })
-      .catch(function(e) { document.getElementById('range-group-list').innerHTML = '<div class="empty">群组加载失败</div>'; toast('加载群组失败: ' + e.message, 'error'); });
-  }
-  function renderRangeGroups() {
-    var list = document.getElementById('range-group-list'); list.textContent = '';
-    if (!rangeGroups.length) { var empty = document.createElement('div'); empty.className = 'empty'; empty.textContent = '没有已启用群组'; list.appendChild(empty); return; }
-    rangeGroups.forEach(function(group) {
-      var label = document.createElement('label'); label.className = 'range-group-option'; label.dataset.search = (group.name + ' ' + group.group_id).toLowerCase();
-      var checkbox = document.createElement('input'); checkbox.type = 'checkbox'; checkbox.className = 'range-group-checkbox'; checkbox.value = String(group.group_id); checkbox.addEventListener('change', updateRangeSelectionSummary);
-      var name = document.createElement('span'); name.className = 'range-group-name'; name.textContent = group.name;
-      var id = document.createElement('span'); id.className = 'range-group-id'; id.textContent = String(group.group_id);
-      label.appendChild(checkbox); label.appendChild(name); label.appendChild(id); list.appendChild(label);
-    });
-  }
-  function filterRangeGroups() { var query = document.getElementById('range-group-search').value.trim().toLowerCase(); document.querySelectorAll('.range-group-option').forEach(function(item) { item.hidden = Boolean(query && item.dataset.search.indexOf(query) === -1); }); }
-  function selectVisibleRangeGroups(selected) { document.querySelectorAll('.range-group-option:not([hidden]) .range-group-checkbox').forEach(function(input) { input.checked = selected; }); updateRangeSelectionSummary(); }
-  function selectedRangeGroupIds() { return Array.from(document.querySelectorAll('.range-group-checkbox:checked')).map(function(input) { return Number(input.value); }); }
-  function rangeDayCount() {
-    var start = document.getElementById('range-start-date').value, end = document.getElementById('range-end-date').value;
-    if (!start || !end) return 0;
-    return Math.floor((Date.parse(end + 'T00:00:00Z') - Date.parse(start + 'T00:00:00Z')) / 86400000) + 1;
-  }
-  function updateRangeSelectionSummary() { var count = selectedRangeGroupIds().length, days = rangeDayCount(); document.getElementById('range-selection-summary').textContent = '已选择 ' + count + ' 个群，共 ' + Math.max(days, 0) + ' 天'; }
-  function setRangeBusy(busy) { rangeBusy = busy; document.getElementById('range-summary-fields').disabled = busy; var button = document.getElementById('range-submit-btn'); button.disabled = busy; button.textContent = busy ? '摘要生成中...' : '开始生成'; }
-  function rangeResultMessage(data) { return '生成 ' + formatNumber(data.created_reports.length) + ' 份，复用 ' + formatNumber(data.reused_reports.length) + ' 份，跳过 ' + formatNumber(data.skipped_groups.length) + ' 个群，失败 ' + formatNumber(data.failed_groups.length) + ' 个群'; }
-  function submitRangeSummary(event) {
-    event.preventDefault(); var groupIds = selectedRangeGroupIds(), start = document.getElementById('range-start-date').value, end = document.getElementById('range-end-date').value, days = rangeDayCount();
-    if (!groupIds.length) { toast('请至少选择一个群', 'error'); return; }
-    if (!start || !end || days < 1) { toast('开始日期不得晚于结束日期', 'error'); return; }
-    if (days > 7) { toast('单次最多选择 7 个自然日', 'error'); return; }
-    setRangeBusy(true); document.getElementById('range-result').hidden = true;
-    api('POST', '/api/reports/range', {group_ids: groupIds, start_date: start, end_date: end}).then(function(data) {
-      var message = rangeResultMessage(data), failures = data.failed_groups.map(function(item) { return item.group_name + '：' + item.error; }), result = document.getElementById('range-result');
-      result.textContent = message + (failures.length ? '\n' + failures.join('\n') : ''); result.hidden = false;
-      var readable=data.created_reports.length+data.reused_reports.length;
-      if(readable)result.appendChild(summaryButton('阅读本次范围摘要',function(){summaryReadRangeResults(start,end,groupIds);},'btn btn-sm'));
-      summaryShowResult(message+(failures.length?'\n'+failures.join('\n'):'')+(!readable?'\n本次没有可阅读的摘要。':''),data.status==='partial_success'?'failed':'success',readable?function(){summaryReadRangeResults(start,end,groupIds);}:null);loadReports();
-    }).catch(function(e) { var result=document.getElementById('range-result');result.textContent='生成失败：'+e.message;result.hidden=false;summaryShowResult('范围摘要生成失败：'+e.message,'failed'); }).finally(function() { setRangeBusy(false); });
-  }
-  function runDaily() {
-    document.getElementById('summary-generate').open=false;
-    var button = document.getElementById('report-run-btn'); button.disabled = true; button.textContent = '摘要生成中...';
-    summaryShowResult('正在更新消息并生成今日日报，可以继续阅读已有摘要。','running');
-    api('POST', '/api/run-daily').then(function(d) { summaryShowResult((d.status==='partial_success'?dailyResultMessage(d):'本次生成 '+formatNumber(d.reports)+' 份日报 · '+dailyResultMessage(d))+(!d.reports?'\n本次没有可阅读的新日报，可能没有消息或群被跳过。':''),d.status==='partial_success'?'failed':'success',d.reports?function(){summaryReadDailyResults(d);}:null);loadReports(); })
-      .catch(function(e) { summaryShowResult('今日日报生成失败：'+e.message,'failed'); }).finally(function() { button.disabled = false; button.textContent = '生成今日日报'; });
-  }
   document.addEventListener('keydown', function(event) { if (event.key === 'Escape' && !document.getElementById('report-qa-dialog').hidden) closeReportQA(); else if (event.key === 'Escape' && !document.getElementById('range-summary-panel').hidden) closeRangeSummary(); });
 </script>
+{% include "summary_generation_script.html" %}
 {% include "summary_reading_script.html" %}
 {% endblock %}

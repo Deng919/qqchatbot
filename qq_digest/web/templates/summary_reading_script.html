@@ -37,10 +37,10 @@
   function summaryRestoreScroll() { if(summaryPendingScroll!==null&&!summaryDetailActive){var y=summaryPendingScroll;summaryPendingScroll=null;requestAnimationFrame(function(){window.scrollTo({top:y,behavior:'instant'});});} }
   function summaryEmpty(host,filtered) {
     var box=summaryNode('div','summary-empty');box.appendChild(summaryNode('h2','',filtered?'当前范围没有符合条件的要点':'当前范围没有已生成的摘要'));
-    box.appendChild(summaryNode('p','header-meta',filtered?'已读和新增是独立状态，可切换到全部要点继续阅读。':'可以生成今天的日报，或查看最近七天。要点阅读只展示日报，范围摘要请切换按群阅读。'));
+    box.appendChild(summaryNode('p','header-meta',filtered?'已读和新增是独立状态，可切换到全部要点继续阅读。':'可以按当前群和日期选择生成摘要，或查看最近七天。要点阅读只展示日报，范围摘要请切换按群阅读。'));
     var actions=summaryNode('div','actions');
     if(filtered)actions.appendChild(summaryButton('查看全部要点',function(){document.getElementById('summary-read-filter').value='all';summaryFilterPoints();}));
-    else actions.appendChild(summaryButton('生成今天摘要',function(){runDaily();},'btn btn-primary'));
+    else actions.appendChild(summaryButton('选择范围并生成',function(){openRangeSummary();},'btn btn-primary'));
     actions.appendChild(summaryButton('查看最近七天',function(){summarySetDates('week');}));
     if(summaryView==='points')actions.appendChild(summaryButton('按群阅读',function(){summarySetView('groups');}));
     box.appendChild(actions);host.appendChild(box);

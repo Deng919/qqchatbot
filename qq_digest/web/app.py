@@ -45,6 +45,7 @@ from .report_revisions import add_report_revision_routes
 from .features import add_feature_routes
 from .summary_reading_routes import add_summary_reading_routes
 from .message_routes import add_message_routes
+from .summary_generation_routes import add_summary_generation_routes
 
 templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"),
                            context_processors=[lambda request: {'features': getattr(request.state, 'features', {})}])
@@ -682,6 +683,7 @@ def create_app(
     feature_service = add_feature_routes(app, archive=archive, cookie=cookie, require_login=require_login)
     add_summary_reading_routes(app, archive=archive, config=config, require_login=require_login)
     add_message_routes(app, archive=archive, config=config, require_login=require_login)
+    add_summary_generation_routes(app, archive=archive, config=config, require_login=require_login)
     add_history_inspection_routes(app, archive=archive, config=config,
                                   operations=operations, require_login=require_login)
     add_report_revision_routes(app, archive=archive, config=config,
