@@ -9,7 +9,7 @@
     <div class="field"><label for="report-group">群聊</label><select id="report-group" onchange="filterReports()"><option value="">全部群聊</option></select></div>
     <div class="field"><label for="report-from">开始日期</label><input class="input" id="report-from" type="date" onchange="filterReports()"></div>
     <div class="field"><label for="report-to">结束日期</label><input class="input" id="report-to" type="date" onchange="filterReports()"></div>
-    <div class="field" id="summary-kind-field" hidden><label for="report-kind">摘要类型</label><select id="report-kind" onchange="filterReports()"><option value="all">日报和范围摘要</option><option value="daily">日报</option><option value="range">范围摘要</option></select></div>
+    <div class="field" id="summary-kind-field" hidden><label for="report-kind">摘要范围</label><select id="report-kind" onchange="filterReports()"><option value="all">全部摘要</option><option value="daily">单日摘要</option><option value="range">自选日期摘要（含旧报告）</option></select></div>
     <button class="btn" type="button" onclick="clearReportFilters()">重置筛选</button>
   </div>
   <div class="summary-view-bar">
@@ -21,7 +21,7 @@
   </div>
   <div class="summary-feed-tools" id="summary-feed-tools">
     <div class="field"><label for="summary-read-filter">要点范围</label><select id="summary-read-filter" onchange="summaryFilterPoints()"><option value="all">全部要点</option><option value="unread">未读要点</option><option value="new">上次打开后新增</option></select></div>
-    <p id="summary-reading-note" class="header-meta">要点阅读汇集已生成的日报，不重复调用 AI。范围摘要可在按群阅读中查看。</p>
+    <p id="summary-reading-note" class="header-meta">汇集所选日期内已生成的摘要要点，不重复调用 AI。</p>
   </div>
 </section>
 <section id="summary-run-result" class="summary-result" role="status" hidden><p id="summary-run-message"></p><p id="summary-run-progress" class="header-meta" aria-live="off" hidden></p><div id="summary-run-actions" class="actions"></div></section>

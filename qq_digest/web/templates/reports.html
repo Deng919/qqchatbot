@@ -3,10 +3,7 @@
 {% block page_title %}阅读摘要{% endblock %}
 {% block page_description %}直接阅读各群要点，也可以按群查看完整摘要。{% endblock %}
 {% block actions %}
-  <details class="summary-generate" id="summary-generate"><summary class="btn btn-primary">生成摘要</summary><div class="summary-generate-options">
-    <button class="btn" id="report-run-btn" type="button" onclick="runDaily()">生成今日日报</button><span class="header-meta">对所有已关注且启用日报的群执行，先更新消息；不使用上方阅读筛选。</span>
-    <button class="btn" id="range-open-btn" type="button" onclick="openRangeSummary()">选择群聊和日期</button><span class="header-meta">沿用当前阅读范围，可调整；仅使用本地消息，最多七天。</span>
-  </div></details>
+  <button class="btn btn-primary" id="range-open-btn" type="button" onclick="openRangeSummary()">生成摘要</button>
 {% endblock %}
 {% block content %}
 {% include "message_context_script.html" %}
@@ -59,21 +56,21 @@
 <div id="range-summary-backdrop" class="range-summary-backdrop" hidden onclick="closeRangeSummary()"></div>
 <aside id="range-summary-panel" class="range-summary-panel" hidden aria-labelledby="range-summary-title" aria-modal="true" role="dialog">
   <div class="range-panel-header">
-    <div><h2 id="range-summary-title">生成范围摘要</h2><p>核对群和日期，再查看本地消息数量。每个群独立生成报告。</p></div>
-    <button class="btn btn-sm" type="button" aria-label="关闭范围摘要面板" onclick="closeRangeSummary()">关闭</button>
+    <div><h2 id="range-summary-title">生成摘要</h2><p>选择群聊和时间，核对消息数量后生成。每天自动生成可在设置中开启。</p></div>
+    <button class="btn btn-sm" type="button" aria-label="关闭摘要生成面板" onclick="closeRangeSummary()">关闭</button>
   </div>
   <form id="range-summary-form" onsubmit="submitRangeSummary(event)">
     <fieldset id="range-summary-fields">
       <div class="field"><label for="range-group-search">群组</label><input class="input" id="range-group-search" type="search" placeholder="搜索已启用群组" oninput="filterRangeGroups()"></div>
       <div class="range-group-actions"><button class="btn btn-sm" type="button" onclick="selectVisibleRangeGroups(true)">选择可见群</button><button class="btn btn-sm" type="button" onclick="selectVisibleRangeGroups(false)">清除可见群</button></div>
       <div id="range-group-list" class="range-group-list" aria-label="选择群组"><div class="empty">加载群组...</div></div>
+      <div class="field"><label for="range-time-mode">摘要时间</label><select class="input" id="range-time-mode" onchange="setRangeDates(this.value)"><option value="today">今天</option><option value="week">最近七天</option><option value="custom">自定义</option></select></div>
       <div class="range-date-grid">
-        <div class="field"><label for="range-start-date">开始日期</label><input class="input" id="range-start-date" type="date" required onchange="updateRangeSelectionSummary()"></div>
-        <div class="field"><label for="range-end-date">结束日期</label><input class="input" id="range-end-date" type="date" required onchange="updateRangeSelectionSummary()"></div>
+        <div class="field"><label for="range-start-date">开始日期</label><input class="input" id="range-start-date" type="date" required onchange="onRangeDateChange()"></div>
+        <div class="field"><label for="range-end-date">结束日期</label><input class="input" id="range-end-date" type="date" required onchange="onRangeDateChange()"></div>
       </div>
-      <div class="actions"><button class="btn btn-sm" type="button" onclick="setRangeDates('today')">今天</button><button class="btn btn-sm" type="button" onclick="setRangeDates('week')">最近七天</button></div>
       <div id="range-selection-summary" class="range-selection-summary">已选择 0 个群，共 1 天</div>
-      <section class="range-input-preview" aria-label="本地消息预览"><p id="range-preview-status" role="status">选择群聊后查看消息数量。</p><div id="range-preview-groups"></div><p class="header-meta">这里只统计本地归档。预处理与上下文限制可能减少实际纳入数量；不会自动更新 QQ 消息。</p><div id="range-preview-actions" class="actions"></div></section>
+      <section class="range-input-preview" aria-label="本地消息预览"><p id="range-preview-status" role="status">选择群聊后查看消息数量。</p><div id="range-preview-groups"></div><p class="header-meta">使用本地归档，今天的内容会随已保存的消息更新。相同输入复用已有摘要；每次最多七天。可先更新消息，预处理与上下文限制可能减少实际纳入数量。</p><div id="range-preview-actions" class="actions"></div></section>
       <div id="range-result" class="range-result" hidden></div>
     </fieldset>
     <div class="range-panel-footer"><button class="btn" type="button" onclick="closeRangeSummary()">收起，继续阅读</button><button class="btn btn-primary" id="range-submit-btn" type="submit" disabled>开始生成</button></div>
@@ -256,7 +253,7 @@
       if(token===reportSelectionToken){document.getElementById('regeneration-reason').value='';viewReport(report.kind,report.id);}
     }).catch(function(error){toast('重新生成失败：'+error.message,'error');}).finally(function(){revisionBusy=false;document.getElementById('report-regenerate').textContent='保留旧版并重新生成';revisionControls();});
   }
-  function reportParams() { var p = new URLSearchParams(); p.set('page', reportPage); p.set('kind', document.getElementById('report-kind').value); [['group_id','report-group'],['date_from','report-from'],['date_to','report-to']].forEach(function(row) { var value = document.getElementById(row[1]).value; if (value) p.set(row[0], value); }); return p; }
+  function reportParams() { var p = new URLSearchParams(); p.set('page', reportPage); p.set('kind', document.getElementById('report-kind').value);summaryGroupParams(p,document.getElementById('report-group').value); [['date_from','report-from'],['date_to','report-to']].forEach(function(row) { var value = document.getElementById(row[1]).value; if (value) p.set(row[0], value); }); return p; }
   function filterReports() { reportPage = 1; summaryPointPage=1; summaryPendingScroll=null;summaryApplyView();summarySave();loadReports(); }
   function clearReportFilters() { document.getElementById('report-group').value='';document.getElementById('report-kind').value='all';document.getElementById('summary-read-filter').value='all';summarySetDates('today'); }
   function changeReportPage(step) { reportPage += step; loadReports(); }
@@ -277,7 +274,7 @@
       el.innerHTML = d.reports.map(function(r) {
         var kind = r.report_kind === 'range' ? 'range' : 'daily', reportId = Number(r.report_id);
         var windowLabel = r.window_start_date === r.window_end_date ? r.window_start_date : r.window_start_date + ' 至 ' + r.window_end_date;
-        return '<tr><td data-label="类型"><span class="badge ' + (kind === 'range' ? 'badge-blue' : 'badge-dim') + '">' + (kind === 'range' ? '范围' : '日报') + '</span></td>'
+        return '<tr><td data-label="类型"><span class="badge ' + (kind === 'range' ? 'badge-blue' : 'badge-dim') + '">' + (kind === 'range' ? '自选日期' : '单日') + '</span></td>'
           + '<td data-label="日期范围">' + escapeHtml(windowLabel) + '</td><td data-label="群名"><span>' + escapeHtml(r.group_name) + coverageBadge(r.completeness) + '</span></td>'
           + '<td data-label="参考消息数" class="number">' + (Number.isInteger(r.reference_message_count) && r.reference_message_count >= 0 ? formatNumber(r.reference_message_count) : '—') + '</td>'
           + '<td data-label="候选数" class="number">' + formatNumber(r.candidate_count) + '</td><td data-label="更新时间">' + escapeHtml((r.created_at || '').slice(0, 19)) + '</td>'

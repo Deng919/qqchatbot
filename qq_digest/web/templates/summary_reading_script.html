@@ -4,6 +4,8 @@
   var summarySaved=null, summaryStorageKey='qq-digest-summary-reading-v1',summaryDetailActive=false,summaryReportOpener=null;
   function summaryNode(tag,cls,text) { var n=document.createElement(tag); if(cls)n.className=cls; if(text!==undefined)n.textContent=text; return n; }
   function summaryButton(text,action,cls) { var b=summaryNode('button',cls||'btn btn-sm',text); b.type='button'; b.onclick=action; return b; }
+  function summarySelectGroups(ids){var value=ids.join(','),select=document.getElementById('report-group');if(ids.length>1&&!Array.from(select.options).some(function(option){return option.value===value;})){var option=summaryNode('option','','已选 '+ids.length+' 个群');option.value=value;select.appendChild(option);}select.value=value;}
+  function summaryGroupParams(params,value){if(!value)return;if(value.includes(','))value.split(',').forEach(function(id){params.append('group_ids',id);});else params.set('group_id',value);}
   function summaryValues() { return {view:summaryView,group:document.getElementById('report-group').value,from:document.getElementById('report-from').value,to:document.getElementById('report-to').value,kind:document.getElementById('report-kind').value,read:document.getElementById('summary-read-filter').value,pointPage:summaryPointPage,reportPage:reportPage,since:summarySince,expanded:summaryExpanded,scroll:document.getElementById('report-detail').hidden?window.scrollY:summaryBrowseScroll}; }
   function summarySave() {
     var state=summaryValues(); try { sessionStorage.setItem(summaryStorageKey,JSON.stringify(state)); } catch(e) {}
@@ -37,7 +39,7 @@
   function summaryRestoreScroll() { if(summaryPendingScroll!==null&&!summaryDetailActive){var y=summaryPendingScroll;summaryPendingScroll=null;requestAnimationFrame(function(){window.scrollTo({top:y,behavior:'instant'});});} }
   function summaryEmpty(host,filtered) {
     var box=summaryNode('div','summary-empty');box.appendChild(summaryNode('h2','',filtered?'当前范围没有符合条件的要点':'当前范围没有已生成的摘要'));
-    box.appendChild(summaryNode('p','header-meta',filtered?'已读和新增是独立状态，可切换到全部要点继续阅读。':'可以按当前群和日期选择生成摘要，或查看最近七天。要点阅读只展示日报，范围摘要请切换按群阅读。'));
+    box.appendChild(summaryNode('p','header-meta',filtered?'已读和新增是独立状态，可切换到全部要点继续阅读。':'可以按当前群和日期生成摘要，或查看最近七天。多日摘要需完整落在所选日期内。'));
     var actions=summaryNode('div','actions');
     if(filtered)actions.appendChild(summaryButton('查看全部要点',function(){document.getElementById('summary-read-filter').value='all';summaryFilterPoints();}));
     else actions.appendChild(summaryButton('选择范围并生成',function(){openRangeSummary();},'btn btn-primary'));
@@ -50,23 +52,23 @@
     if(!state.from||!state.to||state.from>state.to){host.textContent='请选择完整的日期范围，开始日期不能晚于结束日期。';document.getElementById('summary-reading-pages').hidden=true;return;}
     if(keepScroll)summaryPendingScroll=window.scrollY;
     host.setAttribute('aria-busy','true');
-    var p=new URLSearchParams({date_from:state.from,date_to:state.to,read_filter:state.read,page:String(summaryPointPage)});if(state.group)p.set('group_id',state.group);if(summarySince)p.set('since',summarySince);
+    var p=new URLSearchParams({date_from:state.from,date_to:state.to,read_filter:state.read,page:String(summaryPointPage)});summaryGroupParams(p,state.group);if(summarySince)p.set('since',summarySince);
     api('GET','/api/summary-reading?'+p.toString()).then(function(data){
       if(token!==summaryPointToken||summaryView!=='points')return;
       var last=Math.max(1,Math.ceil(data.total/data.page_size));if(summaryPointPage>last){summaryPointPage=last;return summaryLoadPoints(keepScroll);}
       host.textContent='';document.getElementById('summary-reading-count').textContent='当前筛选 '+data.total+' 条要点 · 此日期和群范围有 '+data.unread+' 条未读';
-      var warning=document.getElementById('summary-reading-warning');warning.hidden=!data.skipped_reports;warning.textContent=data.skipped_reports+' 份日报文件缺失或无法读取，未纳入阅读。';
-      document.getElementById('summary-reading-note').textContent=state.read==='new'?(summarySince?'仅显示上次打开（'+new Date(summarySince).toLocaleString('zh-CN')+'）后生成或更新的日报要点，不代表所有未读。':'首次使用：此日期范围内的要点视为新增。'):'汇集已生成的日报，不重复调用 AI；范围摘要在按群阅读中查看。';
+      var warning=document.getElementById('summary-reading-warning');warning.hidden=!data.skipped_reports;warning.textContent=data.skipped_reports+' 份摘要文件缺失或无法读取，未纳入阅读。';
+      document.getElementById('summary-reading-note').textContent=state.read==='new'?(summarySince?'仅显示上次打开（'+new Date(summarySince).toLocaleString('zh-CN')+'）后生成或更新的摘要要点，不代表所有未读。':'首次使用：此日期范围内的要点视为新增。'):'汇集已生成的摘要，不重复调用 AI；多日摘要需完整落在所选日期内。';
       if(!data.items.length)summaryEmpty(host,state.read!=='all');
       data.items.forEach(function(item){
         var card=summaryNode('article','summary-item'+(item.read?' is-read':''));card.dataset.key=item.key;
-        var meta=summaryNode('div','summary-item-meta');meta.appendChild(summaryNode('strong','',item.group_name));meta.appendChild(summaryNode('span','',item.report_date));meta.appendChild(summaryNode('span','badge badge-dim',item.section));meta.appendChild(summaryNode('span','badge '+(item.read?'badge-dim':'badge-blue'),item.read?'已读':'未读'));card.appendChild(meta);
+        var meta=summaryNode('div','summary-item-meta');meta.appendChild(summaryNode('strong','',item.group_name));meta.appendChild(summaryNode('span','',item.date_label||item.report_date));meta.appendChild(summaryNode('span','badge badge-dim',item.section));meta.appendChild(summaryNode('span','badge '+(item.read?'badge-dim':'badge-blue'),item.read?'已读':'未读'));card.appendChild(meta);
         var split=String(item.text||'').match(/^([^\n：。！？]{1,48})[：。！？\n]/),title=split?split[1]:String(item.text||'').slice(0,48),body=split?String(item.text).slice(split[0].length):String(item.text||'');
         card.appendChild(summaryNode('h2','',title));var text=summaryNode('p','summary-item-body',body||item.text);var long=String(item.text||'').length>160||String(item.text||'').split('\n').length>4;
         if(long&&!summaryExpanded[item.key])text.classList.add('is-collapsed');if(body||!split)card.appendChild(text);
         if(long){var expand=summaryButton(summaryExpanded[item.key]?'收起':'展开全文',function(){var open=!summaryExpanded[item.key];summaryExpanded[item.key]=open;text.classList.toggle('is-collapsed',!open);expand.textContent=open?'收起':'展开全文';summarySave();});expand.setAttribute('aria-expanded',String(!!summaryExpanded[item.key]));expand.addEventListener('click',function(){expand.setAttribute('aria-expanded',String(!!summaryExpanded[item.key]));});card.appendChild(expand);}
         var footer=summaryNode('div','summary-item-footer');if(item.status==='cited'&&item.source_ids.length)footer.appendChild(summaryButton('查看原消息',function(){summaryOpenSource(item,this);}));else footer.appendChild(summaryNode('span','header-meta',item.status==='legacy'?'旧报告未记录逐条来源':'这条要点未提供有效来源'));
-        footer.appendChild(summaryButton('完整摘要',function(){viewReport('daily',Number(item.report_id));}));
+        footer.appendChild(summaryButton('完整摘要',function(){viewReport(item.report_kind||'daily',Number(item.report_id));}));
         var read=summaryButton(item.read?'标为未读':'标为已读',function(){read.disabled=true;api('POST','/api/summary-reading/read',{key:item.key,read:!item.read}).then(function(){summaryLoadPoints(true);}).catch(function(e){read.disabled=false;summaryShowResult('已读状态保存失败：'+e.message,'failed');});},'btn btn-sm summary-read-button');footer.appendChild(read);card.appendChild(footer);host.appendChild(card);
       });summaryPages(data);summarySave();summaryRestoreScroll();
     }).catch(function(e){if(token!==summaryPointToken)return;host.textContent='要点读取失败：'+e.message;host.appendChild(summaryButton('重试',function(){summaryLoadPoints();}));document.getElementById('summary-reading-pages').hidden=true;}).finally(function(){if(token===summaryPointToken)host.removeAttribute('aria-busy');});
@@ -75,7 +77,7 @@
     if(summaryView!=='groups')return;var host=document.getElementById('summary-groups');host.textContent='';
     document.getElementById('summary-reading-count').textContent='共 '+data.total+' 份摘要 · 按群和日期阅读';document.getElementById('summary-reading-warning').hidden=true;
     if(!data.reports.length)summaryEmpty(host,false);
-    data.reports.forEach(function(report){var card=summaryNode('article','summary-item');var meta=summaryNode('div','summary-item-meta');meta.appendChild(summaryNode('strong','',report.group_name));meta.appendChild(summaryNode('span','badge badge-dim',report.report_kind==='range'?'范围摘要':'日报'));card.appendChild(meta);
+    data.reports.forEach(function(report){var card=summaryNode('article','summary-item');var meta=summaryNode('div','summary-item-meta');meta.appendChild(summaryNode('strong','',report.group_name));card.appendChild(meta);
       card.appendChild(summaryNode('h2','',report.window_start_date===report.window_end_date?report.window_start_date:report.window_start_date+' 至 '+report.window_end_date));
       var preview=report.preview||{};var body=summaryNode('p','summary-item-body is-collapsed',preview.available?(preview.overview||'这份摘要未记录概览，请阅读下方要点或打开完整摘要。'):'这份摘要暂时没有可用预览，可以尝试打开完整摘要查看。');card.appendChild(body);
       var list=null;if(preview.available&&preview.points&&preview.points.length){list=summaryNode('ul','summary-preview-points is-collapsed');preview.points.forEach(function(point){list.appendChild(summaryNode('li','',point));});card.appendChild(list);}
@@ -93,12 +95,12 @@
   }
   function summaryOpenSource(item,opener) {
     summarySourceOpener=opener;document.getElementById('summary-source-panel').hidden=false;document.getElementById('summary-source-backdrop').hidden=false;
-    document.getElementById('summary-source-scope').textContent=item.group_name+' · '+item.report_date;
+    document.getElementById('summary-source-scope').textContent=item.group_name+' · '+(item.date_label||item.report_date);
     var choices=document.getElementById('summary-source-choices');choices.textContent='';item.source_ids.forEach(function(id,index){choices.appendChild(summaryButton('来源 '+(index+1),function(){summaryLoadSource(item,id);}));});summaryLoadSource(item,item.source_ids[0]);document.getElementById('summary-source-close').focus();
   }
   function summaryLoadSource(item,id) {
     var token=++summarySourceToken,host=document.getElementById('summary-source-messages');
-    mountMessageContext(host,{citedId:id,url:'/api/reports/daily/'+item.report_id+'/sources/'+encodeURIComponent(id),
+    mountMessageContext(host,{citedId:id,url:'/api/reports/'+(item.report_kind||'daily')+'/'+item.report_id+'/sources/'+encodeURIComponent(id),
       isCurrent:function(){return token===summarySourceToken&&!document.getElementById('summary-source-panel').hidden;}});
   }
   function summaryCloseSource() { summarySourceToken++;destroyMessageContext(document.getElementById('summary-source-messages'));document.getElementById('summary-source-panel').hidden=true;document.getElementById('summary-source-backdrop').hidden=true;if(summarySourceOpener&&summarySourceOpener.isConnected)summarySourceOpener.focus(); }
@@ -115,7 +117,7 @@
     });flush();
   }
   function summaryReadDailyResults(data) { closeReport();document.getElementById('summary-read-filter').value='all';document.getElementById('report-group').value='';var day=data.report_date;if(/^\d{4}-\d{2}-\d{2}$/.test(day||'')){document.getElementById('report-from').value=day;document.getElementById('report-to').value=day;refreshDateHints();}else{var dates=recentWeekDates();document.getElementById('report-from').value=dates.start;document.getElementById('report-to').value=dates.end;refreshDateHints();}summarySetView('points');filterReports();document.getElementById('summary-points').scrollIntoView({block:'start',behavior:'instant'}); }
-  function summaryReadRangeResults(start,end,groups) { closeReport();document.getElementById('report-kind').value='range';document.getElementById('report-from').value=start;document.getElementById('report-to').value=end;document.getElementById('report-group').value=groups.length===1?String(groups[0]):'';refreshDateHints();summarySetView('groups');filterReports();closeRangeSummary(); }
+  function summaryReadRangeResults(start,end,groups) { closeReport();document.getElementById('report-kind').value='all';document.getElementById('summary-read-filter').value='all';document.getElementById('report-from').value=start;document.getElementById('report-to').value=end;summarySelectGroups(groups.map(String));refreshDateHints();summarySetView('points');filterReports();closeRangeSummary(); }
   function summaryInit() {
     try{summarySaved=JSON.parse(sessionStorage.getItem(summaryStorageKey)||'null');}catch(e){}
     var saved=summarySaved||{},url=new URLSearchParams(location.search),dates=recentWeekDates();
@@ -124,10 +126,10 @@
     document.getElementById('report-kind').value=url.get('report_kind')||saved.kind||'all';document.getElementById('summary-read-filter').value=url.get('read')||saved.read||'all';if(!document.getElementById('summary-read-filter').value)document.getElementById('summary-read-filter').value='all';
     summaryPointPage=Number.isInteger(saved.pointPage)&&saved.pointPage>0?saved.pointPage:1;reportPage=Number.isInteger(saved.reportPage)&&saved.reportPage>0?saved.reportPage:1;summaryExpanded=saved.expanded&&typeof saved.expanded==='object'?saved.expanded:{};summaryPendingScroll=Number.isFinite(saved.scroll)?saved.scroll:null;summaryBrowseScroll=summaryPendingScroll||0;
     var group=url.get('group_id')||saved.group||'';refreshDateHints();summaryApplyView();
-    var groups=api('GET','/api/groups').then(function(data){var select=document.getElementById('report-group');data.groups.forEach(function(g){var option=summaryNode('option','',g.name);option.value=g.group_id;select.appendChild(option);});select.value=group;}).catch(function(){summaryShowResult('群聊筛选加载失败，请刷新重试。','failed');});
+    var groups=api('GET','/api/groups').then(function(data){var select=document.getElementById('report-group');data.groups.forEach(function(g){var option=summaryNode('option','',g.name);option.value=g.group_id;select.appendChild(option);});summarySelectGroups(group?group.split(','):[]);}).catch(function(){summaryShowResult('群聊筛选加载失败，请刷新重试。','failed');});
     var navigation=performance.getEntriesByType('navigation')[0],restoreVisit=navigation&&navigation.type==='reload'&&Object.prototype.hasOwnProperty.call(saved,'since');
     var visit=api('POST','/api/summary-reading/visit',{}).then(function(data){summarySince=restoreVisit?saved.since:data.previous_viewed_at;}).catch(function(){document.getElementById('summary-read-filter').querySelector('option[value="new"]').disabled=true;if(document.getElementById('summary-read-filter').value==='new')document.getElementById('summary-read-filter').value='all';summaryShowResult('上次打开时间读取失败，暂不能筛选新增要点；全部和未读仍可使用。','failed');});
-    Promise.all([groups,visit]).then(function(){loadReports();var kind=url.get('kind'),id=Number(url.get('id'));if(['daily','range'].includes(kind)&&Number.isInteger(id)&&id>0)viewReport(kind,id);});
+    Promise.all([groups,visit]).then(function(){loadReports();var kind=url.get('kind'),id=Number(url.get('id'));if(['daily','range'].includes(kind)&&Number.isInteger(id)&&id>0)viewReport(kind,id);else if(url.get('generate')==='1')openRangeSummary();});
   }
   window.addEventListener('pagehide',summarySave);document.addEventListener('keydown',function(event){if(event.key==='Escape'&&!document.getElementById('summary-source-panel').hidden)summaryCloseSource();});
   summaryInit();

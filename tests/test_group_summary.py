@@ -82,7 +82,7 @@ def test_group_summary_builder_builds_range_content_and_candidate_draft():
         report_kind="range",
     )
 
-    assert "# 测试群范围摘要" in artifact.markdown
+    assert "# 测试群摘要" in artifact.markdown
     assert "## 今日概览\n待核实：群内确认了工具回退方案。" in artifact.markdown
     assert artifact.payload["evidence_version"] == 1
     assert artifact.payload["coverage"]["status"] == "limited"
@@ -104,7 +104,7 @@ def test_group_summary_builder_builds_range_content_and_candidate_draft():
     assert artifact.source_message_count == 1
 
 
-def test_group_summary_builder_keeps_daily_heading():
+def test_group_summary_builder_uses_unified_heading_for_daily():
     timezone = ZoneInfo("Asia/Shanghai")
     start = datetime(2026, 9, 1, tzinfo=timezone)
     artifact = GroupSummaryBuilder(StubSummarizer()).build(
@@ -119,8 +119,8 @@ def test_group_summary_builder_keeps_daily_heading():
         report_kind="daily",
     )
 
-    assert "# 测试群日报" in artifact.markdown
-    assert "- 日期：2026-09-01" in artifact.markdown
+    assert "# 测试群摘要" in artifact.markdown
+    assert "- 日期范围：2026-09-01" in artifact.markdown
     assert "## 数据范围" in artifact.markdown
 
 

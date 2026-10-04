@@ -85,6 +85,7 @@ class ManualSummaryService:
         max_context_chars: int,
         timezone_name: str,
         knowledge_paths: dict[str, Path] | None = None,
+        single_day_as_daily: bool = False,
     ) -> None:
         self.archive = archive
         self.candidates = CandidateService(archive)
@@ -96,6 +97,7 @@ class ManualSummaryService:
         )
         self.timezone = ZoneInfo(timezone_name)
         self.knowledge_paths = knowledge_paths or {}
+        self.single_day_as_daily = single_day_as_daily
 
     def run(self, request: ManualSummaryRequest) -> ManualSummaryResult:
         job_id = self.archive.start_job("manual_summary")
@@ -131,7 +133,8 @@ class ManualSummaryService:
         start, end = range_window(request, self.timezone)
         start_date = request.start_date.isoformat()
         end_date = request.end_date.isoformat()
-        report_date = f"{start_date} 至 {end_date}"
+        kind = 'daily' if self.single_day_as_daily and start_date == end_date else 'range'
+        report_date = start_date if kind == 'daily' else f"{start_date} 至 {end_date}"
         result = ManualSummaryResult()
         builder = GroupSummaryBuilder(self.summarizer)
         knowledge_base = self._load_knowledge_base()
@@ -149,13 +152,13 @@ class ManualSummaryService:
                 continue
             fingerprint = summary_input_fingerprint(
                 group=group,
-                report_kind="range",
+                report_kind=kind,
                 messages=messages,
                 timezone=self.timezone,
                 knowledge_base=knowledge_base,
                 max_context_chars=self.max_context_chars,
             )
-            existing = self.archive.manual_report_for(
+            existing = self.archive.report_for(group.group_id,start_date) if kind == 'daily' else self.archive.manual_report_for(
                 group.group_id,
                 start_date,
                 end_date,
@@ -167,8 +170,9 @@ class ManualSummaryService:
                 and published_report_is_valid(
                     existing["markdown_path"], existing["json_path"]
                 )
+                and (kind != 'daily' or self._compatible_day(existing,start,end))
             ):
-                result.reused_reports.append(self._report_result(existing, group))
+                result.reused_reports.append(self._report_result(existing, group, kind))
                 continue
 
             stage = "summary"
@@ -182,18 +186,21 @@ class ManualSummaryService:
                     messages=messages,
                     timezone=self.timezone,
                     knowledge_base=knowledge_base,
-                    report_kind="range",
+                    report_kind=kind,
                 )
                 stage = "publication"
                 stem = (
                     f"range__{start_date}__{end_date}__"
                     f"{group.group_id}__adaptive"
                 )
+                if kind == 'daily':
+                    stem = f'{start_date}__{group.group_id}'
                 payload = {
                     **artifact.payload,
-                    "report_kind": "range",
+                    "report_kind": kind,
                     "start_date": start_date,
                     "end_date": end_date,
+                    "window_end_inclusive": False,
                 }
                 prepared = self.report_writer.prepare_named(
                     stem, artifact.markdown, payload
@@ -209,11 +216,11 @@ class ManualSummaryService:
                             self.candidates.create_in_transaction(**kwargs)
                             for kwargs in artifact.candidate_kwargs
                         ]
-                        report_id = self.archive.record_manual_report_in_transaction(
+                        record = self.archive.record_report_in_transaction if kind == 'daily' else self.archive.record_manual_report_in_transaction
+                        scope = {'report_date':start_date} if kind == 'daily' else dict(start_date=start_date,end_date=end_date,detail_mode='adaptive')
+                        report_id = record(
                             group_id=group.group_id,
-                            start_date=start_date,
-                            end_date=end_date,
-                            detail_mode="adaptive",
+                            **scope,
                             effective_template="adaptive",
                             markdown_path=prepared.paths.markdown,
                             json_path=prepared.paths.json,
@@ -231,10 +238,10 @@ class ManualSummaryService:
                     prepared.rollback()
                     raise
                 prepared.finalize()
-                row = self.archive.manual_report_by_id(report_id)
+                row = self.archive.report_for(group.group_id,start_date) if kind == 'daily' else self.archive.manual_report_by_id(report_id)
                 if row is None:
                     raise RuntimeError("范围报告记录不存在")
-                result.created_reports.append(self._report_result(row, group))
+                result.created_reports.append(self._report_result(row, group, kind))
             except Exception as exc:
                 logger.error(
                     "群 %s 手动范围总结失败: %s",
@@ -267,13 +274,24 @@ class ManualSummaryService:
         return f"{type(exc).__name__}: {detail}" if detail else type(exc).__name__
 
     @staticmethod
-    def _report_result(row, group) -> ManualReportResult:
-        report_id = int(row["manual_report_id"])
+    def _report_result(row, group, kind='range') -> ManualReportResult:
+        report_id = int(row['report_id'] if kind == 'daily' else row["manual_report_id"])
         return ManualReportResult(
             report_id=report_id,
-            report_key=f"range:{report_id}",
+            report_key=f"{kind}:{report_id}",
             group_id=group.group_id,
             group_name=group.name,
-            start_date=row["start_date"],
-            end_date=row["end_date"],
+            start_date=row['report_date'] if kind == 'daily' else row["start_date"],
+            end_date=row['report_date'] if kind == 'daily' else row["end_date"],
         )
+
+    @staticmethod
+    def _compatible_day(row, start, end) -> bool:
+        """Same inputs may reuse a natural day's earlier cutoff; never an unknown window."""
+        try:
+            payload=json.loads(Path(row['json_path']).read_text(encoding='utf-8'))
+            lower=datetime.fromisoformat(payload['window_start'])
+            upper=datetime.fromisoformat(payload['window_end'])
+            return lower.tzinfo is not None and upper.tzinfo is not None and lower==start and start<upper<=end
+        except (OSError,UnicodeError,ValueError,TypeError,KeyError):
+            return False

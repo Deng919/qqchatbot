@@ -118,6 +118,60 @@ def test_reading_selection_and_legacy_key_compatibility(reading_client, tmp_path
     assert client.post("/api/summary-reading/read", json={"key": "a" * 64, "read": "false"}).status_code == 422
 
 
+def test_core_reads_multi_day_points_without_id_or_read_collisions(reading_client,tmp_path):
+    client,archive,_=reading_client
+    daily_id,_=add_report(archive,tmp_path,report_date='2026-09-29')
+    path=tmp_path/'range-points.json'
+    payload={'overview':'一周概览','main_topics':[{'topic':'发布计划','summary':'按周完成检查'}]}
+    path.write_text(json.dumps(payload,ensure_ascii=False),encoding='utf-8')
+    range_id=archive.record_manual_report(group_id=11,start_date='2026-09-23',end_date='2026-09-29',
+        detail_mode='adaptive',effective_template='adaptive',input_fingerprint='synthetic',source_message_count=2,
+        markdown_path=path.with_suffix('.md'),json_path=path,candidate_ids=[])
+    assert range_id==daily_id
+    login(client)
+    scope={'date_from':'2026-09-23','date_to':'2026-09-29','group_id':11}
+    items=client.get('/api/summary-reading',params=scope).json()['items']
+    range_item=next(item for item in items if item['report_kind']=='range')
+    assert range_item['date_label']=='2026-09-23 至 2026-09-29'
+    assert range_item['report_url']==f'/reports?kind=range&id={range_id}'
+    assert len({item['key'] for item in items})==5
+    assert client.post('/api/summary-reading/read',json={'key':range_item['key'],'read':True}).status_code==200
+    unread=client.get('/api/summary-reading',params={**scope,'read_filter':'unread'}).json()['items']
+    assert len(unread)==4 and all(item['report_kind']=='daily' for item in unread)
+    assert client.get('/api/summary-reading',params={**scope,'date_from':'2026-09-29'}).json()['total']==4
+    assert client.get('/api/summary-reading',params={**scope,'group_id':22}).json()['total']==0
+    # Legacy catch-up does not add multi-day summaries implicitly.
+    assert client.get('/api/catchup',params={'scope':'since','since':'2000-01-01T00:00:00Z'}).json()['total']==4
+
+
+def test_multi_group_selection_is_kept_in_both_reading_views(reading_client,tmp_path):
+    client,archive,_=reading_client
+    archive.upsert_groups([GroupConfig(group_id=33,name='未选择的群')])
+    for group in (11,22,33):add_report(archive,tmp_path,group_id=group)
+    login(client)
+    for endpoint in ('/api/summary-reading','/api/reports'):
+        params=[('date_from','2026-09-29'),('date_to','2026-09-29'),('group_ids',11),('group_ids',22)]
+        response=client.get(endpoint,params=params)
+        assert response.status_code==200,response.text
+        values=response.json().get('items',response.json().get('reports'))
+        assert {item['group_id'] for item in values}=={11,22}
+
+
+def test_multi_day_regeneration_is_new_since_previous_visit(reading_client,tmp_path):
+    client,archive,_=reading_client
+    path=tmp_path/'range-updated.json'
+    path.write_text(json.dumps({'main_topics':[{'topic':'更新','summary':'新版本内容'}]}),encoding='utf-8')
+    rid=archive.record_manual_report(group_id=11,start_date='2026-09-23',end_date='2026-09-29',
+        detail_mode='adaptive',effective_template='adaptive',input_fingerprint='x',source_message_count=1,
+        markdown_path=path.with_suffix('.md'),json_path=path,candidate_ids=[])
+    archive.connection.execute('UPDATE manual_reports SET created_at=?,updated_at=? WHERE manual_report_id=?',
+        ('2026-09-29T01:00:00+00:00','2026-09-29T03:00:00+00:00',rid));archive.connection.commit()
+    login(client)
+    result=client.get('/api/summary-reading',params={'date_from':'2026-09-23','date_to':'2026-09-29',
+        'since':'2026-09-29T02:00:00Z','read_filter':'new'}).json()
+    assert result['total']==1
+
+
 def test_report_previews_are_extracted_only_for_current_page(reading_client, tmp_path, monkeypatch):
     client, archive, _ = reading_client
     first_id, first_path = add_report(archive, tmp_path, report_date="2026-09-29")

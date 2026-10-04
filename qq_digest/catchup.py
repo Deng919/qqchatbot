@@ -10,6 +10,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from .archive import Archive
+from .report_selection import selected_report_groups
 from .report_sources import extract_report_sources, load_verified_report_sources
 
 
@@ -41,7 +42,8 @@ class CatchupService:
                    now: datetime | None = None, page: int = 1,
                    page_size: int = 30, date_from: str | None = None,
                    date_to: str | None = None, group_id: int | None = None,
-                   read_filter: str = "all") -> dict:
+                   read_filter: str = "all", include_ranges: bool = False,
+                   group_ids: list[int] | None = None) -> dict:
         if scope not in {"since", "today", "week", "custom"}:
             raise ValueError("补看范围无效")
         if read_filter not in {"all", "unread", "new"}:
@@ -69,22 +71,36 @@ class CatchupService:
                 raise ValueError("开始日期不能晚于结束日期")
             conditions.append("r.report_date BETWEEN ? AND ?")
             params.extend([first.isoformat(), last.isoformat()])
+            if include_ranges:
+                conditions.append('r.start_date>=?')
+                params.append(first.isoformat())
         elif scope == "today":
             conditions.append("r.report_date=?")
             params.append(today.isoformat())
+            if include_ranges:
+                conditions.append('r.start_date=?')
+                params.append(today.isoformat())
         elif scope == "week" or cutoff is None:
             conditions.append("r.report_date BETWEEN ? AND ?")
             params.extend([(today - timedelta(days=6)).isoformat(), today.isoformat()])
+            if include_ranges:
+                conditions.append('r.start_date>=?')
+                params.append((today-timedelta(days=6)).isoformat())
         else:
             # Compare timestamps as instants below; persisted ISO offsets may differ.
             conditions.append("1=1")
-        if group_id is not None:
-            conditions.append("r.group_id=?")
-            params.append(group_id)
+        selection = selected_report_groups(group_id,group_ids)
+        if selection:
+            conditions.append('r.group_id IN ('+','.join('?' for _ in selection)+')')
+            params.extend(selection)
+        report_rows = "(SELECT 'daily' AS report_kind,report_id,group_id,report_date,report_date AS start_date,json_path,created_at FROM reports"
+        if include_ranges:
+            report_rows += " UNION ALL SELECT 'range',manual_report_id,group_id,end_date,start_date,json_path,updated_at FROM manual_reports"
+        report_rows += ')'
         rows = self.archive.connection.execute(
-            "SELECT r.report_id, r.group_id, r.report_date, r.json_path, "
+            "SELECT r.report_id, r.report_kind, r.start_date, r.group_id, r.report_date, r.json_path, "
             "r.created_at, g.name AS group_name "
-            "FROM reports r JOIN groups g ON g.group_id=r.group_id "
+            f"FROM {report_rows} r JOIN groups g ON g.group_id=r.group_id "
             "WHERE " + " AND ".join(conditions) +
             " ORDER BY r.report_date DESC, r.created_at DESC, r.report_id DESC",
             params,
@@ -108,7 +124,7 @@ class CatchupService:
                     evidence = load_verified_report_sources(
                         self.archive.connection, report["json_path"],
                         group_id=report["group_id"],
-                        start_date=report["report_date"],
+                        start_date=report["start_date"],
                         end_date=report["report_date"],
                         timezone_name=self.timezone_name,
                     )
@@ -134,8 +150,9 @@ class CatchupService:
                 )
                 occurrence = duplicates.get(identity, 0)
                 duplicates[identity] = occurrence + 1
+                identity_id = report['report_id'] if report['report_kind']=='daily' else f"range:{report['report_id']}"
                 key_material = json.dumps(
-                    [report["report_id"], item["section"], item["text"], source_ids, occurrence],
+                    [identity_id, item["section"], item["text"], source_ids, occurrence],
                     ensure_ascii=False, separators=(",", ":"),
                 )
                 items.append({
@@ -143,12 +160,14 @@ class CatchupService:
                     "group_id": report["group_id"],
                     "group_name": report["group_name"],
                     "report_date": report["report_date"],
+                    "report_kind": report['report_kind'],
+                    "date_label": report['report_date'] if report['start_date']==report['report_date'] else f"{report['start_date']} 至 {report['report_date']}",
                     "section": item["section"],
                     "text": item["text"],
                     "source_ids": source_ids,
                     "status": item["status"],
                     "report_id": report["report_id"],
-                    "report_url": f"/reports?kind=daily&id={report['report_id']}",
+                    "report_url": f"/reports?kind={report['report_kind']}&id={report['report_id']}",
                     "new": is_new,
                 })
         keys = [item["key"] for item in items]

@@ -47,6 +47,7 @@ from .features import add_feature_routes
 from .summary_reading_routes import add_summary_reading_routes
 from .message_routes import add_message_routes
 from .summary_generation_routes import add_summary_generation_routes
+from ..report_selection import selected_report_groups
 
 templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"),
                            context_processors=[lambda request: {'features': getattr(request.state, 'features', {})}])
@@ -431,7 +432,7 @@ def create_app(
             if worker_archive is not None:
                 worker_archive.connection.close()
 
-    def _run_manual_summary_task(cfg, payload: ManualRangePayload):
+    def _run_manual_summary_task(cfg, payload: ManualRangePayload, *, single_day_as_daily=False):
         from ..ai.factory import build_ai_client
         from ..manual_summary import ManualSummaryRequest, ManualSummaryService
 
@@ -446,6 +447,7 @@ def create_app(
                 max_context_chars=cfg.ai.max_context_chars,
                 timezone_name=cfg.summary.timezone,
                 knowledge_paths=cfg.resolve_knowledge_paths(),
+                single_day_as_daily=single_day_as_daily,
             )
             result = service.run(
                 ManualSummaryRequest(
@@ -684,7 +686,8 @@ def create_app(
     feature_service = add_feature_routes(app, archive=archive, cookie=cookie, require_login=require_login)
     add_summary_reading_routes(app, archive=archive, config=config, require_login=require_login)
     add_message_routes(app, archive=archive, config=config, require_login=require_login)
-    add_summary_generation_routes(app, archive=archive, config=config, require_login=require_login)
+    add_summary_generation_routes(app, archive=archive, config=config, require_login=require_login,
+                                  run_summary=_run_manual_summary_task, operations=operations)
     add_history_inspection_routes(app, archive=archive, config=config,
                                   operations=operations, require_login=require_login)
     add_report_revision_routes(app, archive=archive, config=config,
@@ -1612,6 +1615,7 @@ def create_app(
         page: int = Query(1, ge=1),
         page_size: int = Query(20, ge=1, le=100),
         group_id: int | None = None,
+        group_ids: list[int] | None = Query(None),
         kind: Literal["all", "daily", "range"] = "all",
         date_from: date | None = None,
         date_to: date | None = None,
@@ -1636,9 +1640,13 @@ def create_app(
         if kind != "all":
             clauses.append("report_kind=?")
             params.append(kind)
-        if group_id is not None:
-            clauses.append("group_id=?")
-            params.append(group_id)
+        try:
+            selection=selected_report_groups(group_id,group_ids)
+        except ValueError as exc:
+            raise HTTPException(422,detail=str(exc)) from exc
+        if selection:
+            clauses.append('group_id IN ('+','.join('?' for _ in selection)+')')
+            params.extend(selection)
         if date_from is not None:
             clauses.append("window_end_date>=?")
             params.append(date_from.isoformat())

@@ -1420,7 +1420,7 @@ def test_manual_range_summary_creates_listed_report(web_client, monkeypatch):
         f"/api/reports/range/{range_report['report_id']}"
     )
     assert detail.status_code == 200
-    assert "测试群范围摘要" in detail.json()["markdown"]
+    assert "测试群摘要" in detail.json()["markdown"]
     assert detail.json()["group_name"] == "测试群"
     assert "effective_template" not in detail.json()
 
@@ -1810,7 +1810,8 @@ def test_reports_page_contains_manual_range_summary_drawer(web_client):
 
     assert reports.status_code == 200
     assert "摘要报告" in reports.text
-    assert "生成今日日报" in reports.text
+    assert 'id="range-open-btn"' in reports.text and 'id="report-run-btn"' not in reports.text
+    assert 'id="range-time-mode"' in reports.text
     assert 'id="range-summary-panel"' in reports.text
     assert 'id="range-summary-backdrop"' in reports.text
     assert 'id="range-group-search"' in reports.text

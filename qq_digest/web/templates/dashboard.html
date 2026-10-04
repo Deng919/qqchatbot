@@ -2,7 +2,7 @@
 {% block title %}运行记录 - 群聊简报{% endblock %}
 {% block page_title %}运行记录{% endblock %}
 {% block page_description %}查看消息更新、摘要任务与归档统计；有失败时从这里继续处理。{% endblock %}
-{% block actions %}<button class="btn btn-primary" id="run-daily-btn" onclick="runDaily()">立即生成摘要</button>{% endblock %}
+{% block actions %}<a class="btn btn-primary" href="/reports?generate=1">生成摘要</a>{% endblock %}
 {% block content %}
 <section class="metrics" aria-label="归档统计">
   <a class="metric metric-link" href="/groups" aria-label="查看已启用群组"><div class="stat" id="stat-groups">--</div><div class="stat-label">已启用群组 <span aria-hidden="true">↗</span></div></a>
@@ -18,10 +18,10 @@
   <a href="/reports"><span><strong>阅读摘要</strong><small>直接阅读各群要点，或按群查看完整摘要</small></span><span aria-hidden="true">↗</span></a>
 {% if features.get('review',true) %}  <a href="/candidates"><span><strong>处理审核</strong><small>整理待确认的重点信息</small></span><span aria-hidden="true">↗</span></a>{% endif %}
 </nav>
-<section class="health-strip" aria-live="polite"><span class="health-dot" id="health-dot"></span><strong id="health-service">服务状态读取中</strong><span id="health-sync">最近同步：读取中</span><span id="health-daily">日报：读取中</span><span id="health-job">最近任务：读取中</span><span id="health-send">发送失败：读取中</span></section>
+<section class="health-strip" aria-live="polite"><span class="health-dot" id="health-dot"></span><strong id="health-service">服务状态读取中</strong><span id="health-sync">最近同步：读取中</span><span id="health-daily">每日摘要：读取中</span><span id="health-job">最近任务：读取中</span><span id="health-send">发送失败：读取中</span></section>
 
-<section id="daily-coverage" class="daily-coverage" aria-label="日报覆盖范围" aria-live="polite">
-  <div class="daily-coverage-heading"><strong id="daily-coverage-title">日报覆盖范围读取中</strong><a href="/reports">查看报告 ↗</a></div>
+<section id="daily-coverage" class="daily-coverage" aria-label="每日摘要覆盖范围" aria-live="polite">
+  <div class="daily-coverage-heading"><strong id="daily-coverage-title">每日摘要覆盖范围读取中</strong><a href="/reports">查看报告 ↗</a></div>
   <p id="daily-coverage-counts"></p><ul id="daily-coverage-notes"></ul><p id="daily-coverage-scope" class="header-meta"></p>
 </section>
 <div class="dashboard-grid">
@@ -94,7 +94,7 @@
       document.getElementById('health-dot').className = 'health-dot ' + (warning ? 'is-warning' : 'is-healthy');
       document.getElementById('health-service').textContent = warning ? '服务运行中 · 有待处理异常' : '服务运行正常';
       document.getElementById('health-sync').textContent = '最近同步：' + (data.last_sync_at ? data.last_sync_at.slice(0, 19).replace('T', ' ') : '尚未同步');
-      document.getElementById('health-daily').textContent = '日报：' + (data.latest_daily_date || '尚未执行') + (data.latest_daily_status ? ' · ' + (statusLabels[data.latest_daily_status] || data.latest_daily_status) : '');
+      document.getElementById('health-daily').textContent = '每日摘要：' + (data.latest_daily_date || '尚未执行') + (data.latest_daily_status ? ' · ' + (statusLabels[data.latest_daily_status] || data.latest_daily_status) : '');
       document.getElementById('health-job').textContent = '最近任务：' + (statusLabels[data.latest_job_status] || '尚未执行');
       document.getElementById('health-send').textContent = '发送失败：' + formatNumber(data.failed_notifications);
       renderDailyCoverage(data.daily_coverage);
@@ -103,7 +103,7 @@
   function renderDailyCoverage(data) {
     data = data || {};
     document.getElementById('daily-coverage').dataset.status = data.status || 'unknown';
-    document.getElementById('daily-coverage-title').textContent = (data.report_date || '尚未执行日报') + ' · ' + (data.label || '范围无法确认');
+    document.getElementById('daily-coverage-title').textContent = (data.report_date || '尚未自动生成摘要') + ' · ' + (data.label || '范围无法确认');
     document.getElementById('daily-coverage-counts').textContent = data.participating_groups
       ? '参与 ' + data.participating_groups + ' 个群 · 可读取报告 ' + data.report_groups + ' 个群 · 失败 ' + data.failed_groups + ' 个群 · 无消息跳过 ' + data.no_message_groups + ' 个群' : '尚无可确认的逐群覆盖结果';
     var list = document.getElementById('daily-coverage-notes'); list.textContent = '';
@@ -147,10 +147,7 @@
   function loadScheduler() {
     api('GET', '/api/scheduler').then(function(data) {
       var node = document.getElementById('scheduler-info');
-      var button = document.getElementById('run-daily-btn');
-      button.disabled = data.running;
-      button.textContent = data.running ? '摘要生成中...' : '立即生成摘要';
-      if (!data.enabled) node.textContent = '自动日报已关闭 · 可手动生成';
+      if (!data.enabled) node.textContent = '每天自动生成摘要已关闭 · 可手动生成';
       else if (data.running) node.textContent = '正在运行';
       else if (data.last_result && data.last_result.status === 'partial_success') node.textContent = '上次部分完成 · 将自动重试';
       else if (data.last_result && !data.last_result.success) node.textContent = '上次执行失败 · 将尝试自动补跑';
@@ -163,23 +160,6 @@
       else if (data.collection.last_run_at) collectionNode.textContent = data.collection.last_run_at + ' · 每 ' + data.collection.interval_minutes + ' 分钟';
       else collectionNode.textContent = '每 ' + data.collection.interval_minutes + ' 分钟';
     }).catch(function(error) { document.getElementById('scheduler-info').textContent = '状态读取失败'; });
-  }
-  function runDaily() {
-    var button = document.getElementById('run-daily-btn');
-    button.disabled = true;
-    button.textContent = '摘要生成中...';
-    toast('正在刷新消息并生成摘要', '');
-    api('POST', '/api/run-daily').then(function(data) {
-      toast(
-        dailyResultMessage(data),
-        data.status === 'partial_success' ? 'error' : 'success'
-      );
-      loadStats(); loadJobs(); loadGroupStats(); loadScheduler(); loadHealth();
-    }).catch(function(error) {
-      toast('摘要任务失败：' + error.message, 'error');
-      button.disabled = false; button.textContent = '立即生成摘要';
-      loadHealth(); loadJobs();
-    });
   }
   loadStats(); loadJobs(); loadGroupStats(); loadScheduler(); loadHealth();
   setInterval(function() { loadStats(); loadJobs(); loadGroupStats(); loadScheduler(); loadHealth(); }, 30000);

@@ -4,12 +4,13 @@
   var summaryGenerationBusy=false,summaryGenerationTimer=null,summaryGenerationStarted=0;
   function rangePayload(){return {group_ids:selectedRangeGroupIds(),start_date:document.getElementById('range-start-date').value,end_date:document.getElementById('range-end-date').value};}
   function rangeScopeKey(){return JSON.stringify(rangePayload());}
-  function updateGenerationControls(){document.getElementById('report-run-btn').disabled=summaryGenerationBusy;document.getElementById('range-open-btn').disabled=summaryGenerationBusy;document.getElementById('range-submit-btn').disabled=summaryGenerationBusy||!rangePreviewData||rangePreviewData.total_messages===0||rangePreviewKey!==rangeScopeKey();}
+  function updateGenerationControls(){document.getElementById('range-open-btn').disabled=summaryGenerationBusy;document.getElementById('range-submit-btn').disabled=summaryGenerationBusy||!rangePreviewData||rangePreviewData.total_messages===0||rangePreviewKey!==rangeScopeKey();}
   function generationLink(host,text,url){var link=document.createElement('a');link.className='btn btn-sm';link.textContent=text;link.href=url;host.appendChild(link);}
   function generationNextSteps(groups){var host=document.getElementById('summary-run-actions');generationLink(host,'查看运行记录','/overview');generationLink(host,'检查 AI 连接','/settings?section=ai');generationLink(host,'更新消息',groups&&groups.length===1?'/collect?'+new URLSearchParams({group_id:groups[0],start:document.getElementById('range-start-date').value,end:document.getElementById('range-end-date').value}):'/groups');}
   function beginSummaryGeneration(message){if(summaryGenerationBusy)return false;summaryGenerationBusy=true;summaryGenerationStarted=Date.now();updateGenerationControls();summaryShowResult(message,'running');var progress=document.getElementById('summary-run-progress');progress.hidden=false;function tick(){progress.textContent='已等待 '+Math.floor((Date.now()-summaryGenerationStarted)/1000)+' 秒 · 可以收起面板阅读已有摘要。离开或刷新页面会失去本次结果反馈。';}tick();summaryGenerationTimer=setInterval(tick,1000);return true;}
   function endSummaryGeneration(){summaryGenerationBusy=false;clearInterval(summaryGenerationTimer);document.getElementById('summary-run-progress').hidden=true;updateGenerationControls();}
-  function setRangeDates(mode){var dates=recentWeekDates();document.getElementById('range-start-date').value=mode==='today'?dates.end:dates.start;document.getElementById('range-end-date').value=dates.end;refreshDateHints();updateRangeSelectionSummary();}
+  function setRangeDates(mode){var dates=recentWeekDates();document.getElementById('range-time-mode').value=mode;if(mode!=='custom'){document.getElementById('range-start-date').value=mode==='today'?dates.end:dates.start;document.getElementById('range-end-date').value=dates.end;}refreshDateHints();updateRangeSelectionSummary();}
+  function onRangeDateChange(){document.getElementById('range-time-mode').value='custom';updateRangeSelectionSummary();}
   function rangePreviewNextSteps(){var host=document.getElementById('range-preview-actions');host.textContent='';var payload=rangePayload();generationLink(host,'更新所选群消息',payload.group_ids.length===1?'/collect?'+new URLSearchParams({group_id:payload.group_ids[0],start:payload.start_date,end:payload.end_date}):'/groups');var retry=document.createElement('button');retry.className='btn btn-sm';retry.type='button';retry.textContent='重新检查数量';retry.onclick=refreshRangePreview;host.appendChild(retry);}
   function refreshRangePreview(){
     clearTimeout(rangePreviewTimer);var token=++rangePreviewToken,payload=rangePayload(),key=JSON.stringify(payload),days=rangeDayCount();rangePreviewData=null;rangePreviewKey='';updateGenerationControls();var status=document.getElementById('range-preview-status');document.getElementById('range-preview-groups').textContent='';document.getElementById('range-preview-actions').textContent='';
@@ -25,9 +26,10 @@
     return {start: localDateValue(start), end: localDateValue(today)};
   }
   function openRangeSummary() {
-    document.getElementById('summary-generate').open=false;
     rangeOpener = document.activeElement; var dates = recentWeekDates();
     if(!rangeInitialized){rangeInitialized=true;rangePreferredGroup=document.getElementById('report-group').value;document.getElementById('range-start-date').value=document.getElementById('report-from').value||dates.start;document.getElementById('range-end-date').value=document.getElementById('report-to').value||dates.end;}
+    var from=document.getElementById('range-start-date').value,to=document.getElementById('range-end-date').value;
+    document.getElementById('range-time-mode').value=from===dates.end&&to===dates.end?'today':from===dates.start&&to===dates.end?'week':'custom';
     refreshDateHints();
     document.getElementById('range-summary-panel').hidden = false; document.getElementById('range-summary-backdrop').hidden = false;
     if (!rangeGroupsLoaded&&!rangeGroups.length) loadRangeGroups(); updateRangeSelectionSummary(); document.getElementById('range-group-search').focus();
@@ -47,7 +49,7 @@
     rangeGroups.forEach(function(group) {
       var label = document.createElement('label'); label.className = 'range-group-option'; label.dataset.search = (group.name + ' ' + group.group_id).toLowerCase();
       var checkbox = document.createElement('input'); checkbox.type = 'checkbox'; checkbox.className = 'range-group-checkbox'; checkbox.value = String(group.group_id); checkbox.addEventListener('change', updateRangeSelectionSummary);
-      checkbox.checked=String(group.group_id)===rangePreferredGroup;checkbox.setAttribute('aria-label',group.name+'（'+group.group_id+'）');
+      checkbox.checked=rangePreferredGroup.split(',').includes(String(group.group_id));checkbox.setAttribute('aria-label',group.name+'（'+group.group_id+'）');
       var name = document.createElement('span'); name.className = 'range-group-name'; name.textContent = group.name;
       var id = document.createElement('span'); id.className = 'range-group-id'; id.textContent = String(group.group_id);
       label.appendChild(checkbox); label.appendChild(name); label.appendChild(id); list.appendChild(label);
@@ -78,23 +80,15 @@
     if (!start || !end || days < 1) { toast('开始日期不得晚于结束日期', 'error'); return; }
     if (days > 7) { toast('单次最多选择 7 个自然日', 'error'); return; }
     if(!rangePreviewData||!rangePreviewData.total_messages||rangePreviewKey!==rangeScopeKey()){document.getElementById('range-preview-status').textContent='请先确认所选范围有本地消息，再开始生成。';return;}
-    if(!beginSummaryGeneration('正在生成 '+groupIds.length+' 个群的范围摘要：'+start+' 至 '+end+'。'))return;
+    if(!beginSummaryGeneration('正在生成 '+groupIds.length+' 个群的摘要：'+start+' 至 '+end+'。'))return;
     setRangeBusy(true); document.getElementById('range-result').hidden = true;
-    api('POST', '/api/reports/range', {group_ids: groupIds, start_date: start, end_date: end}).then(function(data) {
+    api('POST', '/api/summaries', {group_ids: groupIds, start_date: start, end_date: end}).then(function(data) {
       var message = rangeResultMessage(data), failures = data.failed_groups.map(function(item) { return item.group_name + '：' + item.error; }), result = document.getElementById('range-result');
       result.textContent = message + (failures.length ? '\n' + failures.join('\n') : ''); result.hidden = false;
       var readable=data.created_reports.length+data.reused_reports.length;
-      if(readable)result.appendChild(summaryButton('阅读本次范围摘要',function(){summaryReadRangeResults(start,end,groupIds);},'btn btn-sm'));
+      if(readable)result.appendChild(summaryButton('阅读本次摘要',function(){summaryReadRangeResults(start,end,groupIds);},'btn btn-sm'));
       summaryShowResult(message+(failures.length?'\n'+failures.join('\n'):'')+(!readable?'\n本次没有可阅读的摘要。':''),data.status==='partial_success'?'failed':'success',readable?function(){summaryReadRangeResults(start,end,groupIds);}:null);if(failures.length||!readable)generationNextSteps(groupIds);loadReports();
-    }).catch(function(e) { var result=document.getElementById('range-result');result.textContent='生成失败：'+e.message;result.hidden=false;summaryShowResult('范围摘要生成失败：'+e.message,'failed');generationNextSteps(groupIds); }).finally(function() { setRangeBusy(false);endSummaryGeneration(); });
-  }
-  function runDaily() {
-    if(summaryGenerationBusy)return;
-    document.getElementById('summary-generate').open=false;
-    var button = document.getElementById('report-run-btn'); button.disabled = true; button.textContent = '摘要生成中...';
-    beginSummaryGeneration('正在更新所有日报群的消息并生成今日日报，可以继续阅读已有摘要。');
-    api('POST', '/api/run-daily').then(function(d) { summaryShowResult((d.status==='partial_success'?dailyResultMessage(d):'本次生成 '+formatNumber(d.reports)+' 份日报 · '+dailyResultMessage(d))+(!d.reports?'\n本次没有可阅读的新日报，可能没有消息或群被跳过。':''),d.status==='partial_success'?'failed':'success',d.reports?function(){summaryReadDailyResults(d);}:null);if(d.status==='partial_success'||!d.reports)generationNextSteps();loadReports(); })
-      .catch(function(e) { summaryShowResult('今日日报生成失败：'+e.message,'failed');generationNextSteps(); }).finally(function() { button.textContent = '生成今日日报';endSummaryGeneration(); });
+    }).catch(function(e) { var result=document.getElementById('range-result');result.textContent='生成失败：'+e.message;result.hidden=false;summaryShowResult('摘要生成失败：'+e.message,'failed');generationNextSteps(groupIds); }).finally(function() { setRangeBusy(false);endSummaryGeneration(); });
   }
   window.addEventListener('beforeunload',function(event){if(summaryGenerationBusy){event.preventDefault();event.returnValue='';}});
 </script>

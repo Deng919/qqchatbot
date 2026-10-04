@@ -14,7 +14,7 @@ from .report_completeness import input_coverage
 
 
 # Bump when report rendering changes without a prompt/schema change.
-REPORT_FORMAT_VERSION = 7
+REPORT_FORMAT_VERSION = 8
 
 
 @dataclass(frozen=True)
@@ -97,8 +97,8 @@ class GroupSummaryBuilder:
             ],
             deterministic=summary.deterministic,
             quality_note=quality_note,
-            title_suffix="范围摘要" if report_kind == "range" else "日报",
-            date_label="日期范围" if report_kind == "range" else "日期",
+            title_suffix="摘要",
+            date_label="日期范围",
         )
         candidate_kwargs = (
             tuple(
