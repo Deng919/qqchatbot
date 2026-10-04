@@ -51,12 +51,14 @@ vm.runInThisContext(script.slice(script.indexOf('  function openReportQA()'),scr
   assert.equal(document.getElementById('report-qa-dialog').hidden,false);
   closeReportQA();featureFlags.report_qa=false;openReportQA();
   assert.equal(document.getElementById('report-qa-dialog').hidden,true);
-  const search=fs.readFileSync('qq_digest/web/templates/search.html','utf8');
-  vm.runInThisContext(search.slice(search.indexOf('  function renderSearchResult'),search.indexOf('  function loadSearch')));
+  vm.runInThisContext(fs.readFileSync('qq_digest/web/templates/find_helpers.html','utf8').replace(/<\/?script>/g,''));
+  const search=fs.readFileSync('qq_digest/web/templates/find_script.html','utf8');
+  global.findKindLabels={message:'聊天消息',report:'摘要',knowledge:'知识'};
+  vm.runInThisContext(search.slice(search.indexOf('function findHitMarkup'),search.indexOf('function loadSearch')));
   featureFlags.review=false;featureFlags.tasks=false;
-  let searchResult=renderSearchResult({kind:'knowledge',id:1,url:'/candidates?candidate_id=1',title:'资源',group_name:'test',date:'2026-10-02',snippet:'text'});
+  let searchResult=renderFindGroup({kind:'knowledge',items:[{kind:'knowledge',id:1,url:'/candidates?candidate_id=1',title:'资源',group_name:'test',date:'2026-10-02',snippet:'text'}]},'资源');
   assert.ok(!searchResult.includes('href="/candidates'),'review links must disappear when disabled');
-  searchResult=renderSearchResult({kind:'message',id:'m1',group_id:123,title:'消息',group_name:'test',date:'2026-10-02',snippet:'text'});
+  searchResult=renderFindGroup({kind:'message',items:[{kind:'message',id:'m1',group_id:123,title:'消息',group_name:'test',date:'2026-10-02',snippet:'text'}]},'消息');
   assert.ok(!searchResult.includes('加入待办'));
   console.log('Report body/version and historical QA races verified');
 })().catch(error=>{console.error(error);process.exitCode=1;});

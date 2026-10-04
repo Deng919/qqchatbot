@@ -1,0 +1,17 @@
+<script>
+function findHighlight(value,query){
+  var text=String(value==null?'':value),q=String(query||'');if(!q)return escapeHtml(text);
+  var pattern=q.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'),re=new RegExp(pattern,'gi'),parts=[],last=0,match;
+  while((match=re.exec(text))!==null){parts.push(escapeHtml(text.slice(last,match.index)),'<mark>',escapeHtml(match[0]),'</mark>');last=match.index+match[0].length;}
+  parts.push(escapeHtml(text.slice(last)));return parts.join('');
+}
+function findGroupHits(items){
+  var groups=[];items.forEach(function(item){var previous=groups[groups.length-1],first=previous&&previous.items[0],gap=first?Math.abs(Date.parse(first.timestamp)-Date.parse(item.timestamp)):NaN;
+    if(item.kind==='message'&&first&&first.kind==='message'&&item.group_id===first.group_id&&item.date===first.date&&Number.isFinite(gap)&&gap<=300000)previous.items.push(item);
+    else groups.push({kind:item.kind,items:[item]});
+  });return groups;
+}
+var findRecentKey='qq-digest-find-recent-v1';
+function findReadRecent(){try{var value=JSON.parse(localStorage.getItem(findRecentKey)||'[]');if(!Array.isArray(value))return [];return value.filter(function(q,index){return typeof q==='string'&&q.trim().length>=2&&q.length<=100&&value.indexOf(q)===index;}).slice(0,6);}catch(error){return [];}}
+function findSaveRecent(q){try{localStorage.setItem(findRecentKey,JSON.stringify([q].concat(findReadRecent().filter(function(item){return item!==q;})).slice(0,6)));}catch(error){}}
+</script>

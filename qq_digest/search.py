@@ -78,6 +78,7 @@ def search_archive(
                 "sort_at": row["timestamp"],
                 "title": f"{row['group_name']} · {row['sender_qq'] or '未知发送者'}",
                 "snippet": _snippet(row["text"], query), "text": row["text"],
+                "timestamp": row["timestamp"], "sender_qq": row["sender_qq"],
                 "url": "",
             })
 

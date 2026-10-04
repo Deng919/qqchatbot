@@ -16,7 +16,7 @@ def test_four_primary_entries_and_section_membership(web_client, path, active):
     response = client.get(path)
     assert response.status_code == 200
     nav = re.search(r'<nav[^>]+aria-label="主要导航"[^>]*>(.*?)</nav>', response.text, re.S).group(1)
-    assert re.findall(r'>(摘要|消息|群聊|设置)</a>',nav) == ['摘要','消息','群聊','设置']
+    assert re.findall(r'>(摘要|查找|群聊|设置)</a>',nav) == ['摘要','查找','群聊','设置']
     assert len(re.findall(r'<a\s',nav)) == 4
     assert re.search(r'id="nav-'+active+r'"[^>]*aria-current="page"', nav)
 
