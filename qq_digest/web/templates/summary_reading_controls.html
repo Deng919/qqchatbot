@@ -2,7 +2,8 @@
   <div class="summary-date-shortcuts" role="group" aria-label="日期快捷选择">
     <button class="btn btn-sm" type="button" data-summary-days="today" onclick="summarySetDates('today')">今天</button>
     <button class="btn btn-sm" type="button" data-summary-days="week" onclick="summarySetDates('week')">最近七天</button>
-    <button class="btn btn-sm" id="summary-all-dates" type="button" onclick="summaryAllDates()" hidden>全部历史</button>
+    <button class="btn btn-sm" id="summary-all-dates" type="button" onclick="summaryAllDates()">历史摘要</button>
+    <button class="btn btn-sm" id="summary-return-reading" type="button" onclick="summaryReturnToReading()" hidden>返回之前阅读</button>
     <span class="header-meta">或选择自定义日期</span>
   </div>
   <div class="filter-toolbar report-filters" aria-label="筛选摘要">
@@ -10,7 +11,7 @@
     <div class="field"><label for="report-from">开始日期</label><input class="input" id="report-from" type="date" onchange="filterReports()"></div>
     <div class="field"><label for="report-to">结束日期</label><input class="input" id="report-to" type="date" onchange="filterReports()"></div>
     <div class="field" id="summary-kind-field" hidden><label for="report-kind">摘要范围</label><select id="report-kind" onchange="filterReports()"><option value="all">全部摘要</option><option value="daily">单日摘要</option><option value="range">自选日期摘要（含旧报告）</option></select></div>
-    <button class="btn" type="button" onclick="clearReportFilters()">重置筛选</button>
+    <button class="btn" type="button" onclick="clearReportFilters()">清除筛选</button>
   </div>
   <div class="summary-view-bar">
     <div class="summary-view-tabs" role="group" aria-label="阅读方式">

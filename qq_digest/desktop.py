@@ -24,7 +24,7 @@ from .knowledge import KnowledgeWriter
 from .web.app import create_app
 
 
-DESKTOP_BACKEND_ID = "2026-10-05-progress"
+DESKTOP_BACKEND_ID = "2026-10-05-navigation"
 
 
 def resolve_config_path(install_dir: Path) -> Path:

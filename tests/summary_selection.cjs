@@ -2,7 +2,7 @@ const fs=require('fs'),vm=require('vm'),assert=require('node:assert/strict');
 const nodes=new Map();
 function node(id){if(!nodes.has(id))nodes.set(id,{value:'',options:[],appendChild(n){this.options.push(n);},hidden:false});return nodes.get(id);}
 global.document={getElementById:node,createElement:()=>({}),addEventListener(){}};
-global.window={addEventListener(){}};global.reportPage=1;
+global.window={addEventListener(){}};global.reportPage=1;global.destroyMessageContext=()=>{};
 const reading=fs.readFileSync('qq_digest/web/templates/summary_reading_script.html','utf8').replace(/<\/?script>/g,'').replace('  summaryInit();','');
 vm.runInThisContext(reading);
 global.summarySetView=(v)=>{global.summaryView=v;};global.closeReport=()=>{};global.refreshDateHints=()=>{};global.filterReports=()=>{};global.closeRangeSummary=()=>{};

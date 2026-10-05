@@ -2,34 +2,44 @@
   var summaryView='points', summaryPointPage=1, summaryPointToken=0, summarySince=null;
   var summaryExpanded={}, summaryBrowseScroll=0, summaryPendingScroll=null, summarySourceToken=0, summarySourceOpener=null;
   var summarySaved=null, summaryStorageKey='qq-digest-summary-reading-v1',summaryDetailActive=false,summaryReportOpener=null;
+  var summaryPreviousReading=null,summaryGeneratedReading=null,summaryNavigationToken=0,summarySinceRevision=0;
   function summaryNode(tag,cls,text) { var n=document.createElement(tag); if(cls)n.className=cls; if(text!==undefined)n.textContent=text; return n; }
   function summaryButton(text,action,cls) { var b=summaryNode('button',cls||'btn btn-sm',text); b.type='button'; b.onclick=action; return b; }
-  function summarySelectGroups(ids){var value=ids.join(','),select=document.getElementById('report-group');if(ids.length>1&&!Array.from(select.options).some(function(option){return option.value===value;})){var option=summaryNode('option','','已选 '+ids.length+' 个群');option.value=value;select.appendChild(option);}select.value=value;}
+  function summarySelectGroups(ids){var value=ids.join(','),select=document.getElementById('report-group');if(value&&!Array.from(select.options).some(function(option){return option.value===value;})){var option=summaryNode('option','',ids.length>1?'已选 '+ids.length+' 个群':'群 '+value);option.value=value;select.appendChild(option);}select.value=value;}
   function summaryGroupParams(params,value){if(!value)return;if(value.includes(','))value.split(',').forEach(function(id){params.append('group_ids',id);});else params.set('group_id',value);}
-  function summaryValues() { return {view:summaryView,group:document.getElementById('report-group').value,from:document.getElementById('report-from').value,to:document.getElementById('report-to').value,kind:document.getElementById('report-kind').value,read:document.getElementById('summary-read-filter').value,pointPage:summaryPointPage,reportPage:reportPage,since:summarySince,expanded:summaryExpanded,scroll:document.getElementById('report-detail').hidden?window.scrollY:summaryBrowseScroll}; }
+  function summaryValues() { return {view:summaryView,group:document.getElementById('report-group').value,from:document.getElementById('report-from').value,to:document.getElementById('report-to').value,kind:document.getElementById('report-kind').value,read:document.getElementById('summary-read-filter').value,pointPage:summaryPointPage,reportPage:reportPage,since:summarySince,expanded:summaryExpanded,scroll:summaryPendingScroll!==null?summaryPendingScroll:document.getElementById('report-detail').hidden?window.scrollY:summaryBrowseScroll}; }
   function summarySave() {
-    var state=summaryValues(); try { sessionStorage.setItem(summaryStorageKey,JSON.stringify(state)); } catch(e) {}
+    var state=summaryValues(); try { sessionStorage.setItem(summaryStorageKey,JSON.stringify(Object.assign({},state,{previousReading:summaryPreviousReading,generatedReading:summaryGeneratedReading}))); } catch(e) {}
     var url=new URL(location.href); [['view',state.view],['group_id',state.group],['date_from',state.from],['date_to',state.to],['report_kind',state.kind],['read',state.read]].forEach(function(pair){if(pair[1])url.searchParams.set(pair[0],pair[1]);else url.searchParams.delete(pair[0]);});
     history.replaceState(null,'',url.pathname+url.search);
   }
   function summaryApplyView() {
+    document.getElementById('summary-reading-controls').hidden=summaryDetailActive;
     ['points','groups'].forEach(function(view){var button=document.getElementById('summary-'+view+'-tab');button.classList.toggle('active',summaryView===view);button.setAttribute('aria-pressed',String(summaryView===view));});
     document.getElementById('summary-kind-field').hidden=summaryView==='points';
-    document.getElementById('summary-all-dates').hidden=summaryView==='points';
+    document.getElementById('summary-all-dates').hidden=false;
+    document.getElementById('summary-return-reading').hidden=!summaryPreviousReading;
     document.getElementById('summary-feed-tools').hidden=summaryView!=='points';
-    document.getElementById('summary-points').hidden=summaryView!=='points';
-    document.getElementById('summary-groups').hidden=summaryView!=='groups';
-    document.getElementById('summary-reading-section').hidden=summaryView==='manage';
-    document.getElementById('report-table-card').hidden=summaryView!=='manage';
+    document.getElementById('summary-points').hidden=summaryDetailActive||summaryView!=='points';
+    document.getElementById('summary-groups').hidden=summaryDetailActive||summaryView!=='groups';
+    document.getElementById('summary-reading-section').hidden=summaryDetailActive||summaryView==='manage';
+    document.getElementById('report-table-card').hidden=summaryDetailActive||summaryView!=='manage';
     document.getElementById('summary-more').open=false;
     var dates=recentWeekDates(),from=document.getElementById('report-from').value,to=document.getElementById('report-to').value;
     document.querySelectorAll('[data-summary-days]').forEach(function(b){var active=b.dataset.summaryDays==='today'?from===dates.end&&to===dates.end:from===dates.start&&to===dates.end;b.classList.toggle('active',active);b.setAttribute('aria-pressed',String(active));});
   }
-  function summarySetView(view) { if(!['points','groups','manage'].includes(view))return; if(view==='points'&&(!document.getElementById('report-from').value||!document.getElementById('report-to').value)){var dates=recentWeekDates();document.getElementById('report-from').value=dates.start;document.getElementById('report-to').value=dates.end;refreshDateHints();}summaryView=view; summaryPointToken++;reportLoadToken++;summaryPendingScroll=null;summaryApplyView();summarySave();loadReports(); }
+  function summaryCancelDetail(){summaryNavigationToken++;summaryPointToken++;reportLoadToken++;closeReport();if(!document.getElementById('summary-source-panel').hidden)summaryCloseSource();}
+  function summarySetView(view) { if(!['points','groups','manage'].includes(view))return; summaryCancelDetail();if(view==='points'&&(!document.getElementById('report-from').value||!document.getElementById('report-to').value)){var dates=recentWeekDates();document.getElementById('report-from').value=dates.start;document.getElementById('report-to').value=dates.end;refreshDateHints();}summaryView=view; summaryPointToken++;reportLoadToken++;summaryPendingScroll=null;summaryApplyView();summarySave();loadReports(); }
   function summarySetDates(mode) { var d=recentWeekDates();document.getElementById('report-from').value=mode==='today'?d.end:d.start;document.getElementById('report-to').value=d.end;refreshDateHints();filterReports(); }
-  function summaryAllDates() { document.getElementById('report-from').value='';document.getElementById('report-to').value='';refreshDateHints();filterReports(); }
-  function summaryFilterPoints() { summaryPointPage=1;summarySave();summaryLoadPoints(); }
-  function summaryChangePage(step) { if(summaryView==='points'){summaryPointPage+=step;summaryLoadPoints();}else{reportPage+=step;loadReports();}summarySave(); }
+  function summaryAllDates() { summaryCancelDetail();summaryView='groups';document.getElementById('report-group').value='';document.getElementById('report-kind').value='all';document.getElementById('summary-read-filter').value='all';document.getElementById('report-from').value='';document.getElementById('report-to').value='';refreshDateHints();filterReports(); }
+  function summaryReturnToReading(){
+    if(!summaryPreviousReading)return;var saved=summaryPreviousReading;summaryCancelDetail();summaryPreviousReading=null;summaryGeneratedReading=null;
+    summaryView=['points','groups','manage'].includes(saved.view)?saved.view:'points';summarySelectGroups(saved.group?saved.group.split(','):[]);
+    document.getElementById('report-from').value=saved.from;document.getElementById('report-to').value=saved.to;document.getElementById('report-kind').value=saved.kind;document.getElementById('summary-read-filter').value=saved.read;
+    summaryPointPage=saved.pointPage;reportPage=saved.reportPage;summarySinceRevision++;summarySince=saved.since;summaryExpanded=saved.expanded||{};summaryPendingScroll=saved.scroll;summaryPointToken++;reportLoadToken++;refreshDateHints();summaryApplyView();summarySave();loadReports();
+  }
+  function summaryFilterPoints() { summaryCancelDetail();summaryPointPage=1;summarySave();summaryLoadPoints(); }
+  function summaryChangePage(step) { summaryCancelDetail();if(summaryView==='points'){summaryPointPage+=step;summaryLoadPoints();}else{reportPage+=step;loadReports();}summarySave(); }
   function summaryPages(data) {
     var page=data.page,total=data.total,limit=data.page_size,max=Math.max(1,Math.ceil(total/limit));
     document.getElementById('summary-reading-pages').hidden=total<=limit;
@@ -86,7 +96,7 @@
     });summaryPages(data);summarySave();summaryRestoreScroll();
   }
   function summaryEnterDetail(data,kind,id) {
-    summaryDetailActive=true;summarySave();document.getElementById('summary-reading-controls').hidden=true;document.getElementById('summary-reading-section').hidden=true;document.getElementById('report-table-card').hidden=true;
+    summaryDetailActive=true;summarySave();summaryApplyView();
     document.getElementById('summary-report-title').textContent=data.group_name+' · '+data.window_start_date+(data.window_start_date===data.window_end_date?'':' 至 '+data.window_end_date);
     var url=new URL(location.href);url.searchParams.set('kind',kind);url.searchParams.set('id',id);history.replaceState(null,'',url.pathname+url.search);document.getElementById('report-detail').scrollIntoView({block:'start',behavior:'instant'});
   }
@@ -117,19 +127,20 @@
     });flush();
   }
   function summaryReadDailyResults(data) { closeReport();document.getElementById('summary-read-filter').value='all';document.getElementById('report-group').value='';var day=data.report_date;if(/^\d{4}-\d{2}-\d{2}$/.test(day||'')){document.getElementById('report-from').value=day;document.getElementById('report-to').value=day;refreshDateHints();}else{var dates=recentWeekDates();document.getElementById('report-from').value=dates.start;document.getElementById('report-to').value=dates.end;refreshDateHints();}summarySetView('points');filterReports();document.getElementById('summary-points').scrollIntoView({block:'start',behavior:'instant'}); }
-  function summaryReadRangeResults(start,end,groups) { closeReport();document.getElementById('report-kind').value='all';document.getElementById('summary-read-filter').value='all';document.getElementById('report-from').value=start;document.getElementById('report-to').value=end;summarySelectGroups(groups.map(String));refreshDateHints();summarySetView('points');filterReports();closeRangeSummary(); }
+  function summaryReadRangeResults(start,end,groups) { var before=summaryValues();if(!summaryPreviousReading||!summaryGeneratedReading||before.group!==summaryGeneratedReading.group||before.from!==summaryGeneratedReading.from||before.to!==summaryGeneratedReading.to){summaryPreviousReading=JSON.parse(JSON.stringify(before));}summaryGeneratedReading={group:groups.join(','),from:start,to:end};document.getElementById('report-kind').value='all';document.getElementById('summary-read-filter').value='all';document.getElementById('report-from').value=start;document.getElementById('report-to').value=end;summarySelectGroups(groups.map(String));summaryView='points';refreshDateHints();filterReports();closeRangeSummary(); }
   function summaryInit() {
     try{summarySaved=JSON.parse(sessionStorage.getItem(summaryStorageKey)||'null');}catch(e){}
-    var saved=summarySaved||{},url=new URLSearchParams(location.search),dates=recentWeekDates();
+    var saved=summarySaved||{},url=new URLSearchParams(location.search),dates=recentWeekDates(),navigationToken=summaryNavigationToken,sinceRevision=summarySinceRevision;
+    summaryPreviousReading=saved.previousReading||null;summaryGeneratedReading=saved.generatedReading||null;
     summaryView=url.get('view')||saved.view||'points';if(!['points','groups','manage'].includes(summaryView))summaryView='points';
     document.getElementById('report-from').value=url.has('date_from')?url.get('date_from'):(saved.from!==undefined?saved.from:dates.end);document.getElementById('report-to').value=url.has('date_to')?url.get('date_to'):(saved.to!==undefined?saved.to:dates.end);
     document.getElementById('report-kind').value=url.get('report_kind')||saved.kind||'all';document.getElementById('summary-read-filter').value=url.get('read')||saved.read||'all';if(!document.getElementById('summary-read-filter').value)document.getElementById('summary-read-filter').value='all';
     summaryPointPage=Number.isInteger(saved.pointPage)&&saved.pointPage>0?saved.pointPage:1;reportPage=Number.isInteger(saved.reportPage)&&saved.reportPage>0?saved.reportPage:1;summaryExpanded=saved.expanded&&typeof saved.expanded==='object'?saved.expanded:{};summaryPendingScroll=Number.isFinite(saved.scroll)?saved.scroll:null;summaryBrowseScroll=summaryPendingScroll||0;
-    var group=url.get('group_id')||saved.group||'';refreshDateHints();summaryApplyView();
-    var groups=api('GET','/api/groups').then(function(data){var select=document.getElementById('report-group');data.groups.forEach(function(g){var option=summaryNode('option','',g.name);option.value=g.group_id;select.appendChild(option);});summarySelectGroups(group?group.split(','):[]);}).catch(function(){summaryShowResult('群聊筛选加载失败，请刷新重试。','failed');});
+    var group=url.get('group_id')||saved.group||'';summarySelectGroups(group?group.split(','):[]);refreshDateHints();summaryApplyView();
+    var groups=api('GET','/api/groups').then(function(data){var select=document.getElementById('report-group');data.groups.forEach(function(g){var option=Array.from(select.options).find(function(option){return option.value===String(g.group_id);});if(option)option.textContent=g.name;else{option=summaryNode('option','',g.name);option.value=g.group_id;select.appendChild(option);}});}).catch(function(){summaryShowResult('群聊筛选加载失败，请刷新重试。','failed');});
     var navigation=performance.getEntriesByType('navigation')[0],restoreVisit=navigation&&navigation.type==='reload'&&Object.prototype.hasOwnProperty.call(saved,'since');
-    var visit=api('POST','/api/summary-reading/visit',{}).then(function(data){summarySince=restoreVisit?saved.since:data.previous_viewed_at;}).catch(function(){document.getElementById('summary-read-filter').querySelector('option[value="new"]').disabled=true;if(document.getElementById('summary-read-filter').value==='new')document.getElementById('summary-read-filter').value='all';summaryShowResult('上次打开时间读取失败，暂不能筛选新增要点；全部和未读仍可使用。','failed');});
-    Promise.all([groups,visit]).then(function(){loadReports();var kind=url.get('kind'),id=Number(url.get('id'));if(['daily','range'].includes(kind)&&Number.isInteger(id)&&id>0)viewReport(kind,id);else if(url.get('generate')==='1')openRangeSummary();});
+    var visit=api('POST','/api/summary-reading/visit',{}).then(function(data){if(sinceRevision!==summarySinceRevision)return;summarySince=restoreVisit?saved.since:data.previous_viewed_at;if(navigationToken!==summaryNavigationToken&&summaryView==='points'&&document.getElementById('summary-read-filter').value==='new')summaryLoadPoints();}).catch(function(){if(sinceRevision!==summarySinceRevision)return;document.getElementById('summary-read-filter').querySelector('option[value="new"]').disabled=true;if(document.getElementById('summary-read-filter').value==='new')document.getElementById('summary-read-filter').value='all';summaryShowResult('上次打开时间读取失败，暂不能筛选新增要点；全部和未读仍可使用。','failed');});
+    return Promise.all([groups,visit]).then(function(){if(navigationToken!==summaryNavigationToken)return;loadReports();var kind=url.get('kind'),id=Number(url.get('id'));if(['daily','range'].includes(kind)&&Number.isInteger(id)&&id>0)viewReport(kind,id);else if(url.get('generate')==='1')openRangeSummary();});
   }
   window.addEventListener('pagehide',summarySave);document.addEventListener('keydown',function(event){if(event.key==='Escape'&&!document.getElementById('summary-source-panel').hidden)summaryCloseSource();});
   summaryInit();

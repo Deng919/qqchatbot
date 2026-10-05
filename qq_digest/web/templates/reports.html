@@ -260,9 +260,9 @@
     }).catch(function(error){toast('重新生成失败：'+error.message,'error');}).finally(function(){revisionBusy=false;document.getElementById('report-regenerate').textContent='保留旧版并重新生成';revisionControls();});
   }
   function reportParams() { var p = new URLSearchParams(); p.set('page', reportPage); p.set('kind', document.getElementById('report-kind').value);summaryGroupParams(p,document.getElementById('report-group').value); [['date_from','report-from'],['date_to','report-to']].forEach(function(row) { var value = document.getElementById(row[1]).value; if (value) p.set(row[0], value); }); return p; }
-  function filterReports() { reportPage = 1; summaryPointPage=1; summaryPendingScroll=null;summaryApplyView();summarySave();loadReports(); }
-  function clearReportFilters() { document.getElementById('report-group').value='';document.getElementById('report-kind').value='all';document.getElementById('summary-read-filter').value='all';summarySetDates('today'); }
-  function changeReportPage(step) { reportPage += step; loadReports(); }
+  function filterReports() { summaryCancelDetail();reportPage = 1; summaryPointPage=1; summaryPendingScroll=null;summaryApplyView();summarySave();loadReports(); }
+  function clearReportFilters() { summaryAllDates(); }
+  function changeReportPage(step) { summaryCancelDetail();reportPage += step; loadReports(); }
   function loadReports() {
     if(summaryView==='points'){summaryLoadPoints();return;}
     var token = ++reportLoadToken;
@@ -290,6 +290,7 @@
   }
   function viewReport(kind, reportId) {
     if ((kind !== 'daily' && kind !== 'range') || !Number.isInteger(Number(reportId))) return;
+    summaryNavigationToken++;
     if(!summaryDetailActive){summaryBrowseScroll=summaryPendingScroll!==null?summaryPendingScroll:window.scrollY;summaryReportOpener=document.activeElement;}
     var selectionToken = ++reportSelectionToken;
     closeReportQA(); qaReport = null;
