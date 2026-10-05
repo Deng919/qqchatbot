@@ -24,7 +24,7 @@ from .knowledge import KnowledgeWriter
 from .web.app import create_app
 
 
-DESKTOP_BACKEND_ID = "2026-10-05-topics"
+DESKTOP_BACKEND_ID = "2026-10-05-reminders"
 
 
 def resolve_config_path(install_dir: Path) -> Path:
@@ -132,6 +132,7 @@ def make_server(config_path: Path, *, port: int | None = None,
     web_app.state.desktop_settings_api_version = 1
     web_app.state.desktop_backend_id = DESKTOP_BACKEND_ID
     web_app.state.desktop_bridge = bridge
+    web_app.state.reminder_sink = getattr(bridge, '_reminder_sink', None)
     if bridge is not None:
         bridge._operations = web_app.state.operations
     return uvicorn.Server(uvicorn.Config(
@@ -163,6 +164,9 @@ def show_window(runtime: DesktopService, *, gui, storage_path: Path,
         if backup_thread is not None:
             backup_thread.join(timeout=5)
         runtime.stop()
+        sink = getattr(bridge, '_reminder_sink', None)
+        if sink is not None:
+            sink.close()
 
 
 def main() -> int:
@@ -177,6 +181,8 @@ def main() -> int:
         config_path = resolve_config_path(install_dir)
         config = load_config(config_path)
         bridge = DesktopBridge(install_dir, config_path, Path(sys.executable), gui=webview)
+        from .windows_notifications import WindowsNotificationSink
+        bridge._reminder_sink = WindowsNotificationSink()
         preferred_url = f"http://127.0.0.1:{config.web.port}/"
         if matching_service(preferred_url, config_path):
             runtime = DesktopService(url=preferred_url)

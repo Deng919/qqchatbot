@@ -8,7 +8,8 @@ def test_switches_persist_and_do_not_delete_content(tmp_path):
     archive = Archive.open(path)
     service = FeatureService(archive)
     first = service.snapshot()
-    assert all(value for key, value in first['values'].items() if key != 'topics')
+    assert all(value for key, value in first['values'].items() if key not in {'topics', 'reminders'})
+    assert first['values']['reminders'] is False
     result = service.update({'tasks': False, 'auto_daily': False}, first['revision'])
     assert result['values']['tasks'] is False
     archive.close()

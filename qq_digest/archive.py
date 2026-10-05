@@ -97,6 +97,14 @@ class Archive:
                 );
                 CREATE INDEX IF NOT EXISTS idx_messages_group_time
                     ON messages(group_id, timestamp);
+                CREATE TABLE IF NOT EXISTS message_ingest_sequence (
+                    singleton INTEGER PRIMARY KEY CHECK(singleton=1),
+                    high_water INTEGER NOT NULL DEFAULT 0
+                );
+                INSERT OR IGNORE INTO message_ingest_sequence(singleton,high_water)
+                    SELECT 1,COALESCE(MAX(rowid),0) FROM messages;
+                UPDATE message_ingest_sequence SET high_water=MAX(high_water,
+                    (SELECT COALESCE(MAX(rowid),0) FROM messages)) WHERE singleton=1;
                 CREATE TABLE IF NOT EXISTS sync_state (
                     group_id INTEGER PRIMARY KEY,
                     last_timestamp TEXT,
@@ -310,6 +318,47 @@ class Archive:
                     decision TEXT NOT NULL CHECK(decision IN ('confirmed','ignored')),
                     task_id INTEGER REFERENCES tasks(task_id) ON DELETE CASCADE,
                     decided_at TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS reminder_rules (
+                    rule_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    revision INTEGER NOT NULL DEFAULT 1,
+                    deleted INTEGER NOT NULL DEFAULT 0,
+                    values_json TEXT NOT NULL,
+                    message_cursor INTEGER NOT NULL DEFAULT 0,
+                    candidate_cursor INTEGER NOT NULL DEFAULT 0,
+                    failure_baseline TEXT NOT NULL,
+                    failure_seen TEXT NOT NULL DEFAULT '[]'
+                );
+                CREATE TABLE IF NOT EXISTS reminder_events (
+                    event_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    rule_id INTEGER NOT NULL REFERENCES reminder_rules(rule_id),
+                    event_key TEXT NOT NULL,
+                    kind TEXT NOT NULL,
+                    rule_name TEXT NOT NULL,
+                    title TEXT NOT NULL,
+                    body TEXT NOT NULL,
+                    group_id INTEGER REFERENCES groups(group_id) ON DELETE CASCADE,
+                    group_name TEXT NOT NULL,
+                    source_url TEXT NOT NULL,
+                    source_ref TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    read INTEGER NOT NULL DEFAULT 0,
+                    in_app_status TEXT NOT NULL,
+                    windows_status TEXT NOT NULL,
+                    windows_attempts INTEGER NOT NULL DEFAULT 0,
+                    next_attempt_at TEXT,
+                    delivery_error TEXT NOT NULL DEFAULT '',
+                    UNIQUE(rule_id,event_key)
+                );
+                CREATE INDEX IF NOT EXISTS idx_reminder_events_visibility
+                    ON reminder_events(in_app_status,read,event_id DESC);
+                CREATE INDEX IF NOT EXISTS idx_reminder_events_windows
+                    ON reminder_events(windows_status,next_attempt_at,event_id);
+                CREATE TABLE IF NOT EXISTS reminder_resource_baselines (
+                    rule_id INTEGER NOT NULL REFERENCES reminder_rules(rule_id),
+                    group_id INTEGER NOT NULL REFERENCES groups(group_id) ON DELETE CASCADE,
+                    link TEXT NOT NULL,
+                    PRIMARY KEY(rule_id,group_id,link)
                 );
                 """
             )
@@ -600,15 +649,23 @@ class Archive:
         inserted = 0
         skipped = 0
         with self.transaction():
+            # Explicit monotonically increasing rowids survive deleting the newest
+            # messages, preserving consumers' durable scan cursors.
+            self.connection.execute("""UPDATE message_ingest_sequence SET high_water=MAX(high_water,
+                (SELECT COALESCE(MAX(rowid),0) FROM messages)) WHERE singleton=1""")
+            high_water = self.connection.execute(
+                "SELECT high_water FROM message_ingest_sequence WHERE singleton=1"
+            ).fetchone()[0]
             for message in rows:
                 cursor = self.connection.execute(
                     """
                     INSERT OR IGNORE INTO messages(
-                        msg_id, group_id, sender_qq, timestamp, message_type, text,
+                        rowid, msg_id, group_id, sender_qq, timestamp, message_type, text,
                         content_json, raw_digest, source_id, device_id, collected_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
+                        high_water + 1,
                         message.msg_id,
                         message.group_id,
                         message.sender_qq,
@@ -624,6 +681,11 @@ class Archive:
                 )
                 if cursor.rowcount:
                     inserted += 1
+                    high_water += 1
+                    self.connection.execute(
+                        "UPDATE message_ingest_sequence SET high_water=? WHERE singleton=1",
+                        (high_water,),
+                    )
                 else:
                     skipped += 1
         return IngestResult(inserted=inserted, skipped=skipped)
@@ -890,6 +952,25 @@ class Archive:
             return int(cursor.rowcount)
 
         with self.transaction():
+            deleted["reminder_events"] = int(self.connection.execute(
+                "DELETE FROM reminder_events WHERE group_id=?", (group_id,)
+            ).rowcount)
+            deleted["reminder_resource_baselines"] = int(self.connection.execute(
+                "DELETE FROM reminder_resource_baselines WHERE group_id=?", (group_id,)
+            ).rowcount)
+            # A last selected group disappearing must never broaden a rule to all groups.
+            for rule in self.connection.execute(
+                "SELECT rule_id,values_json FROM reminder_rules WHERE deleted=0"
+            ).fetchall():
+                values = json.loads(rule["values_json"])
+                if group_id in values.get("group_ids", []):
+                    values["group_ids"].remove(group_id)
+                    if not values["group_ids"]:
+                        values["enabled"] = False
+                    self.connection.execute(
+                        "UPDATE reminder_rules SET values_json=?,revision=revision+1 WHERE rule_id=?",
+                        (json.dumps(values, ensure_ascii=False), rule["rule_id"]),
+                    )
             deleted["send_log"] = delete_where_ids("send_log", "report_id", report_ids)
             deleted["knowledge_items"] = delete_where_ids(
                 "knowledge_items", "candidate_id", candidate_ids

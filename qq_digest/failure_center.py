@@ -14,21 +14,21 @@ class FailureCenterService:
         self.archive = archive
 
     @staticmethod
-    def _text(value: object, limit: int = 500) -> str:
+    def _text(value: object, limit: int | None = 500) -> str:
         return " ".join(str(value or "").split())[:limit]
 
     @staticmethod
-    def _group_failures(error: str) -> list[dict]:
+    def _group_failures(error: str, *, unbounded: bool = False) -> list[dict]:
         try:
             value = json.loads(error)
         except (TypeError, ValueError):
             return []
         if not isinstance(value, list):
             return []
-        return [item for item in value[:100] if isinstance(item, dict)]
+        return [item for item in (value if unbounded else value[:100]) if isinstance(item, dict)]
 
-    def _failure_details(self, job) -> list[dict]:
-        failures = self._group_failures(job["error"])
+    def _failure_details(self, job, *, unbounded: bool = False) -> list[dict]:
+        failures = self._group_failures(job["error"], unbounded=unbounded)
         if failures:
             return failures
         if job["job_type"] == "message_sync":
@@ -70,20 +70,27 @@ class FailureCenterService:
             ) for failure in failures
         )
 
-    def list_items(self) -> dict:
+    def list_items(self, *, unbounded: bool = False) -> dict:
+        """The UI stays bounded; durable consumers can inspect every source.
+
+        A source falling off a display page does not mean that it recovered.
+        Unbounded mode also preserves complete reasons for internal fingerprints.
+        Callers must not copy those reasons into user-facing reminder text.
+        """
         connection = self.archive.connection
+        limit = "" if unbounded else "LIMIT 100"
         groups = {
             row["group_id"]: row["name"]
             for row in connection.execute("SELECT group_id,name FROM groups")
         }
         jobs = connection.execute(
-            """SELECT * FROM jobs WHERE status IN ('failed','partial_success')
-               ORDER BY job_id DESC LIMIT 100"""
+            f"""SELECT * FROM jobs WHERE status IN ('failed','partial_success')
+               ORDER BY job_id DESC {limit}"""
         ).fetchall()
 
         items: list[dict] = []
         for job in jobs:
-            failures = self._failure_details(job)
+            failures = self._failure_details(job, unbounded=unbounded)
             retry = connection.execute(
                 """SELECT job_id,status FROM jobs WHERE retry_of_job_id=?
                    ORDER BY job_id DESC LIMIT 1""",
@@ -104,8 +111,8 @@ class FailureCenterService:
                     "group_id": group_id,
                     "group_name": group_name,
                     "target_date": job["target_date"] or "",
-                    "stage": self._text(failure.get("stage") or kind, 50),
-                    "error": self._text(failure.get("error") or job["error"]),
+                    "stage": self._text(failure.get("stage") or kind, None if unbounded else 50),
+                    "error": self._text(failure.get("error") or job["error"], None if unbounded else 500),
                     "at": job["finished_at"] or job["started_at"] or "",
                     "status": "recovered" if recovered else "active",
                     "action": "retry_job" if (
@@ -125,10 +132,10 @@ class FailureCenterService:
                 })
 
         sync_rows = connection.execute(
-            """SELECT s.group_id,s.status,s.error,s.updated_at,g.name
+            f"""SELECT s.group_id,s.status,s.error,s.updated_at,g.name
                FROM sync_state s LEFT JOIN groups g ON g.group_id=s.group_id
                WHERE s.error<>'' AND s.status NOT IN ('active','manual_repair_completed')
-               ORDER BY s.updated_at DESC LIMIT 100"""
+               ORDER BY s.updated_at DESC {limit}"""
         ).fetchall()
         today = date.today()
         for row in sync_rows:
@@ -138,7 +145,7 @@ class FailureCenterService:
                 "job_id": None, "group_id": group_id,
                 "group_name": row["name"] or str(group_id),
                 "target_date": "", "stage": "collection",
-                "error": self._text(row["error"]), "at": row["updated_at"],
+                "error": self._text(row["error"], None if unbounded else 500), "at": row["updated_at"],
                 "status": "active", "action": "collect",
                 "action_url": "/collect?" + urlencode({
                     "group_id": group_id,
@@ -155,14 +162,14 @@ class FailureCenterService:
             f"""SELECT {send_columns} FROM send_log
                 WHERE status='failed' OR
                       (status IN ('pending_send','sending') AND error<>'')
-                ORDER BY send_id DESC LIMIT 100"""
+                ORDER BY send_id DESC {limit}"""
         ).fetchall()
         recovered_sends = connection.execute(
             f"""SELECT {send_columns} FROM send_log
                 WHERE status='success' AND (retry_count>0 OR manual_retry_count>0)
-                ORDER BY send_id DESC LIMIT 100"""
+                ORDER BY send_id DESC {limit}"""
         ).fetchall()
-        sends = [*active_sends, *recovered_sends[:max(0, 100 - len(active_sends))]]
+        sends = [*active_sends, *(recovered_sends if unbounded else recovered_sends[:max(0, 100 - len(active_sends))])]
         for row in sends:
             try:
                 payload = json.loads(row["payload_json"] or "{}")
@@ -189,8 +196,8 @@ class FailureCenterService:
                 "send_id": row["send_id"], "job_id": None,
                 "group_id": None,
                 "group_name": self._text(payload.get("group_name") or "关联群未知", 100),
-                "target_date": self._text(payload.get("report_date"), 20),
-                "stage": "qq_bot", "error": self._text(row["error"]),
+                "target_date": self._text(payload.get("report_date"), None if unbounded else 20),
+                "stage": "qq_bot", "error": self._text(row["error"], None if unbounded else 500),
                 "at": row["updated_at"] or row["attempted_at"],
                 "status": status,
                 "action": "retry_notification" if status == "active" else "",
@@ -207,7 +214,7 @@ class FailureCenterService:
         items.sort(key=lambda item: item["at"], reverse=True)
         items.sort(key=lambda item: {"active": 0, "pending": 1, "recovered": 2}[item["status"]])
         return {
-            "items": items[:400],
+            "items": items if unbounded else items[:400],
             "counts": {
                 "active": sum(item["status"] == "active" for item in items),
                 "pending": sum(item["status"] == "pending" for item in items),

@@ -2,11 +2,13 @@
 from __future__ import annotations
 
 import re
+from contextlib import nullcontext
 from fastapi import Depends, HTTPException, Request
 from fastapi.responses import JSONResponse, RedirectResponse
 from pydantic import BaseModel, Field, StrictBool
 
 from ..features import FeatureConflict, FeatureService
+from ..operations import OperationBusy
 
 
 class FeatureUpdate(BaseModel):
@@ -17,6 +19,7 @@ class FeatureUpdate(BaseModel):
 
 def path_feature(path):
     for key, prefix in (('topics', 'topics'), ('topics', 'topic-discussions'),
+                        ('reminders', 'reminders'), ('reminders', 'reminder-rules'),
                         ('catchup', 'catchup'), ('tasks', 'tasks'), ('failures', 'failures'),
                         ('review', 'candidates'), ('history_inspection', 'history-inspection')):
         if any(path == root or path.startswith(root + '/') for root in ('/' + prefix, '/api/' + prefix)):
@@ -28,7 +31,7 @@ def path_feature(path):
     return None
 
 
-def add_feature_routes(app, *, archive, cookie, require_login):
+def add_feature_routes(app, *, archive, cookie, require_login, operations):
     service = FeatureService(archive)
     app.state.features = service
 
@@ -50,8 +53,11 @@ def add_feature_routes(app, *, archive, cookie, require_login):
     @app.put('/api/features', dependencies=[Depends(require_login)])
     async def update_features(payload: FeatureUpdate):
         try:
-            return service.update(payload.values, payload.expected_revision)
-        except FeatureConflict as exc:
+            reminder_change = ('reminders' in payload.values and
+                payload.values['reminders'] != service.enabled('reminders'))
+            with operations.claim('reminder_mutation') if reminder_change else nullcontext():
+                return service.update(payload.values, payload.expected_revision)
+        except (FeatureConflict, OperationBusy) as exc:
             raise HTTPException(409, str(exc)) from exc
         except ValueError as exc:
             raise HTTPException(422, str(exc)) from exc

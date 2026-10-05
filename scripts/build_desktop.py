@@ -26,6 +26,7 @@ TEMPLATES = (
     "message_context_script.html",
     "knowledge.html", "knowledge_script.html", "knowledge_save.html",
     "topics.html", "topics_script.html",
+    "reminders.html", "reminders_script.html",
 )
 
 

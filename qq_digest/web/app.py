@@ -49,6 +49,8 @@ from .message_routes import add_message_routes
 from .summary_generation_routes import add_summary_generation_routes
 from .knowledge_routes import add_knowledge_routes
 from .topic_routes import add_topic_routes
+from .reminder_routes import add_reminder_routes
+from ..reminder_scheduler import reminder_loop
 from ..report_selection import selected_report_groups
 
 templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"),
@@ -673,6 +675,11 @@ def create_app(
         )
         inspection_task = asyncio.create_task(history_inspection_loop(
             config, operations, enabled=lambda: feature_service.enabled('history_inspection')))
+        reminder_task = asyncio.create_task(reminder_loop(
+            archive.connection.execute('PRAGMA database_list').fetchone()['file'], operations,
+            enabled=lambda: feature_service.enabled('reminders'),
+            timezone_name=config.summary.timezone if config else 'Asia/Shanghai',
+            sink_getter=lambda: getattr(app.state, 'reminder_sink', None)))
 
         yield
 
@@ -687,6 +694,7 @@ def create_app(
                 scheduler_state["task"],
                 sync_scheduler_state["task"],
                 inspection_task,
+                reminder_task,
             )
             if task is not None
         ]
@@ -706,11 +714,13 @@ def create_app(
     app.state.config = config
     app.state.operations = operations
     app.state.desktop_bridge = None
-    feature_service = add_feature_routes(app, archive=archive, cookie=cookie, require_login=require_login)
+    feature_service = add_feature_routes(app, archive=archive, cookie=cookie, require_login=require_login, operations=operations)
     add_summary_reading_routes(app, archive=archive, config=config, require_login=require_login)
     add_message_routes(app, archive=archive, config=config, require_login=require_login)
     add_topic_routes(app, archive=archive, config=config, templates=templates,
                      require_login=require_login, operations=operations)
+    add_reminder_routes(app, archive=archive, config=config, templates=templates,
+                        require_login=require_login, operations=operations)
     knowledge_library = add_knowledge_routes(app, archive=archive, knowledge=knowledge,
         config=config, templates=templates, require_login=require_login, operations=operations)
     add_summary_generation_routes(app, archive=archive, config=config, require_login=require_login,

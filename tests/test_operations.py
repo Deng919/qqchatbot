@@ -45,6 +45,7 @@ def test_claim_releases_state_after_exception():
         "backup_running": False,
         "storage_mutation_running": False,
         "topic_mutation_running": False,
+        "reminder_mutation_running": False,
     }
 
 
