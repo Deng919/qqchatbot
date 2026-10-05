@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}查找 - QQ Digest{% endblock %}
 {% block page_title %}查找{% endblock %}
-{% block page_description %}找到说过的话、摘要里的结论，或保存过的知识。{% endblock %}
+{% block page_description %}{% endblock %}
 {% block content %}
 {% include "message_context_script.html" %}
 <div class="find-workspace">
@@ -21,9 +21,9 @@
       <div class="find-date-actions"><button class="btn btn-sm" type="button" onclick="setMessageDates('today')">今天</button><button class="btn btn-sm" type="button" onclick="setMessageDates('week')">最近七天</button><button class="btn btn-sm" type="button" onclick="setMessageDates('all')">不限日期</button><span>调整后点击“查找”生效</span></div>
     </details>
   </form>
-  <section id="find-home" class="find-home"><h2>从一个关键词开始</h2><p>查找原话、项目名称或讨论中的关键词。点击结果，可以查看前后消息。</p>
+  <section id="find-home" class="find-home"><h2>从一个关键词开始</h2>
     <div class="find-recent-heading"><h3>最近搜索</h3><button class="find-text-button" type="button" id="find-clear-recent" onclick="clearFindRecent()" hidden>清空</button></div>
-    <div id="find-recent" class="find-recent"></div><p class="find-local-note">最近搜索仅在本机保存关键词；不会自动读取聊天记录。</p>
+    <div id="find-recent" class="find-recent"></div><p class="find-local-note">搜索历史仅存本机。</p>
   </section>
   <section id="find-results-card" class="card find-results-card" hidden aria-busy="false"><div class="card-header"><span id="search-result-title">查找结果</span><span class="header-meta" id="search-count" role="status"></span></div>
     <p id="find-result-scope" class="find-result-scope"></p><div id="search-results"></div>
@@ -33,7 +33,7 @@
 <div id="find-context-overlay" class="find-context-overlay" hidden onclick="closeFindContext()"></div>
 <aside id="find-context" class="find-context" role="dialog" aria-modal="true" aria-labelledby="find-context-title" hidden>
   <header class="find-context-header"><div><h2 id="find-context-title">原消息与前后讨论</h2><p id="find-context-meta"></p></div><button class="btn btn-sm" id="find-context-close" type="button" onclick="closeFindContext()">关闭</button></header>
-  <p class="find-context-note">绿色背景为选中的原消息，可以继续查看更早或更晚的讨论。</p><div id="find-context-body" class="find-context-body"></div><div id="find-context-actions" class="find-context-actions"></div>
+  <div id="find-context-body" class="find-context-body"></div><div id="find-context-actions" class="find-context-actions"></div>
 </aside>
 {% include "find_style.html" %}
 {% include "find_helpers.html" %}

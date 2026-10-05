@@ -3,7 +3,7 @@
   <p id="group-detail-stats" class="header-meta"></p><div class="actions" id="group-detail-links"></div>
   <form id="group-detail-form" onsubmit="saveGroupDetail(event)">
     <label class="group-check"><input id="group-daily" type="checkbox"> 为这个群每天自动生成摘要</label>
-    <p class="header-meta">只对已关注的群生效，执行时间在设置 → 自动运行中查看。</p>
+    <p class="header-meta">仅关注的群参与自动运行。</p>
     <details class="group-advanced"><summary>高级设置</summary>
       <div class="group-detail-fields">
         <div class="field"><label for="group-category">群分类</label><select id="group-category"><option value="tech">技术</option><option value="resource">资源</option><option value="project">项目</option><option value="study">学习</option><option value="general">综合</option></select></div>
@@ -11,9 +11,9 @@
         <div class="field"><label for="group-window">首次导入天数</label><input class="input" id="group-window" type="number" min="1" max="365" required></div>
       </div>
       <label class="group-check" {% if not features.get('review',true) %}data-feature-off{% endif %}><input id="group-knowledge" type="checkbox"> 提取有用内容，交给知识整理确认</label>
-      <p class="header-meta">历史补采与巡检在“更新与高级维护”中。</p>
+
       <a id="group-repair" class="btn btn-sm" href="/collect">历史补采与缺口检查</a>
-      <div class="group-danger"><p>删除群聊会同时删除归档消息、摘要与知识候选，请先备份。</p><button class="btn btn-danger btn-sm" type="button" onclick="deleteGroup(selectedGroupId)">删除群聊及数据</button></div>
+      <div class="group-danger"><p>同时删除该群的归档消息、摘要和知识候选。请先备份。</p><button class="btn btn-danger btn-sm" type="button" onclick="deleteGroup(selectedGroupId)">删除群聊及数据</button></div>
     </details>
     <button class="btn btn-primary" id="group-detail-save" type="submit">保存群聊设置</button>
     <p id="group-detail-result" class="group-result" role="status" hidden></p>

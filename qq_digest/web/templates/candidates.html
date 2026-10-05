@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}候选审核 - QQ Digest{% endblock %}
 {% block page_title %}候选审核{% endblock %}
-{% block page_description %}筛选重点信息，查看原文后决定是否入库。{% endblock %}
+{% block page_description %}{% endblock %}
 {% block content %}
 <section>
   <div class="section-header">重点信息 <span class="header-meta" id="candidate-count">加载中...</span></div>
@@ -111,7 +111,7 @@
     api('PATCH', '/api/candidates/' + currentCandidate.candidate_id, payload).then(function() { toast('已保存修改', 'success'); viewCandidate(currentCandidate.candidate_id); loadCandidates(); }).catch(function(error) { toast('保存失败：' + error.message, 'error'); }).finally(function() { button.disabled = false; });
   }
   function undoCandidate() {
-    if (!currentCandidate || !confirm('撤销这条知识入库？对应的知识库条目将被移除，并回到待审核。')) return;
+    if (!currentCandidate || !confirm('撤销入库？知识条目会移除，候选回到待审核。')) return;
     var id = currentCandidate.candidate_id;
     api('POST', '/api/candidates/' + id + '/undo').then(function() { toast('已撤销入库，候选回到待审核', 'success'); document.getElementById('candidate-status').value = 'pending'; viewCandidate(id); loadCandidates(); }).catch(function(error) { toast('撤销失败：' + error.message, 'error'); });
   }

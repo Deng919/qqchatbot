@@ -1,14 +1,14 @@
 {% extends "base.html" %}
 {% block title %}更新消息与维护 - QQ Digest{% endblock %}
 {% block page_title %}更新消息与维护{% endblock %}
-{% block page_description %}将指定群和日期的消息保存到本机；历史补采和缺口检查也在这里。{% endblock %}
+{% block page_description %}{% endblock %}
 {% block content %}
-<details class="collection-maintenance" {% if not features.get('history_inspection',true) %}hidden{% endif %}><summary>高级维护：历史缺口巡检</summary>
+<details class="collection-maintenance" {% if not features.get('history_inspection',true) %}hidden{% endif %}><summary>历史缺口巡检</summary>
 <section class="card history-inspection" id="history-inspection" aria-label="多群历史缺口巡检" {% if not features.get('history_inspection',true) %}data-feature-off{% endif %}>
   <div class="card-header"><span>历史缺口巡检 <small class="header-meta">全部已启用群</small></span><button class="btn btn-sm" id="inspection-run" type="button" onclick="runHistoryInspection()">立即巡检</button></div>
   <div class="inspection-body">
     <p id="inspection-status" role="status">正在读取巡检记录...</p>
-    <p class="inspection-note">比对已解密源库和归档中的消息 ID，检查最近的完整自然日。结果是检查时的快照，补采后请重新巡检确认；源库本身未保留或无法读取的消息不能据此核实。</p>
+    <p class="inspection-note">补采后请重新检查。源库缺失或无法读取时，不能核实缺口。</p>
     <details><summary>巡检设置</summary>
       <form id="inspection-settings" class="inspection-settings" onsubmit="saveInspectionSettings(event)" oninput="inspectionSettingsDirty = true">
         <label class="inspection-check"><input type="checkbox" id="inspection-enabled"> 程序运行时自动巡检</label>
@@ -16,7 +16,7 @@
         <div class="field"><label for="inspection-interval">巡检间隔（小时）</label><input class="input" type="number" id="inspection-interval" min="1" max="168" value="24" required></div>
         <button class="btn" id="inspection-save" type="submit">保存设置</button>
       </form>
-      <p class="inspection-note">自动巡检读取当前源库，不会自动补采。需要更新源数据时，可先刷新数据库。</p>
+      <p class="inspection-note">巡检不自动补采。</p>
     </details>
     <label class="inspection-check"><input type="checkbox" id="inspection-refresh"> 本次巡检前刷新源库（较慢，需要 QQ 正在运行）</label>
   </div>
@@ -27,21 +27,21 @@
   <div class="inspection-pages" id="inspection-pages" hidden><button class="btn btn-sm" id="inspection-prev" onclick="changeInspectionPage(-1)">上一页</button><span id="inspection-page-label"></span><button class="btn btn-sm" id="inspection-next" onclick="changeInspectionPage(1)">下一页</button></div>
 </section>
 </details>
-<div class="status-line" id="repair-hint" hidden>已预填补采范围。点击“刷新并补采”会先读取 QQ 最新数据库，再补齐所选日期的消息。</div>
+<div class="status-line" id="repair-hint" hidden>补采范围已填好。</div>
 <section class="filter-toolbar collect-toolbar" id="manual-collect-controls" aria-label="采集条件">
   <div class="field group-field"><label for="collect-group">群聊</label><select id="collect-group" class="input"><option value="">选择群...</option></select></div>
   <div class="field"><label for="collect-start">开始日期</label><input type="date" id="collect-start" class="input"></div>
   <div class="field"><label for="collect-end">结束日期</label><input type="date" id="collect-end" class="input"></div>
   <button class="btn btn-primary toolbar-action" id="collect-action" onclick="collectMessages()">更新消息</button>
 </section>
-<details class="collection-maintenance"><summary>高级操作：检查缺口与刷新数据库</summary><div class="actions"><button class="btn" id="check-gaps" onclick="checkGaps()">检查缺口</button><button class="btn" id="btn-refresh" onclick="refreshDatabase()">刷新数据库</button></div></details>
-<p class="header-meta">更新会先读取本机 QQ 最新数据库，再保存所选日期的消息；需要 QQ 正在运行。不会自动生成摘要。</p>
+<details class="collection-maintenance"><summary>维护操作</summary><div class="actions"><button class="btn" id="check-gaps" onclick="checkGaps()">检查缺口</button><button class="btn" id="btn-refresh" onclick="refreshDatabase()">刷新数据库</button></div></details>
+<p class="header-meta">更新时需保持 QQ 运行。</p>
 <p class="group-result" id="collect-operation-result" role="status" hidden></p>
 <section class="card">
   <div class="card-header">更新结果 <span id="collect-count" class="header-meta"></span></div>
   <div class="status-line" id="collect-gap-summary" hidden></div>
   <div class="msg-list" id="collect-results">
-    <div class="empty" id="collect-empty">选择群和日期范围后点击更新消息</div>
+    <div class="empty" id="collect-empty">选择群聊和日期后更新</div>
   </div>
   <div id="collect-next" class="actions" hidden></div>
 </section>
@@ -78,7 +78,7 @@
       document.getElementById('inspection-status').textContent = data.running ? '正在巡检全部已启用群...' : !data.source_available
         ? '请先配置并启用 NTQQ 数据源，再进行巡检。' : last
         ? '最近执行：' + inspectionTime(last.finished_at || last.started_at) + ' · ' + (statuses[last.status] || last.status) + (last.error ? ' · ' + last.error : '')
-        : '尚未巡检。自动检查将在程序运行时执行，也可点击“立即巡检”。';
+        : '尚无巡检记录。';
       document.getElementById('inspection-run').disabled = inspectionBusy || data.running || !data.source_available;
       document.getElementById('inspection-run').textContent = inspectionBusy || data.running ? '巡检中...' : '立即巡检';
       document.getElementById('inspection-save').disabled = inspectionBusy || data.running;
@@ -93,7 +93,7 @@
       document.getElementById('inspection-prev').disabled = data.page <= 1;
       document.getElementById('inspection-next').disabled = data.page * data.page_size >= data.total;
       var host = document.getElementById('inspection-list');
-      if (!data.groups.length) { host.innerHTML = '<tr><td colspan="4" class="empty">没有已启用群，请先到群组页添加。</td></tr>'; return; }
+      if (!data.groups.length) { host.innerHTML = '<tr><td colspan="4" class="empty">暂无已启用群聊。</td></tr>'; return; }
       host.innerHTML = data.groups.map(function(group) {
         var color = group.status === 'failed' ? 'badge-red' : group.missing_count ? 'badge-orange' : group.status === 'unchecked' || !group.source_count ? 'badge-dim' : 'badge-green';
         var days = group.missing_days.map(function(day) {
@@ -129,9 +129,9 @@
     return api('GET', '/api/groups').then(function(d) {
       var sel = document.getElementById('collect-group');
       if (!d.groups.length) {
-        sel.innerHTML = '<option value="">暂无已配置群组，请先到「群组管理」添加</option>';
+        sel.innerHTML = '<option value="">暂无群聊</option>';
         sel.disabled = true;
-        document.getElementById('collect-empty').textContent = '请先到「群组管理」扫描并添加群组';
+        document.getElementById('collect-empty').textContent = '请先添加群聊';
         return;
       }
       sel.innerHTML = '<option value="">选择群...</option>';
@@ -207,7 +207,7 @@
         ? '发现未归档消息：' + days.map(function(item) { return item.date + '（' + formatNumber(item.count) + ' 条）'; }).join('、')
         : '所选日期的源库消息已在归档中，无需补采';
       document.getElementById('collect-count').textContent = '源库 ' + formatNumber(d.total) + ' 条 · 待补 ' + formatNumber(missing) + ' 条';
-      document.getElementById('collect-results').innerHTML = '<div class="empty">检查只读取消息，不修改归档。需要补齐时点击“刷新并补采”。</div>';
+      document.getElementById('collect-results').innerHTML = '<div class="empty">检查完成后可刷新并补采。</div>';
       if (missing) {
         params.set('repair', '1');
         document.getElementById('repair-hint').hidden = false;
@@ -221,7 +221,7 @@
     var btn = document.getElementById('btn-refresh');
     btn.disabled = true;
     btn.textContent = '刷新中...';
-    toast('正在刷新数据库（需扫描 QQ 进程内存，可能需要 1-3 分钟）', '');
+    toast('正在刷新数据库，可能需要 1–3 分钟。', '');
     api('POST', '/api/refresh', {}).then(function(d) {
       btn.disabled = false;
       btn.textContent = '刷新数据库';

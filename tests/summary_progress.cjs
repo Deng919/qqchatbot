@@ -21,7 +21,7 @@ const base={generation_id:'abc',scope:{group_ids:[11,22,33,44,55,66,77,88,99],st
   summaryPollProgress('abc');assert.equal(requests.length,count,'polls may not overlap');
   requests.at(-1).reject(new Error('offline'));await polling;
   assert.equal(summaryGenerationBusy,true,'connection loss must not claim generation failed');
-  assert.match(node('summary-progress-connection').textContent,/重新连接/);
+  assert.match(node('summary-progress-connection').textContent,/重连/);
   const recovering=summaryPollProgress('abc');
   const result={status:'partial_success',created_reports:[],reused_reports:[],skipped_groups:[],failed_groups:[{group_name:'群三',error:'失败'}]};
   requests.at(-1).resolve({generation:{...base,status:'partial_success',stage:'finished',completed:9,counts:{created:5,reused:2,skipped:1,failed:1},result}});await recovering;

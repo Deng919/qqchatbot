@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}摘要报告 - QQ Digest{% endblock %}
 {% block page_title %}阅读摘要{% endblock %}
-{% block page_description %}直接阅读各群要点，也可以按群查看完整摘要。{% endblock %}
+{% block page_description %}{% endblock %}
 {% block actions %}
   <button class="btn btn-primary" id="range-open-btn" type="button" onclick="openRangeSummary()">生成摘要</button>
 {% endblock %}
@@ -32,7 +32,7 @@
         <div class="revision-heading"><h3>版本与纠错</h3><label for="revision-select">查看版本</label><select class="input" id="revision-select" onchange="selectReportVersion()"></select></div>
         <p id="revision-notice" role="status"></p>
         <div class="revision-pages"><button class="btn btn-sm" id="revision-prev" onclick="changeRevisionPage(-1)">较新版本</button><span id="revision-page"></span><button class="btn btn-sm" id="revision-next" onclick="changeRevisionPage(1)">较旧版本</button></div>
-        <details><summary>添加纠错意见</summary><p class="header-meta">意见单独留存，不改 AI 正文，不会被后续生成覆盖。旧版意见需结合新报告重新核实。</p>
+        <details><summary>添加纠错意见</summary><p class="header-meta">意见单独保存，不修改正文。</p>
           <form onsubmit="saveReportCorrection(event)"><fieldset id="correction-fields">
             <div class="field"><label for="correction-category">问题类型</label><select class="input" id="correction-category"><option value="missing">遗漏</option><option value="error">错误</option><option value="noise">噪声</option></select></div>
             <div class="field"><label for="correction-excerpt">原报告段落（可选）</label><textarea class="input" id="correction-excerpt" rows="2" maxlength="4000"></textarea></div>
@@ -42,7 +42,7 @@
           </fieldset></form>
         </details>
         <div id="report-corrections"></div>
-        <details><summary>重新生成这份报告</summary><p class="header-meta">按原群和时间窗读取本地归档，使用当前 AI 设置。旧报告保留为历史版本，纠错意见仍需人工核实，不会自动作为 AI 事实。较早报告未记录精确时间窗时按原日期的完整自然日生成。</p>
+        <details><summary>重新生成这份报告</summary><p class="header-meta">按原范围重新生成，保留旧版。无精确时间记录的旧报告按原日期生成；纠错意见不参与生成。</p>
           <form onsubmit="regenerateSelectedReport(event)"><fieldset id="regeneration-fields"><div class="field"><label for="regeneration-reason">重新生成原因</label><textarea class="input" id="regeneration-reason" rows="2" maxlength="2000" required placeholder="例如：补采后重新核对摘要"></textarea></div><button class="btn" id="report-regenerate" type="submit">保留旧版并重新生成</button></fieldset></form>
         </details>
       </section>
@@ -56,7 +56,7 @@
 <div id="range-summary-backdrop" class="range-summary-backdrop" hidden onclick="closeRangeSummary()"></div>
 <aside id="range-summary-panel" class="range-summary-panel" hidden aria-labelledby="range-summary-title" aria-modal="true" role="dialog">
   <div class="range-panel-header">
-    <div><h2 id="range-summary-title">生成摘要</h2><p>选择群聊和时间，核对消息数量后生成。每天自动生成可在设置中开启。</p></div>
+    <div><h2 id="range-summary-title">生成摘要</h2></div>
     <button class="btn btn-sm" type="button" aria-label="关闭摘要生成面板" onclick="closeRangeSummary()">关闭</button>
   </div>
   <div id="range-generation-progress" class="generation-progress range-generation-progress" hidden>
@@ -76,7 +76,7 @@
         <div class="field"><label for="range-end-date">结束日期</label><input class="input" id="range-end-date" type="date" required onchange="onRangeDateChange()"></div>
       </div>
       <div id="range-selection-summary" class="range-selection-summary">已选择 0 个群，共 1 天</div>
-      <section class="range-input-preview" aria-label="本地消息预览"><p id="range-preview-status" role="status">选择群聊后查看消息数量。</p><div id="range-preview-groups"></div><p class="header-meta">使用本地归档，今天的内容会随已保存的消息更新。相同输入复用已有摘要；每次最多七天。可先更新消息，预处理与上下文限制可能减少实际纳入数量。</p><div id="range-preview-actions" class="actions"></div></section>
+      <section class="range-input-preview" aria-label="本地消息预览"><p id="range-preview-status" role="status">选择群聊后查看消息数量。</p><div id="range-preview-groups"></div><p class="header-meta">使用本地消息，最多 7 天。实际纳入数量见生成结果。</p><div id="range-preview-actions" class="actions"></div></section>
       <div id="range-result" class="range-result" hidden></div>
     </fieldset>
     <div class="range-panel-footer"><button class="btn" type="button" onclick="closeRangeSummary()">收起，继续阅读</button><button class="btn btn-primary" id="range-submit-btn" type="submit" disabled>开始生成</button></div>
@@ -86,7 +86,7 @@
 <div id="report-qa-backdrop" class="range-summary-backdrop" hidden onclick="closeReportQA()"></div>
 <aside id="report-qa-dialog" class="report-qa-dialog" hidden role="dialog" aria-modal="true" aria-labelledby="report-qa-title">
   <div class="range-panel-header"><div><h2 id="report-qa-title">询问这份报告</h2><p id="report-qa-scope"></p></div><button class="btn btn-sm" type="button" onclick="closeReportQA()" aria-label="关闭问答">关闭</button></div>
-  <p class="report-qa-privacy">为回答问题，会把本报告范围内选中的聊天片段发送到 DeepSeek。关闭后本次问答会清空，不保存对话。</p>
+  <p class="report-qa-privacy">相关聊天片段会发送到 DeepSeek；对话不保存。</p>
   <div id="report-qa-messages" class="report-qa-messages" aria-live="polite"></div>
   <div id="report-qa-sources" class="report-qa-sources"></div>
   <form id="report-qa-form" onsubmit="askReport(event)"><label for="report-qa-question">你的问题</label><textarea class="input" id="report-qa-question" maxlength="2000" rows="3" required placeholder="例如：这次 503 错误后来解决了吗？"></textarea><button class="btn btn-primary" id="report-qa-submit" type="submit">发送问题</button></form>
@@ -203,11 +203,11 @@
       document.getElementById('revision-prev').disabled = data.page<=1;
       document.getElementById('revision-next').disabled = data.page*data.page_size>=data.total;
       var currentRow = data.versions.find(function(row) { return row.version===data.current_version; });
-      if (revisionIsCurrent()) document.getElementById('revision-notice').textContent = data.current_version===0 ? '旧报告尚无历史记录。下一次生成前会保留当前可读取内容，更早历史无法恢复。' : '当前版本 v'+data.current_version+(currentRow ? ' · '+new Date(currentRow.created_at).toLocaleString('zh-CN')+' · '+currentRow.reason : '');
+      if (revisionIsCurrent()) document.getElementById('revision-notice').textContent = data.current_version===0 ? '旧报告无历史记录；重新生成前保留当前内容。' : '当前版本 v'+data.current_version+(currentRow ? ' · '+new Date(currentRow.created_at).toLocaleString('zh-CN')+' · '+currentRow.reason : '');
       var labels = {missing:'遗漏',error:'错误',noise:'噪声'};
       document.getElementById('report-corrections').innerHTML = notes.length ? notes.map(function(note) {
         return '<article class="correction-note"><strong>'+labels[note.category]+' · 基于 v'+note.version+' · '+(note.status==='resolved'?'已处理':'待核实')+'</strong>'
-          +(note.version!==data.current_version?'<p class="header-meta">基于旧版，请结合当前摘要重新核实。</p>':'')
+          +(note.version!==data.current_version?'<p class="header-meta">基于旧版，需重新核实。</p>':'')
           +(note.excerpt?'<p>原段落：'+escapeHtml(note.excerpt)+'</p>':'')+'<p>修正意见：'+escapeHtml(note.correction)+'</p><p>依据：'+escapeHtml(note.reason)+'</p>'
           +'<button class="btn btn-sm" type="button" onclick="setReportCorrectionStatus('+note.correction_id+',\''+(note.status==='resolved'?'open':'resolved')+'\')">'+(note.status==='resolved'?'重新打开':'标记已处理')+'</button></article>';
       }).join('') : '<p class="header-meta">尚无纠错意见</p>';
@@ -241,7 +241,7 @@
       excerpt:document.getElementById('correction-excerpt').value,correction:document.getElementById('correction-text').value,reason:document.getElementById('correction-reason').value}).then(function() {
       if(token!==reportSelectionToken)return;
       ['correction-excerpt','correction-text','correction-reason'].forEach(function(id){document.getElementById(id).value='';});
-      toast('纠错意见已保存，后续生成不会删除','success'); viewReport(report.kind,report.id);
+      toast('纠错意见已保存','success'); viewReport(report.kind,report.id);
     }).catch(function(error){toast('保存失败：'+error.message,'error');}).finally(function(){revisionBusy=false; revisionControls();});
   }
   function setReportCorrectionStatus(id,status) {
@@ -332,7 +332,7 @@
     var title = document.createElement('h3'); title.textContent = '逐条来源'; host.appendChild(title);
     var context = document.getElementById('report-source-context'); context.hidden = true; context.textContent = '';
     if (data.evidence_status !== 'available') {
-      var legacy = document.createElement('p'); legacy.className = 'report-evidence-note'; legacy.textContent = '这份旧报告生成时未记录逐条来源，不能据此核实具体结论。'; host.appendChild(legacy); return;
+      var legacy = document.createElement('p'); legacy.className = 'report-evidence-note'; legacy.textContent = '旧报告未记录逐条来源，结论无法核实。'; host.appendChild(legacy); return;
     }
     if (!(data.evidence_items || []).length) {
       var empty = document.createElement('p'); empty.className = 'report-evidence-note'; empty.textContent = '这份报告没有可溯源的重点条目。'; host.appendChild(empty); return;

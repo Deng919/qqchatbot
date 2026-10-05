@@ -17,7 +17,7 @@
 </section>
 <section id="reminders-rules" hidden>
   <div class="reminder-heading"><h2>我的规则</h2><button class="btn btn-primary" type="button" onclick="remindersEdit()">新建规则</button></div>
-  <p class="header-meta">关键词和资源从保存规则后开始提醒；到期待办检查当前未完成的项目。同一规则会持久去重，免打扰期间延后发布。</p>
+  <p class="header-meta">关键词、资源和故障只提醒新增内容；到期任务检查现有待办。</p>
   <div id="reminder-rules-list"></div>
 </section>
 <dialog id="reminder-dialog" class="reminder-dialog" aria-labelledby="reminder-edit-title">
@@ -29,7 +29,7 @@
     <div class="field"><label for="reminder-groups">群范围（不选表示全部群）</label><select id="reminder-groups" multiple size="4"></select></div>
     <fieldset><legend>提醒渠道</legend><label><input id="reminder-in-app" type="checkbox" checked> 程序内提醒</label> <label><input id="reminder-windows" type="checkbox" checked> Windows 通知</label></fieldset>
     <div class="grid grid-2"><div class="field"><label for="reminder-quiet-start">免打扰开始</label><input class="input" id="reminder-quiet-start" type="time" value="22:00" required></div><div class="field"><label for="reminder-quiet-end">免打扰结束</label><input class="input" id="reminder-quiet-end" type="time" value="08:00" required></div></div>
-    <p class="header-meta">按设置的时区计算，开始和结束相同表示全天可提醒。关闭程序后停止检查，下次启动继续；Windows 是否显示横幅由系统通知设置决定。</p>
+    <p class="header-meta">起止相同表示全天提醒。关闭程序后暂停；Windows 横幅取决于系统设置。</p>
     <label><input type="checkbox" id="reminder-enabled" checked> 启用规则</label>
     <p id="reminder-error" role="alert"></p>
     <div class="reminder-actions"><button class="btn" id="reminder-preview-button" type="button" onclick="remindersPreview()">预览匹配</button><button class="btn btn-primary" id="reminder-save" type="submit">保存规则</button></div>

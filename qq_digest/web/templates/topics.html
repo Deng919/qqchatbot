@@ -3,7 +3,7 @@
 {% block page_title %}话题跟踪{% endblock %}
 {% block actions %}<button class="btn btn-primary" id="topics-refresh" type="button" onclick="topicsRefresh()">更新话题</button>{% endblock %}
 {% block content %}
-<p class="header-meta">把同一话题的跨天、跨群讨论放在一起。相同具体标题自动关联，相似标题由你确认；不额外调用 AI。</p>
+
 <p id="topics-status" role="status" aria-live="polite"></p>
 <section id="topics-browse">
   <form class="filter-toolbar topics-filters" onsubmit="topicsFilter(event)">
@@ -14,7 +14,7 @@
     <div class="field"><label for="topics-filter-status">跟踪状态</label><select id="topics-filter-status"><option value="all">全部</option><option value="tracking">跟踪中</option><option value="archived">已归档</option></select></div>
     <button class="btn" type="submit">筛选</button>
   </form>
-  <p class="header-meta">群和日期用于查找相关话题；卡片与详情展示该话题的完整跟踪记录。</p>
+  <p class="header-meta">筛选用于查找话题；详情展示完整记录。</p>
   <p id="topics-count" class="header-meta" aria-live="polite"></p>
   <div id="topics-list" class="topics-list" aria-live="polite"></div>
   <div class="topics-pages" id="topics-pages" hidden><button class="btn btn-sm" id="topics-prev" onclick="topicsPage(-1)" type="button">上一页</button><span id="topics-page-label"></span><button class="btn btn-sm" id="topics-next" onclick="topicsPage(1)" type="button">下一页</button></div>
@@ -22,7 +22,7 @@
 <section id="topics-detail" hidden>
   <button class="btn btn-sm" onclick="topicsReturn()" type="button">← 返回话题列表</button>
   <div class="topics-heading"><div><h2 id="topics-title"></h2><p id="topics-meta" class="header-meta"></p></div><div class="topics-actions" id="topics-actions"></div></div>
-  <div class="grid grid-2 topics-latest"><article class="card"><h3>最新有来源的结论</h3><div id="topics-conclusions"></div></article><article class="card"><h3>最近记录的待解决问题</h3><p class="header-meta">保留讨论中的问题记录，不自动判断是否已解决。</p><div id="topics-questions"></div></article></div>
+  <div class="grid grid-2 topics-latest"><article class="card"><h3>最新结论</h3><div id="topics-conclusions"></div></article><article class="card"><h3>讨论中的问题</h3><div id="topics-questions"></div></article></div>
   <h3>讨论进展</h3><div id="topics-timeline"></div>
   <div class="topics-pages" id="topics-detail-pages" hidden><button class="btn btn-sm" id="topics-detail-prev" onclick="topicsDetailPage(-1)" type="button">更近讨论</button><span id="topics-detail-page-label"></span><button class="btn btn-sm" id="topics-detail-next" onclick="topicsDetailPage(1)" type="button">更早讨论</button></div>
 </section>

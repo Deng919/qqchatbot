@@ -1,11 +1,11 @@
 {% extends "base.html" %}
 {% block title %}知识库 - QQ Digest{% endblock %}
 {% block page_title %}知识库{% endblock %}
-{% block page_description %}保存值得反复参考的资源和经验，随时回查原消息。{% endblock %}
+{% block page_description %}{% endblock %}
 {% block content %}
 {% include "message_context_script.html" %}
-<p class="header-meta">这里展示已入库内容。AI 提取的候选需要确认；原消息中的“保存到知识库”会直接入库。</p>
-{% if features.get('review',true) %}<p><a class="btn btn-sm" href="/candidates">整理待确认内容</a></p>{% else %}<p class="header-meta">候选审核已关闭，已保存知识与手动保存仍可使用。<a href="/settings?section=features">开启候选整理</a></p>{% endif %}
+
+{% if features.get('review',true) %}<p><a class="btn btn-sm" href="/candidates">整理待确认内容</a></p>{% else %}<p class="header-meta"><a href="/settings?section=features">开启知识整理</a></p>{% endif %}
 <section id="knowledge-browse">
   <form class="knowledge-filters" onsubmit="knowledgeFilter(event)" aria-label="知识筛选">
     <div class="field"><label for="knowledge-q">关键词</label><input id="knowledge-q" class="input" type="search" maxlength="100" placeholder="标题、正文或说明"></div>

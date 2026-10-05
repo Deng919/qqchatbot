@@ -14,7 +14,7 @@ CONFLICTS = {kind: frozenset(OPERATION_KINDS) for kind in OPERATION_KINDS}
 class OperationBusy(RuntimeError):
     def __init__(self, requested: str, active: tuple[str, ...]):
         super().__init__(
-            f"操作 {requested} 与正在运行的 {', '.join(active)} 冲突"
+            "有任务正在运行，请稍后重试"
         )
         self.requested = requested
         self.active = active

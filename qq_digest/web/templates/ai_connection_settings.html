@@ -1,7 +1,7 @@
 
 <section class="card ai-settings-card" aria-labelledby="summary-provider-title">
   <div class="card-header" id="summary-provider-title">摘要引擎</div>
-  <p class="settings-note">按顺序调用；首选连接失败时自动尝试备用连接。</p>
+  <p class="settings-note">首选失败时使用备用连接。</p>
   <dl class="settings-meta">
     <div><dt>首选</dt><dd id="summary-primary">加载中...</dd></div>
     <div><dt>备用</dt><dd id="summary-fallback">加载中...</dd></div>
@@ -9,7 +9,7 @@
 </section>
 <section class="card ai-settings-card" aria-labelledby="deepseek-settings-title">
   <div class="card-header" id="deepseek-settings-title">DeepSeek API</div>
-  <p class="settings-note">API Key 只保存在本机文件中，页面不会显示已保存的密钥。摘要或报告问答调用 DeepSeek 时会使用它。</p>
+  <p class="settings-note">密钥保存在本机，不在页面显示。</p>
   <dl class="settings-meta">
     <div><dt>接口地址</dt><dd id="deepseek-base-url">加载中...</dd></div>
     <div><dt>模型</dt><dd id="deepseek-model">加载中...</dd></div>
@@ -22,7 +22,7 @@
       <button class="btn" id="deepseek-test-btn" type="button" onclick="testDeepSeekConnection()">测试连接</button>
     </div>
   </form>
-  <p class="settings-note">“测试连接”会向当前配置的 DeepSeek 接口发送一条不含群聊内容的短请求。</p>
+  <p class="settings-note">测试只发送示例请求，不含聊天内容。</p>
 </section>
 <style>
   .ai-settings-card { max-width: 680px; }

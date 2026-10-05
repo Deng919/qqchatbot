@@ -13,7 +13,7 @@
       document.getElementById(prefix+'-progress-count').textContent='已处理 '+data.completed+' / '+data.total+' 个群 · '+Math.floor(data.completed/Math.max(data.total,1)*100)+'%';
       document.getElementById(prefix+'-progress-stage').textContent=stage;
       document.getElementById(prefix+'-progress-counts').textContent='生成 '+counts.created+' · 复用 '+counts.reused+' · 跳过 '+counts.skipped+' · 失败 '+counts.failed;
-      document.getElementById(prefix+'-progress-time').textContent='已用时 '+data.elapsed_seconds+' 秒'+(data.status==='running'?' · 可收起面板，刷新后可重新查看进度':'');
+      document.getElementById(prefix+'-progress-time').textContent='已用时 '+data.elapsed_seconds+' 秒'+(data.status==='running'?' · 可收起面板':'');
     });
   }
   function beginSummaryGeneration(message,identifier,scope){
@@ -40,7 +40,7 @@
     }).catch(function(error){
       if(identifier!==summaryProgressId||summaryProgressFinished===identifier)return;
       if(error.status===404){summaryProgressConnection('本次进度已不存在，程序可能已重启。');summaryFinishProgress(identifier,null,summaryProgressScope,error.message);}
-      else summaryProgressConnection('暂时无法读取状态，正在重新连接；生成任务可能仍在运行。');
+      else summaryProgressConnection('连接中断，正在重连。任务可能仍在运行。');
     }).finally(function(){
       if(summaryProgressPolling===identifier)summaryProgressPolling=null;
       if(identifier===summaryProgressId&&summaryGenerationBusy){clearTimeout(summaryProgressTimer);summaryProgressTimer=setTimeout(function(){summaryPollProgress(identifier);},1000);}

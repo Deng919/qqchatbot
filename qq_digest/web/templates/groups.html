@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}群聊 - 群聊简报{% endblock %}
 {% block page_title %}群聊{% endblock %}
-{% block page_description %}关注需要阅读的群，查看消息更新状态和最近摘要。{% endblock %}
+{% block page_description %}{% endblock %}
 {% block actions %}
   <input id="group-search" class="input search" type="search" placeholder="搜索群名或群号" aria-label="搜索群组" oninput="renderConfiguredGroups()">
   <button class="btn btn-primary" onclick="openAddGroups()">添加群聊</button>
@@ -14,7 +14,7 @@
     <span>近 30 天活跃群聊</span>
     <button class="btn btn-sm" onclick="document.getElementById('discover-card').hidden=true">收起</button>
   </div>
-  <p class="header-meta">扫描本机近 30 天活跃的群，添加后可首次更新消息。</p>
+  <p class="header-meta">最近 30 天活跃的群</p>
   <button class="btn" id="discover-btn" onclick="discoverGroups()">扫描本地群聊</button>
   <p id="discover-status" role="status"></p>
   <div class="table-wrap">
@@ -100,7 +100,7 @@
     api('PATCH', '/api/groups/' + groupId, patch).then(function() {
       var group = configuredGroups.find(function(item) { return item.group_id === groupId; });
       if (group) Object.assign(group, patch);
-      groupResult('关注设置已保存；自动更新取决于设置中的自动运行开关。');
+      groupResult('关注设置已保存');
     }).catch(function(error) { groupResult('设置未保存：'+error.message,true); loadGroups(); });
   }
   function updateKeywords(groupId, value) {
@@ -150,7 +150,7 @@
     if (!button || button.disabled) return;
     button.disabled = true;
     api('POST', '/api/groups', {group_id: parseInt(button.dataset.gid, 10), name: button.dataset.name}).then(function() {
-      button.textContent='已添加';var link=document.createElement('a');link.className='btn btn-sm';link.href=updateUrl({group_id:Number(button.dataset.gid),collection_window_days:30,message_count:0});link.textContent='首次更新消息';button.after(link);groupResult('群聊已添加，可点击首次更新消息。');loadGroups();
+      button.textContent='已添加';var link=document.createElement('a');link.className='btn btn-sm';link.href=updateUrl({group_id:Number(button.dataset.gid),collection_window_days:30,message_count:0});link.textContent='首次更新消息';button.after(link);groupResult('群聊已添加');loadGroups();
     }).catch(function(error) { button.disabled = false; toast('添加失败：' + error.message, 'error'); });
   });
   function deleteGroup(groupId) {

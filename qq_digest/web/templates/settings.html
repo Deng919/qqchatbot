@@ -1,68 +1,68 @@
 {% extends "base.html" %}
 {% block title %}设置 - QQ Digest{% endblock %}
 {% block page_title %}设置{% endblock %}
-{% block page_description %}选择需要的功能，管理存储、备份与启动方式。{% endblock %}
+{% block page_description %}{% endblock %}
 {% block content %}
 <div class="desktop-settings">
   <div data-settings-panel="ai">{% include "ai_connection_settings.html" %}</div>
   <section class="card setting-card" data-settings-panel="automatic" aria-labelledby="automatic-title">
-    <div class="setting-heading"><div><h2 id="automatic-title">自动运行</h2><p>程序运行时执行，隐藏界面功能不会自动停止后台任务。</p></div></div>
+    <div class="setting-heading"><div><h2 id="automatic-title">自动运行</h2><p>程序运行时执行。</p></div></div>
     <form id="automatic-form"><fieldset id="automatic-options" disabled style="border:0;padding:0;margin:0"><div id="automatic-list">正在读取自动运行设置…</div></fieldset><p id="automatic-schedule" class="setting-help"></p><button class="btn btn-primary" id="automatic-save" disabled>保存自动运行设置</button><p id="automatic-result" class="setting-result" role="status" hidden></p></form>
   </section>
   <section class="card setting-card" data-settings-panel="features" aria-labelledby="features-title">
-    <div class="setting-heading"><div><h2 id="features-title">功能开关</h2><p>保留常用功能，其他功能按需开启。</p></div><span class="setting-index">功能</span></div>
-    <p class="setting-help">摘要的要点阅读、按群阅读和已读记录始终可用。消息、群聊、手动更新和设置也始终保留。关闭扩展功能不删除已有数据，重新开启即可继续使用。正在执行的任务会完成，后续自动任务按开关状态执行。</p>
-    <p id="feature-redirect" class="setting-result" hidden>刚才访问的功能已关闭，你可以在这里重新开启。</p>
+    <div class="setting-heading"><div><h2 id="features-title">功能开关</h2></div><span class="setting-index">功能</span></div>
+    <p class="setting-help">关闭功能不删除数据。自动任务在「自动运行」中设置。</p>
+    <p id="feature-redirect" class="setting-result" hidden>该功能已关闭。</p>
     <form id="features-form">
       <div class="actions"><button type="button" class="btn" id="features-simple" disabled>精简界面</button><button type="button" class="btn" id="features-all" disabled>全部扩展功能</button></div>
-      <p class="setting-muted">上方快捷选择只调整扩展功能，自动任务在“自动运行”分类中单独设置。</p>
+
       <fieldset id="feature-options" disabled style="border:0;padding:0;margin:0"><div id="features-list"><p>正在读取功能设置…</p></div></fieldset>
-      <p class="setting-help">关闭界面扩展不会停止自动任务。开机自启在“自动运行”，自动备份在“备份与恢复”分类。</p>
+
       <button type="submit" class="btn btn-primary" id="features-save" disabled>保存功能设置</button>
       <p id="features-result" class="setting-result" role="status" hidden></p>
     </form>
   </section>
-  <div id="desktop-required" class="card" hidden>这些设置需要在 QQ Digest 桌面程序中打开。</div>
+  <div id="desktop-required" class="card" hidden>这些设置需使用桌面版。</div>
 
   <section class="card setting-card" data-settings-panel="storage" aria-labelledby="storage-title">
-    <div class="setting-heading"><div><h2 id="storage-title">存储位置</h2><p>消息、摘要、知识库和工作文件保存在这里。</p></div><span class="setting-index">01</span></div>
+    <div class="setting-heading"><div><h2 id="storage-title">存储位置</h2></div><span class="setting-index">01</span></div>
     <div class="setting-current"><span>当前位置</span><strong id="current-storage">加载中…</strong></div>
     <button id="open-storage" class="btn btn-sm" type="button" disabled>打开当前位置</button>
     <label class="setting-label" for="next-storage">新位置</label>
     <div class="setting-row"><input id="next-storage" class="input setting-path" type="text" placeholder="选择文件夹，或输入完整路径" spellcheck="false"><button id="choose-storage" class="btn" type="button">选择文件夹</button></div>
-    <p class="setting-help">切换时会复制现有数据，并更新摘要与知识条目的文件路径。旧目录会保留；重启桌面程序后生效。</p>
+    <p class="setting-help">复制到新目录，保留原文件。重启后生效。</p>
     <button id="migrate-storage" class="btn btn-primary" type="button" disabled>复制并切换</button>
     <p id="migration-result" class="setting-result" role="status" hidden></p>
   </section>
 
   <section class="card setting-card" data-settings-panel="storage" aria-labelledby="export-title">
-    <div class="setting-heading"><div><h2 id="export-title">消息摘要导出</h2><p>将每日摘要和区间摘要导出到本机文件夹。</p></div><span class="setting-index">02</span></div>
+    <div class="setting-heading"><div><h2 id="export-title">消息摘要导出</h2></div><span class="setting-index">02</span></div>
     <label class="setting-label" for="export-folder">导出到</label>
     <div class="setting-row"><input id="export-folder" class="input setting-path" type="text" spellcheck="false"><button id="choose-export" class="btn" type="button">选择文件夹</button></div>
     <div class="setting-row export-options"><label for="export-format">文件格式</label><select id="export-format" class="input"><option value="both">Markdown 和 JSON</option><option value="markdown">仅 Markdown</option><option value="json">仅 JSON</option></select><button id="export-reports" class="btn btn-primary" type="button">导出摘要</button></div>
-    <p class="setting-help">每次导出都会建立一个带时间的子文件夹，原始摘要不会改动。</p>
+    <p class="setting-help">每次导出到独立文件夹。</p>
     <button id="open-export" class="btn btn-sm" type="button" disabled>打开导出目录</button>
     <p id="export-result" class="setting-result" role="status" hidden></p>
   </section>
 
   <section class="card setting-card" data-settings-panel="automatic" aria-labelledby="startup-title">
-    <div class="setting-heading"><div><h2 id="startup-title">开机自启</h2><p>登录 Windows 后自动打开 QQ Digest 桌面程序。</p></div><span class="setting-index">03</span></div>
+    <div class="setting-heading"><div><h2 id="startup-title">开机自启</h2></div><span class="setting-index">03</span></div>
     <label class="startup-option"><input id="auto-start" type="checkbox"><span>开机时启动</span></label>
-    <p class="setting-help">此开关只影响当前 Windows 用户。</p>
+    <p class="setting-help">仅当前 Windows 用户。</p>
   </section>
 
   <section class="card setting-card" data-settings-panel="backup" aria-labelledby="backup-title">
-    <div class="setting-heading"><div><h2 id="backup-title">数据备份</h2><p>将消息数据库、摘要、知识库和配置打包保存。</p></div><span class="setting-index">04</span></div>
+    <div class="setting-heading"><div><h2 id="backup-title">数据备份</h2></div><span class="setting-index">04</span></div>
     <div class="setting-current"><span>备份目录</span><strong id="backup-folder">加载中…</strong></div>
     <label class="setting-label" for="backup-schedule">自动备份频率</label>
-    <div class="setting-row"><select id="backup-schedule" class="input" disabled><option value="weekly">每周</option><option value="daily">每天</option><option value="off">关闭</option></select><span class="setting-muted">程序运行时检查；不会自动删除旧备份。</span></div>
+    <div class="setting-row"><select id="backup-schedule" class="input" disabled><option value="weekly">每周</option><option value="daily">每天</option><option value="off">关闭</option></select><span class="setting-muted">旧备份保留。</span></div>
     <div class="setting-row"><button id="backup-data" class="btn btn-primary" type="button" disabled>立即备份</button><button id="open-backup" class="btn" type="button" disabled>打开备份目录</button></div>
-    <p class="setting-help">备份包含群聊消息；数据目录内的会话密钥和 API 密钥也会一并保存，请妥善保管。</p>
+    <p class="setting-help">备份含聊天及目录内的密钥，请妥善保管。</p>
     <p id="backup-result" class="setting-result" role="status" hidden></p>
   </section>
 
   <section class="card setting-card" data-settings-panel="backup" aria-labelledby="restore-title">
-    <div class="setting-heading"><div><h2 id="restore-title">恢复数据</h2><p>先校验并预览备份，再恢复到一个空文件夹。</p></div><span class="setting-index">05</span></div>
+    <div class="setting-heading"><div><h2 id="restore-title">恢复数据</h2></div><span class="setting-index">05</span></div>
     <label class="setting-label" for="recent-backups">最近备份</label>
     <select id="recent-backups" class="input setting-select"><option value="">选择最近备份，或在下方输入完整路径</option></select>
     <label class="setting-label" for="restore-file">备份 ZIP 文件</label>
@@ -70,9 +70,9 @@
     <button id="preview-backup" class="btn" type="button" disabled>校验并预览</button>
     <div id="restore-preview" class="restore-preview" hidden role="status"></div>
     <div id="restore-steps" hidden>
-      <label class="setting-label" for="restore-destination">恢复到新位置</label>
+      <label class="setting-label" for="restore-destination">恢复到空目录</label>
       <div class="setting-row"><input id="restore-destination" class="input setting-path" type="text" placeholder="选择空文件夹，或输入新目录完整路径" spellcheck="false"><button id="choose-restore-folder" class="btn" type="button">选择文件夹</button></div>
-      <p class="setting-help">恢复前会自动备份当前位置。旧数据保留；重启桌面程序后切换到恢复的数据。</p>
+      <p class="setting-help">恢复前自动备份。原数据保留，重启后切换。</p>
       <label class="restore-confirm"><input id="confirm-restore" type="checkbox"><span>我已核对备份内容和新位置</span></label>
       <button id="restore-data" class="btn btn-primary" type="button" disabled>恢复并切换</button>
     </div>
@@ -144,15 +144,15 @@
   function saveFeatureCategory(event,automatic) {
     event.preventDefault();if(!savedFeatures)return;setFeatureFormBusy(true);var values={};
     savedFeatures.catalog.filter(function(item){return (item.group==='自动任务')===automatic;}).forEach(function(item){values[item.key]=document.getElementById('feature-'+item.key).checked;});
-    api('PUT','/api/features',{values:values,expected_revision:savedFeatures.revision}).then(function(data){savedFeatures=data;featureFlags=data.values;updateWorkspaceTools();if(automatic)refreshAutomaticSchedule();setResult(automatic?'automatic-result':'features-result',automatic?'自动运行设置已保存，立即生效。':'功能设置已保存，入口按新设置生效。');setFeatureFormBusy(false);history.replaceState(null,'','/settings?section='+(automatic?'automatic':'features'));})
+    api('PUT','/api/features',{values:values,expected_revision:savedFeatures.revision}).then(function(data){savedFeatures=data;featureFlags=data.values;updateWorkspaceTools();if(automatic)refreshAutomaticSchedule();setResult(automatic?'automatic-result':'features-result',automatic?'自动运行设置已保存':'功能设置已保存');setFeatureFormBusy(false);history.replaceState(null,'','/settings?section='+(automatic?'automatic':'features'));})
       .catch(function(error){setResult(automatic?'automatic-result':'features-result',error.message+'；你的选择尚未保存。');setFeatureFormBusy(false);});
   }
   document.getElementById('features-form').onsubmit=function(event){saveFeatureCategory(event,false);};
   document.getElementById('automatic-form').onsubmit=function(event){saveFeatureCategory(event,true);};
   var savedCategory=new URLSearchParams(location.search).get('saved');
-  if(savedCategory==='features')setResult('features-result','功能设置已保存，入口按新设置生效。');
-  if(savedCategory==='automatic')setResult('automatic-result','自动运行设置已保存，立即生效。');
-  function refreshAutomaticSchedule(){return api('GET','/api/scheduler').then(function(data){document.getElementById('automatic-schedule').textContent='每日摘要时间 '+data.schedule+'（'+data.timezone+'） · 消息更新间隔 '+data.collection.interval_minutes+' 分钟。'+(!data.collection.enabled?'当前消息自动更新未运行，需关注群聊、启用自动更新并配置 QQ 数据源。':'');}).catch(function(){document.getElementById('automatic-schedule').textContent='运行状态暂时无法读取，可到运行记录重试查看。';});}
+  if(savedCategory==='features')setResult('features-result','功能设置已保存');
+  if(savedCategory==='automatic')setResult('automatic-result','自动运行设置已保存');
+  function refreshAutomaticSchedule(){return api('GET','/api/scheduler').then(function(data){document.getElementById('automatic-schedule').textContent='每日摘要时间 '+data.schedule+'（'+data.timezone+'） · 消息更新间隔 '+data.collection.interval_minutes+' 分钟。'+(!data.collection.enabled?'自动更新未运行，请检查群聊和数据源设置。':'');}).catch(function(){document.getElementById('automatic-schedule').textContent='运行状态读取失败。';});}
   refreshAutomaticSchedule();
   var restorePreview = null;
   function settingsError(error) { toast(error && error.message ? error.message : String(error), 'error'); }
@@ -223,7 +223,7 @@
     var button = this, path = document.getElementById('next-storage').value;
     button.disabled = true;
     api('POST', '/api/desktop-settings/migrate', {destination: path}).then(function(data) {
-      setResult('migration-result', '复制完成：' + data.path + '。请关闭并重新打开桌面程序，之后会从新位置读取数据。旧目录已保留。');
+      setResult('migration-result', '已复制到 ' + data.path + '；原目录保留，重启后切换。');
       toast('数据已复制，重启后生效', 'success');
     }).catch(function(error) { settingsError(error); button.disabled = false; });
   });
@@ -311,7 +311,7 @@
     if (!restorePreview) return;
     var button = this; button.disabled = true;
     api('POST', '/api/desktop-settings/restore', {path: restorePreview.path, destination: document.getElementById('restore-destination').value.trim(), sha256: restorePreview.sha256}).then(function(data) {
-      setResult('restore-result', '已恢复到 ' + data.path + '；恢复前的当前数据已备份到 ' + data.safety_backup + '。请关闭并重新打开桌面程序。');
+      setResult('restore-result', '已恢复到 ' + data.path + '；原数据备份：' + data.safety_backup + '。重启后切换。');
       document.getElementById('restore-steps').hidden = true;
       toast('数据已恢复，重启后生效', 'success');
     }).catch(function(error) { settingsError(error); updateRestoreReady(); });

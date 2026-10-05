@@ -297,7 +297,7 @@ def test_failure_center_requires_login_and_shows_persisted_error(web_client):
     assert client.post(f"/api/failures/jobs/{job_id}/retry").status_code == 401
     assert client.post("/api/failures/notifications/1/retry").status_code == 401
     client.post("/login", data={"password": "password123"})
-    assert "失败处理中心" in client.get("/failures").text
+    assert "异常处理" in client.get("/failures").text
     item = client.get("/api/failures").json()["items"][0]
     assert item["job_id"] == job_id
     assert item["error"] == "AI 请求失败"
@@ -645,7 +645,7 @@ def test_report_qa_dialog_has_ephemeral_controls(web_client):
     assert 'role="dialog"' in page
     assert 'id="report-qa-question"' in page
     assert 'id="report-qa-sources"' in page
-    assert "选中的聊天片段发送到 DeepSeek" in page
+    assert "聊天片段会发送到 DeepSeek" in page
     assert "qaHistory = []" in page
 
 

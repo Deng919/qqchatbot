@@ -24,7 +24,7 @@ from .knowledge import KnowledgeWriter
 from .web.app import create_app
 
 
-DESKTOP_BACKEND_ID = "2026-10-05-reminders"
+DESKTOP_BACKEND_ID = "2026-10-06-clean-ui"
 
 
 def resolve_config_path(install_dir: Path) -> Path:
