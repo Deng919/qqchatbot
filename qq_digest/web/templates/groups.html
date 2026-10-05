@@ -53,9 +53,10 @@
   }
 
   function syncCell(group) {
-    var failed = group.sync_status !== 'active' && group.sync_status !== 'never_synced' && group.sync_status !== 'manual_repair_completed';
+    var failed = !['active','never_synced','manual_repair_completed','report_collection_completed'].includes(group.sync_status);
     var label = group.sync_status === 'manual_collect_failed' ? '补采失败'
       : failed ? '采集失败' : group.suspected_gap ? '可能漏采' : group.source_has_newer_messages ? '待同步'
+      : group.sync_status === 'report_collection_completed' ? '摘要范围已采集，待完整同步'
       : group.sync_status === 'manual_repair_completed' ? '补采完成' : group.sync_status === 'never_synced' ? '未同步' : '正常';
     var badge = failed || group.suspected_gap ? 'badge-red' : group.source_has_newer_messages || group.sync_status === 'never_synced' ? 'badge-orange' : 'badge-green';
     return '<span class="badge ' + badge + '">' + label + '</span><br>'

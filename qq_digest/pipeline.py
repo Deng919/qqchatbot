@@ -198,7 +198,9 @@ class DailyPipeline:
                 continue
             ingest = self.archive.ingest(raw_msgs)
             result.messages_inserted += ingest.inserted
-            self.archive.mark_sync(group_id=group.group_id, last_timestamp=end)
+            self.archive.mark_manual_collect_success(
+                group_id=group.group_id, status="report_collection_completed"
+            )
 
             messages = self.archive.messages_between(group.group_id, start, end)
             if not messages:

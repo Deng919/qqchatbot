@@ -22,6 +22,26 @@ def test_desktop_reads_external_configuration_without_moving_data(tmp_path):
         resolve_config_path(tmp_path / "missing")
 
 
+def test_make_server_binds_desktop_bridge_to_app_coordinator(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+    from qq_digest.desktop import make_server
+    from qq_digest.web.operations import OperationCoordinator
+    coordinator = OperationCoordinator()
+    application = SimpleNamespace(state=SimpleNamespace(operations=coordinator))
+    config = SimpleNamespace(archive_path=tmp_path / "archive.sqlite", groups=[],
+                             resolve_knowledge_paths=lambda: tmp_path / "knowledge",
+                             security=SimpleNamespace(web_password_hash="unused", session_hours=24),
+                             resolve_session_secret=lambda: "unused", web=SimpleNamespace(port=8765))
+    bridge = SimpleNamespace()
+    monkeypatch.setattr("qq_digest.desktop.load_config", lambda _: config)
+    monkeypatch.setattr("qq_digest.desktop.create_app", lambda **kwargs: application)
+    monkeypatch.setattr("qq_digest.desktop.config_signature", lambda _: "test")
+    monkeypatch.setattr("qq_digest.desktop.uvicorn.Config", lambda app, **kwargs: app)
+    monkeypatch.setattr("qq_digest.desktop.uvicorn.Server", lambda config: config)
+    make_server(tmp_path / "config.yaml", bridge=bridge)
+    assert bridge._operations is coordinator
+
+
 def test_desktop_does_not_reuse_an_older_backend(tmp_path, monkeypatch):
     config = tmp_path / "config.yaml"
     config.write_text("web: {}", encoding="utf-8")

@@ -161,6 +161,43 @@ class Archive:
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS tracked_topics (
+                    topic_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    title TEXT NOT NULL,
+                    match_key TEXT NOT NULL,
+                    status TEXT NOT NULL DEFAULT 'tracking' CHECK(status IN ('tracking','archived')),
+                    revision INTEGER NOT NULL DEFAULT 1
+                );
+                CREATE INDEX IF NOT EXISTS idx_tracked_topics_match ON tracked_topics(match_key);
+                CREATE TABLE IF NOT EXISTS tracked_topic_aliases (
+                    match_key TEXT PRIMARY KEY,
+                    topic_id INTEGER NOT NULL REFERENCES tracked_topics(topic_id)
+                );
+                CREATE TABLE IF NOT EXISTS topic_discussions (
+                    discussion_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    identity TEXT NOT NULL UNIQUE,
+                    topic_id INTEGER NOT NULL REFERENCES tracked_topics(topic_id),
+                    group_id INTEGER NOT NULL REFERENCES groups(group_id) ON DELETE CASCADE,
+                    report_kind TEXT NOT NULL CHECK(report_kind IN ('daily','range')),
+                    report_id INTEGER NOT NULL,
+                    report_version INTEGER NOT NULL,
+                    fingerprint TEXT NOT NULL,
+                    start_date TEXT NOT NULL,
+                    end_date TEXT NOT NULL,
+                    title TEXT NOT NULL,
+                    summary TEXT NOT NULL,
+                    evidence TEXT NOT NULL,
+                    is_current INTEGER NOT NULL DEFAULT 1,
+                    available INTEGER NOT NULL DEFAULT 1,
+                    link_mode TEXT NOT NULL DEFAULT 'auto' CHECK(link_mode IN ('auto','manual')),
+                    revision INTEGER NOT NULL DEFAULT 1
+                );
+                CREATE INDEX IF NOT EXISTS idx_topic_discussions_topic_date
+                    ON topic_discussions(topic_id,end_date DESC,discussion_id DESC);
+                CREATE INDEX IF NOT EXISTS idx_topic_discussions_report
+                    ON topic_discussions(report_kind,report_id);
+                CREATE INDEX IF NOT EXISTS idx_topic_discussions_group
+                    ON topic_discussions(group_id);
                 CREATE TABLE IF NOT EXISTS candidates (
                     candidate_id INTEGER PRIMARY KEY AUTOINCREMENT,
                     group_id INTEGER NOT NULL,
@@ -727,23 +764,25 @@ class Archive:
                 (group_id, status, now, error[:1000]),
             )
 
-    def mark_manual_collect_success(self, *, group_id: int) -> None:
-        """Record a successful manual collection without moving the periodic cursor."""
+    def mark_manual_collect_success(
+        self, *, group_id: int, status: str = "manual_repair_completed"
+    ) -> None:
+        """Record a successful limited-window collection without moving the sync cursor."""
         now = datetime.now(timezone.utc).isoformat()
         with self.transaction():
             self.connection.execute(
                 """
                 INSERT INTO sync_state(
                     group_id, last_timestamp, status, updated_at, error, last_success_at
-                ) VALUES (?, NULL, 'manual_repair_completed', ?, '', ?)
+                ) VALUES (?, NULL, ?, ?, '', ?)
                 ON CONFLICT(group_id) DO UPDATE SET
                     status=CASE WHEN sync_state.status='active' THEN 'active'
-                                ELSE 'manual_repair_completed' END,
+                                ELSE excluded.status END,
                     updated_at=excluded.updated_at,
                     error='',
                     last_success_at=excluded.last_success_at
                 """,
-                (group_id, now, now),
+                (group_id, status, now, now),
             )
 
     def report_for(self, group_id: int, report_date: str) -> sqlite3.Row | None:
@@ -859,6 +898,10 @@ class Archive:
                 "DELETE FROM task_suggestion_decisions WHERE group_id=?", (group_id,)
             )
             deleted["task_suggestion_decisions"] = int(cursor.rowcount)
+            self.connection.execute('UPDATE tracked_topics SET revision=revision+1 WHERE topic_id IN '
+                '(SELECT topic_id FROM topic_discussions WHERE group_id=?)', (group_id,))
+            cursor = self.connection.execute('DELETE FROM topic_discussions WHERE group_id=?', (group_id,))
+            deleted['topic_discussions'] = int(cursor.rowcount)
             for table in (
                 "tasks",
                 "manual_reports",

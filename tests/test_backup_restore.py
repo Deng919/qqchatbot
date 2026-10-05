@@ -96,6 +96,32 @@ def test_backup_excludes_rebuildable_qq_snapshot_cache(tmp_path):
         assert not any(name.startswith("work/snapshots/") for name in archive.namelist())
 
 
+@pytest.mark.parametrize("mutation", ["publication", "database_only", "file_change", "file_addition", "file_removal"])
+def test_backup_rejects_concurrent_source_changes(tmp_path, monkeypatch, mutation):
+    import qq_digest.backup_restore as module
+    root, config = _data(tmp_path, "source")
+    original_copy = module.shutil.copy2
+    changed = False
+    def copy_with_change(source, target, *args, **kwargs):
+        nonlocal changed
+        if not changed:
+            changed = True
+            if mutation in {"publication", "file_change"}:
+                (root / "reports" / "daily.md").write_text("# new generation", encoding="utf-8")
+            if mutation in {"publication", "database_only"}:
+                with sqlite3.connect(root / "archive" / "archive.sqlite") as db:
+                    db.execute("UPDATE reports SET input_fingerprint='new'")
+            elif mutation == "file_addition":
+                (root / "reports" / "new.md").write_text("new", encoding="utf-8")
+            elif mutation == "file_removal":
+                (root / "reports" / "daily.json").unlink()
+        return original_copy(source, target, *args, **kwargs)
+    monkeypatch.setattr(module.shutil, "copy2", copy_with_change)
+    with pytest.raises((ValueError, FileNotFoundError)):
+        backup_data(config, tmp_path / "backups", temp_root=tmp_path / "cache")
+    assert list((tmp_path / "backups").iterdir()) == []
+
+
 def test_preview_rejects_tampered_content(tmp_path):
     _, config = _data(tmp_path, "source")
     backup = Path(backup_data(config, tmp_path / "backups", temp_root=tmp_path / "cache")["path"])

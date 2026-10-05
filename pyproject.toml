@@ -30,6 +30,12 @@ build-backend = "setuptools.build_meta"
 include = ["qq_digest*"]
 exclude = ["config*", "docs*", "tests*"]
 
+[tool.setuptools.package-data]
+"qq_digest.web" = ["templates/*.html"]
+
+[tool.setuptools.exclude-package-data]
+"qq_digest.web" = ["templates/* (*).html"]
+
 [project.scripts]
 qq-digest = "qq_digest.cli:main"
 

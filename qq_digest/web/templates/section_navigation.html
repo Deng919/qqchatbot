@@ -4,6 +4,7 @@
   <div id="workspace-tools-area">
   <details class="workspace-tools"><summary>更多工具</summary><nav aria-label="更多工具">
     <a href="/knowledge">知识库<span>查看已保存的资源和经验</span></a>
+    {% if features.get('topics',false) %}<a href="/topics">话题跟踪<span>查看跨天、跨群讨论的进展</span></a>{% endif %}
     {% if features.get('tasks',true) %}<a href="/tasks">待办<span>确认行动事项和截止日期</span></a>{% endif %}
     {% if features.get('review',true) %}<a href="/candidates">知识整理<span>确认有用内容并保存到知识库</span></a>{% endif %}
   </nav></details>
@@ -23,7 +24,7 @@
   <a href="/groups" {% if page_path == '/groups' %}aria-current="page" class="active"{% endif %}>关注的群聊</a>
   <a href="/collect" {% if page_path == '/collect' %}aria-current="page" class="active"{% endif %}>更新与高级维护</a>
 </nav>
-{% elif page_path in ['/tasks','/candidates'] %}
+{% elif page_path in ['/tasks','/candidates','/topics'] %}
 <a class="section-back" href="/reports">← 返回摘要阅读</a>
 {% endif %}
 <style>
@@ -44,7 +45,7 @@
   .section-back { display:inline-block; color:var(--primary); margin:0 0 20px; font-size:13px; }
 </style>
 <script>
-  function updateWorkspaceTools(){var host=document.getElementById('workspace-tools-area');host.textContent='';var items=[['/knowledge','知识库','查看已保存的资源和经验']];if(featureFlags.tasks!==false)items.push(['/tasks','待办','确认行动事项和截止日期']);if(featureFlags.review!==false)items.push(['/candidates','知识整理','确认有用内容并保存到知识库']);if(!items.length)return;var details=document.createElement('details');details.className='workspace-tools';var summary=document.createElement('summary');summary.textContent='更多工具';details.appendChild(summary);var nav=document.createElement('nav');nav.setAttribute('aria-label','更多工具');items.forEach(function(item){var link=document.createElement('a');link.href=item[0];link.textContent=item[1];var hint=document.createElement('span');hint.textContent=item[2];link.appendChild(hint);nav.appendChild(link);});details.appendChild(nav);host.appendChild(details);}
+  function updateWorkspaceTools(){var host=document.getElementById('workspace-tools-area');host.textContent='';var items=[['/knowledge','知识库','查看已保存的资源和经验']];if(featureFlags.topics===true)items.push(['/topics','话题跟踪','查看跨天、跨群讨论的进展']);if(featureFlags.tasks!==false)items.push(['/tasks','待办','确认行动事项和截止日期']);if(featureFlags.review!==false)items.push(['/candidates','知识整理','确认有用内容并保存到知识库']);if(!items.length)return;var details=document.createElement('details');details.className='workspace-tools';var summary=document.createElement('summary');summary.textContent='更多工具';details.appendChild(summary);var nav=document.createElement('nav');nav.setAttribute('aria-label','更多工具');items.forEach(function(item){var link=document.createElement('a');link.href=item[0];link.textContent=item[1];var hint=document.createElement('span');hint.textContent=item[2];link.appendChild(hint);nav.appendChild(link);});details.appendChild(nav);host.appendChild(details);}
   function loadWorkspaceStatus() {
     api('GET','/api/health').then(function(data) {
       var node=document.getElementById('workspace-status'),warning=data.latest_job_status==='failed'||data.latest_job_status==='partial_success'||data.latest_daily_status==='failed'||data.latest_daily_status==='partial_success'||data.failed_notifications>0||(data.daily_coverage&&data.daily_coverage.status==='limited');

@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 
 from qq_digest.desktop_settings import DesktopBridge, backup_data, export_reports, migrate_storage
+from qq_digest.web.operations import OperationBusy, OperationCoordinator
 
 
 def _source(tmp_path):
@@ -61,6 +62,51 @@ def test_storage_migration_rejects_overlapping_or_nonempty_targets(tmp_path):
     with pytest.raises(ValueError):
         migrate_storage(config, install, occupied)
     assert (occupied / "my-file.txt").read_text(encoding="utf-8") == "keep"
+
+
+@pytest.mark.parametrize("method,args", [
+    ("backup_data", ()), ("migrate_storage", ("new-data",)),
+    ("restore_backup", ("backup.zip", "new-data", "hash")),
+])
+def test_bridge_storage_actions_reject_active_publication(tmp_path, method, args):
+    source, config, install = _source(tmp_path)
+    bridge = DesktopBridge(install, config, install / "app.exe", gui=None,
+                           backup_root=tmp_path / "backups", temp_root=tmp_path / "cache")
+    bridge._operations = OperationCoordinator()
+    args = tuple(str(tmp_path / value) if value in {"new-data", "backup.zip"} else value for value in args)
+    with bridge._operations.claim("daily"):
+        with pytest.raises(OperationBusy):
+            getattr(bridge, method)(*args)
+    assert source.exists()
+
+
+def test_scheduled_backup_defers_without_recording_failure_when_busy(tmp_path):
+    _, config, install = _source(tmp_path)
+    bridge = DesktopBridge(install, config, install / "app.exe", gui=None,
+                           backup_root=tmp_path / "backups", temp_root=tmp_path / "cache")
+    bridge._operations = OperationCoordinator()
+    with bridge._operations.claim("daily"):
+        assert bridge.maybe_scheduled_backup() is None
+    assert bridge._last_backup_error == ""
+    assert not (tmp_path / "backups").exists()
+
+
+@pytest.mark.parametrize("scheduled", [False, True])
+def test_inflight_bridge_backup_blocks_publication(tmp_path, monkeypatch, scheduled):
+    _, config, install = _source(tmp_path)
+    bridge = DesktopBridge(install, config, install / "app.exe", gui=None,
+                           backup_root=tmp_path / "backups", temp_root=tmp_path / "cache")
+    bridge._operations = OperationCoordinator()
+    def run_backup(*args, **kwargs):
+        assert bridge._operations.is_active("backup")
+        with pytest.raises(OperationBusy):
+            with bridge._operations.claim("daily"):
+                pytest.fail("publication must not run during backup")
+        return {"path": "saved.zip"}
+    monkeypatch.setattr("qq_digest.desktop_settings.backup_data", run_backup)
+    result = bridge.maybe_scheduled_backup() if scheduled else bridge.backup_data()
+    assert result == {"path": "saved.zip"}
+    assert not bridge._operations.is_active("backup")
 
 
 def test_report_export_creates_new_folder_and_preserves_originals(tmp_path):

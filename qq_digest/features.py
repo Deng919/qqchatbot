@@ -11,6 +11,7 @@ FEATURES = {
     'review': ('审核与知识整理', '人工确认 AI 提取的候选并写入知识库；关闭仍可浏览知识库和手动保存原消息。', '扩展功能'),
     'report_qa': ('摘要问答', '围绕报告向 AI 提问，回答附消息来源。', '扩展功能'),
     'report_revisions': ('版本与纠错', '查看旧版本、保存纠错意见并按原范围重新生成。', '扩展功能'),
+    'topics': ('话题跟踪', '关联跨天、跨群的同一话题，查看进展与来源并人工纠正关联。', '扩展功能'),
     'history_inspection': ('历史缺口巡检', '检查多群历史缺口；关闭同时暂停自动巡检。', '扩展功能'),
     'auto_collection': ('自动采集', '暂停或开启定时采集；每天自动生成摘要仍会按自己的流程读取消息，手动采集可用。', '自动任务'),
     'auto_daily': ('每天自动生成摘要', '按计划生成和补生成各群的单日摘要；关闭后仍可按日期手动生成。', '自动任务'),
@@ -29,7 +30,7 @@ class FeatureService:
     def snapshot(self):
         row = self.archive.connection.execute('SELECT revision,payload FROM feature_settings WHERE singleton=1').fetchone()
         saved = json.loads(row['payload'])
-        values = {key: saved.get(key, True) for key in FEATURES}
+        values = {key: saved.get(key, key != 'topics') for key in FEATURES}
         return {'revision': row['revision'], 'values': values,
                 'catalog': [{'key': key, 'title': value[0], 'description': value[1], 'group': value[2]}
                             for key, value in FEATURES.items() if key != 'catchup']}

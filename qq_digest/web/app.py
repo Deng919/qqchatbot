@@ -48,6 +48,7 @@ from .summary_reading_routes import add_summary_reading_routes
 from .message_routes import add_message_routes
 from .summary_generation_routes import add_summary_generation_routes
 from .knowledge_routes import add_knowledge_routes
+from .topic_routes import add_topic_routes
 from ..report_selection import selected_report_groups
 
 templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"),
@@ -180,6 +181,25 @@ def _desktop_bridge(request: Request):
     if bridge is None:
         raise HTTPException(status_code=503, detail="请启动 QQ Digest 桌面程序后刷新设置页")
     return bridge
+
+
+async def _desktop_mutation(request: Request, bridge, kind: str, method: str, *args):
+    from ..desktop_settings import DesktopBridge
+    operations = request.app.state.operations
+
+    def invoke():
+        if isinstance(bridge, DesktopBridge):
+            bridge._operations = operations
+            return getattr(bridge, method)(*args)
+        # Alternate bridges also participate; keep the claim inside the worker
+        # so disconnecting the request cannot unlock an in-flight file copy.
+        with operations.claim(kind):
+            return getattr(bridge, method)(*args)
+
+    try:
+        return await asyncio.to_thread(invoke)
+    except OperationBusy as exc:
+        raise HTTPException(409, detail='已有任务在运行，请完成后重试') from exc
 
 
 def _utc(iso_str: str | None) -> str:
@@ -674,6 +694,7 @@ def create_app(
             task.cancel()
         if background_tasks:
             await asyncio.gather(*background_tasks, return_exceptions=True)
+        await asyncio.to_thread(app.state.close_topic_tracking)
 
     app = FastAPI(title="QQ Digest", lifespan=lifespan)
     cookie = SessionCookie(session_secret, session_hours * 3600)
@@ -688,6 +709,8 @@ def create_app(
     feature_service = add_feature_routes(app, archive=archive, cookie=cookie, require_login=require_login)
     add_summary_reading_routes(app, archive=archive, config=config, require_login=require_login)
     add_message_routes(app, archive=archive, config=config, require_login=require_login)
+    add_topic_routes(app, archive=archive, config=config, templates=templates,
+                     require_login=require_login, operations=operations)
     knowledge_library = add_knowledge_routes(app, archive=archive, knowledge=knowledge,
         config=config, templates=templates, require_login=require_login, operations=operations)
     add_summary_generation_routes(app, archive=archive, config=config, require_login=require_login,
@@ -1008,7 +1031,8 @@ def create_app(
     async def desktop_migrate(request: Request, payload: StorageMigrationPayload):
         bridge = _desktop_bridge(request)
         try:
-            return await asyncio.to_thread(bridge.migrate_storage, payload.destination)
+            return await _desktop_mutation(request, bridge, 'storage_mutation',
+                                           'migrate_storage', payload.destination)
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -1026,7 +1050,7 @@ def create_app(
     async def desktop_backup(request: Request):
         bridge = _desktop_bridge(request)
         try:
-            return await asyncio.to_thread(bridge.backup_data)
+            return await _desktop_mutation(request, bridge, 'backup', 'backup_data')
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -1055,8 +1079,8 @@ def create_app(
     async def desktop_restore(request: Request, payload: RestorePayload):
         bridge = _desktop_bridge(request)
         try:
-            return await asyncio.to_thread(bridge.restore_backup, payload.path,
-                                           payload.destination, payload.sha256)
+            return await _desktop_mutation(request, bridge, 'storage_mutation',
+                'restore_backup', payload.path, payload.destination, payload.sha256)
         except (ValueError, OSError) as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -1943,8 +1967,7 @@ def create_app(
             raise HTTPException(status_code=409, detail=str(exc)) from exc
         return updated.model_dump()
 
-    @app.post("/api/candidates/{candidate_id}/undo")
-    async def api_undo_candidate(request: Request, candidate_id: int):
+    async def _undo_candidate(request: Request, candidate_id: int):
         require_login(request)
         try:
             item = candidates.get(candidate_id)
@@ -1976,6 +1999,15 @@ def create_app(
             path.write_text(original, encoding="utf-8")
             raise
         return {"status": "pending"}
+
+    @app.post("/api/candidates/{candidate_id}/undo")
+    async def api_undo_candidate(request: Request, candidate_id: int):
+        require_login(request)
+        try:
+            with operations.claim('knowledge_mutation'):
+                return await _undo_candidate(request, candidate_id)
+        except OperationBusy as exc:
+            raise HTTPException(409, detail='已有任务在运行，请完成后重试') from exc
 
     # ------------------------------------------------------------------
     # API: Run daily

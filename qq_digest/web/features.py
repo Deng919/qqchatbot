@@ -16,7 +16,8 @@ class FeatureUpdate(BaseModel):
 
 
 def path_feature(path):
-    for key, prefix in (('catchup', 'catchup'), ('tasks', 'tasks'), ('failures', 'failures'),
+    for key, prefix in (('topics', 'topics'), ('topics', 'topic-discussions'),
+                        ('catchup', 'catchup'), ('tasks', 'tasks'), ('failures', 'failures'),
                         ('review', 'candidates'), ('history_inspection', 'history-inspection')):
         if any(path == root or path.startswith(root + '/') for root in ('/' + prefix, '/api/' + prefix)):
             return key

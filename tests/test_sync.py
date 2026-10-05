@@ -5,6 +5,8 @@ from qq_digest.archive import Archive
 from qq_digest.config import AIConfig, Config, NTQQConfig, SecurityConfig
 from qq_digest.models import GroupConfig, NormalizedMessage
 from qq_digest.sync import run_message_sync
+from qq_digest.pipeline import DailyPipeline
+import pytest
 
 
 class RecordingCollector:
@@ -24,6 +26,36 @@ class RecordingCollector:
 class FailingCollector:
     def collect(self, group_id, start, end):
         raise RuntimeError("本地消息库不可读")
+
+
+@pytest.mark.parametrize("previous_days", [None, 7])
+def test_daily_collection_preserves_full_history_sync_window(tmp_path, previous_days):
+    now = datetime(2026, 10, 5, 22, tzinfo=ZoneInfo("Asia/Shanghai"))
+    config = Config(
+        data_dir=tmp_path, archive_path=tmp_path / "archive.sqlite",
+        report_dir=tmp_path / "reports", knowledge_dir=tmp_path / "knowledge",
+        work_dir=tmp_path / "work", log_dir=tmp_path / "logs",
+        security=SecurityConfig(web_password_hash="unused"),
+        ai=AIConfig(base_url="https://example.com", model="unused", api_key_env="TEST_KEY"),
+        ntqq=NTQQConfig(enabled=True, db_dir=str(tmp_path / "unused")),
+    )
+    archive = Archive.open(config.archive_path)
+    archive.upsert_groups([GroupConfig(group_id=123, name="history", collection_window_days=30)])
+    previous = now - timedelta(days=previous_days) if previous_days else None
+    if previous is not None:
+        archive.mark_sync(group_id=123, last_timestamp=previous)
+    collector = RecordingCollector([])
+    DailyPipeline(archive=archive, collector=collector, ai_client=None,
+                  report_dir=config.report_dir, max_context_chars=1000,
+                  timezone_name="Asia/Shanghai").run_daily(now)
+    state = archive.connection.execute("SELECT * FROM sync_state WHERE group_id=123").fetchone()
+    assert state["last_success_at"] is not None
+    assert state["status"] == ("active" if previous else "report_collection_completed")
+    assert state["last_timestamp"] == (previous.astimezone(ZoneInfo("UTC")).isoformat() if previous else None)
+    archive.close()
+    assert run_message_sync(config=config, now=now, refresh=False, collector=collector).success
+    expected = previous - timedelta(hours=1) if previous else now - timedelta(days=30)
+    assert collector.windows[1][1] == expected
 
 
 def test_periodic_sync_uses_overlap_and_archives_messages(tmp_path):

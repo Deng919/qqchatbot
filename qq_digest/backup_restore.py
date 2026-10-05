@@ -120,6 +120,40 @@ def _validate_core_schema(db: sqlite3.Connection) -> None:
                 raise ValueError("消息数据库结构不兼容：messages 缺少群消息联合主键")
 
 
+def _backup_source_files(config, config_path: Path) -> dict[str, Path]:
+    files = {"config/config.yaml": config_path}
+    for folder in DATA_FOLDERS:
+        root = config.data_dir / folder
+        if root.is_dir():
+            for path in root.rglob("*"):
+                if path.is_file() and not path.is_symlink():
+                    relative = path.relative_to(config.data_dir)
+                    if relative.parts[:2] != ("work", "snapshots"):
+                        files[relative.as_posix()] = path
+    raw = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+    for section, key in CONFIG_PATH_FIELDS:
+        value = (raw.get(section) or {}).get(key)
+        if not value:
+            continue
+        path = Path(value).expanduser()
+        path = (path if path.is_absolute() else config.data_dir / path).resolve()
+        if path.is_file() and not path.is_symlink() and _inside(path, config.data_dir):
+            files[path.relative_to(config.data_dir).as_posix()] = path
+    return files
+
+
+def _source_file_versions(files: dict[str, Path]) -> dict[str, tuple]:
+    versions = {}
+    for name, path in files.items():
+        before = path.stat()
+        digest = _sha256(path)
+        after = path.stat()
+        if (before.st_size, before.st_mtime_ns) != (after.st_size, after.st_mtime_ns):
+            raise ValueError("备份期间源文件发生变化，请稍后重试")
+        versions[name] = (str(path), after.st_size, after.st_mtime_ns, digest)
+    return versions
+
+
 def backup_data(config_path: Path, destination: Path = BACKUP_ROOT,
                 *, temp_root: Path = TEMP_ROOT, kind: str = "manual") -> dict:
     """Write an SQLite snapshot and SHA-256 manifest into one ZIP."""
@@ -133,32 +167,16 @@ def backup_data(config_path: Path, destination: Path = BACKUP_ROOT,
     temp_root.mkdir(parents=True, exist_ok=True)
     backup = destination / ("QQDigest-" + kind + "-" + datetime.now().strftime("%Y%m%d-%H%M%S-%f") + ".zip")
     partial = backup.with_suffix(".partial")
-    files: dict[str, Path] = {"config/config.yaml": config_path}
     try:
-        with tempfile.TemporaryDirectory(prefix="qqdigest-backup-", dir=temp_root) as temporary:
+        with tempfile.TemporaryDirectory(prefix="qqdigest-backup-", dir=temp_root) as temporary, \
+                closing(sqlite3.connect(f"file:{config.archive_path.as_posix()}?mode=ro", uri=True)) as source:
+            source_version = source.execute("PRAGMA data_version").fetchone()[0]
+            files = _backup_source_files(config, config_path)
+            file_versions = _source_file_versions(files)
             snapshot = Path(temporary) / "archive.sqlite"
-            with closing(sqlite3.connect(f"file:{config.archive_path.as_posix()}?mode=ro", uri=True)) as source:
-                with closing(sqlite3.connect(snapshot)) as copied:
-                    source.backup(copied)
+            with closing(sqlite3.connect(snapshot)) as copied:
+                source.backup(copied)
             files["archive/archive.sqlite"] = snapshot
-            for folder in DATA_FOLDERS:
-                root = config.data_dir / folder
-                if root.is_dir():
-                    for path in root.rglob("*"):
-                        if path.is_file() and not path.is_symlink():
-                            relative = path.relative_to(config.data_dir)
-                            if relative.parts[:2] == ("work", "snapshots"):
-                                continue
-                            files[relative.as_posix()] = path
-            raw = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
-            for section, key in CONFIG_PATH_FIELDS:
-                value = (raw.get(section) or {}).get(key)
-                if not value:
-                    continue
-                path = Path(value).expanduser()
-                path = (path if path.is_absolute() else config.data_dir / path).resolve()
-                if path.is_file() and not path.is_symlink() and _inside(path, config.data_dir):
-                    files[path.relative_to(config.data_dir).as_posix()] = path
             stable_files: dict[str, Path] = {}
             for name, path in files.items():
                 if name == "archive/archive.sqlite":
@@ -168,6 +186,11 @@ def backup_data(config_path: Path, destination: Path = BACKUP_ROOT,
                 stable.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(path, stable)
                 stable_files[name] = stable
+            if (_source_file_versions(_backup_source_files(config, config_path)) != file_versions
+                    or any(_sha256(stable_files[name]) != version[3]
+                           for name, version in file_versions.items())
+                    or source.execute("PRAGMA data_version").fetchone()[0] != source_version):
+                raise ValueError("备份期间数据发生变化，请稍后重试")
             files = stable_files
             manifest = {
                 "format_version": 1,

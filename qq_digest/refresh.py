@@ -623,9 +623,14 @@ def refresh_database(
         for _account, fp, _page1 in pa_map[sh]:
             decrypt_jobs.append((fp, bytes.fromhex(kh)))
 
-    available_files = {
-        os.path.basename(path).lower() for path, _key in decrypt_jobs
-    }
+    # Key extraction success must not decide which source the collector reads.
+    # It prefers FTS whenever present, including an older published output.
+    available_files = {os.path.basename(path).lower() for _account, path, _page in global_dbs}
+    available_files.update(
+        os.path.basename(path).lower()
+        for entries in pa_map.values() for _account, path, _page in entries
+    )
+    available_files.update(path.name.lower() for path in output_dir.iterdir() if path.is_file())
     required_files = _required_refresh_files(available_files)
     missing_core = sorted(required_files)
     try:

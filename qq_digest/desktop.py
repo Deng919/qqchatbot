@@ -24,7 +24,7 @@ from .knowledge import KnowledgeWriter
 from .web.app import create_app
 
 
-DESKTOP_BACKEND_ID = "2026-10-05-knowledge"
+DESKTOP_BACKEND_ID = "2026-10-05-topics"
 
 
 def resolve_config_path(install_dir: Path) -> Path:
@@ -132,6 +132,8 @@ def make_server(config_path: Path, *, port: int | None = None,
     web_app.state.desktop_settings_api_version = 1
     web_app.state.desktop_backend_id = DESKTOP_BACKEND_ID
     web_app.state.desktop_bridge = bridge
+    if bridge is not None:
+        bridge._operations = web_app.state.operations
     return uvicorn.Server(uvicorn.Config(
         web_app, host="127.0.0.1", port=port or config.web.port,
         log_level="warning", access_log=False,

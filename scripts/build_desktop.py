@@ -25,6 +25,7 @@ TEMPLATES = (
     "find_style.html", "find_helpers.html", "find_script.html",
     "message_context_script.html",
     "knowledge.html", "knowledge_script.html", "knowledge_save.html",
+    "topics.html", "topics_script.html",
 )
 
 

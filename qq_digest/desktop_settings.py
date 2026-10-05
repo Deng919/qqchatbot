@@ -8,7 +8,7 @@ import shutil
 import sqlite3
 import sys
 import winreg
-from contextlib import closing
+from contextlib import closing, nullcontext
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from threading import Lock
@@ -18,6 +18,7 @@ import yaml
 from .config import load_config
 from .backup_restore import (BACKUP_ROOT, CONFIG_PATH_FIELDS, DATA_FOLDERS,
                              TEMP_ROOT, backup_data, inspect_backup, restore_backup)
+from .operations import OperationBusy
 
 
 EXPORT_ROOT = Path(r"D:\Downloads\QQDigestReports")
@@ -175,6 +176,10 @@ class DesktopBridge:
         self._temp_root = Path(temp_root)
         self._backup_lock = Lock()
         self._last_backup_error = ""
+        self._operations = None
+
+    def _claim_operation(self, kind: str):
+        return self._operations.claim(kind) if self._operations is not None else nullcontext()
 
     def _preferences(self) -> dict:
         path = self._install_dir / "desktop-preferences.json"
@@ -238,7 +243,8 @@ class DesktopBridge:
     def migrate_storage(self, destination: str) -> dict:
         if not destination:
             raise ValueError("请先选择新的存储位置")
-        return migrate_storage(self._config_path, self._install_dir, Path(destination))
+        with self._claim_operation("storage_mutation"), self._backup_lock:
+            return migrate_storage(self._config_path, self._install_dir, Path(destination))
 
     def export_reports(self, destination: str, format: str) -> dict:
         config = load_config(self._config_path)
@@ -248,7 +254,7 @@ class DesktopBridge:
         return result
 
     def backup_data(self) -> dict:
-        with self._backup_lock:
+        with self._claim_operation("backup"), self._backup_lock:
             return backup_data(self._config_path, self._backup_root, temp_root=self._temp_root)
 
     def set_backup_schedule(self, schedule: str) -> dict:
@@ -265,16 +271,19 @@ class DesktopBridge:
             raise ValueError("备份频率设置无效")
         now = now or datetime.now(timezone.utc)
         interval = timedelta(days=1 if schedule == "daily" else 7)
-        with self._backup_lock:
-            backups = self.list_backups()
-            if backups:
-                latest = datetime.fromisoformat(backups[0]["modified_at"]).astimezone(timezone.utc)
-                if now - latest < interval:
-                    return None
-            result = backup_data(self._config_path, self._backup_root,
-                                 temp_root=self._temp_root, kind="automatic")
-            self._last_backup_error = ""
-            return result
+        try:
+            with self._claim_operation("backup"), self._backup_lock:
+                backups = self.list_backups()
+                if backups:
+                    latest = datetime.fromisoformat(backups[0]["modified_at"]).astimezone(timezone.utc)
+                    if now - latest < interval:
+                        return None
+                result = backup_data(self._config_path, self._backup_root,
+                                     temp_root=self._temp_root, kind="automatic")
+                self._last_backup_error = ""
+                return result
+        except OperationBusy:
+            return None
 
     def run_backup_schedule(self, stop_event) -> None:
         import logging
@@ -310,7 +319,7 @@ class DesktopBridge:
         return inspect_backup(Path(path), temp_root=self._temp_root)
 
     def restore_backup(self, path: str, destination: str, expected_sha256: str) -> dict:
-        with self._backup_lock:
+        with self._claim_operation("storage_mutation"), self._backup_lock:
             return restore_backup(Path(path), Path(destination), self._config_path,
                                   self._install_dir, backup_root=self._backup_root,
                                   temp_root=self._temp_root, expected_sha256=expected_sha256)

@@ -30,6 +30,12 @@ def _message_bounds(date_from: date | None, date_to: date | None, zone: ZoneInfo
     return start, end
 
 
+def _result_order(item: dict) -> tuple:
+    identity = str(item['id']) if item['kind'] == 'message' else int(item['id'])
+    return (item['sort_at'], item['kind'], identity, item['group_id'],
+            item.get('report_kind', ''))
+
+
 def search_archive(
     archive: Archive, *, query: str, kind: str = "all", group_id: int | None = None,
     date_from: date | None = None, date_to: date | None = None,
@@ -67,7 +73,7 @@ def search_archive(
         total += connection.execute("SELECT COUNT(*)" + source + where, params).fetchone()[0]
         rows = connection.execute(
             "SELECT m.msg_id, m.group_id, m.sender_qq, m.timestamp, m.text, g.name AS group_name"
-            + source + where + " ORDER BY m.timestamp DESC, m.msg_id DESC LIMIT ?",
+            + source + where + " ORDER BY m.timestamp DESC, m.msg_id DESC, m.group_id DESC LIMIT ?",
             [*params, fetch_limit],
         ).fetchall()
         for row in rows:
@@ -147,9 +153,10 @@ def search_archive(
                 "url": f"/reports?kind={row['kind']}&id={row['id']}",
             })
         total += len(matched_reports)
+        matched_reports.sort(key=_result_order, reverse=True)
         results.extend(matched_reports[:fetch_limit])
 
-    results.sort(key=lambda item: (item["sort_at"], item["kind"], str(item["id"])), reverse=True)
+    results.sort(key=_result_order, reverse=True)
     start_index = (page - 1) * page_size
     for item in results:
         item.pop("sort_at")

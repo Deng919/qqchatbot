@@ -276,3 +276,37 @@ def test_required_refresh_files_follow_active_collector_path():
     assert refresh_module._required_refresh_files(
         {"nt_msg.db", "group_info.db"}
     ) == {"group_info.db", "nt_msg.db"}
+
+
+@pytest.mark.parametrize("fts_location", ["output", "encrypted"])
+def test_refresh_rejects_unrefreshable_preferred_fts_source(tmp_path, monkeypatch, fts_location):
+    output = tmp_path / "output"
+    output.mkdir()
+    for name in ("nt_msg.db", "group_info.db"):
+        (output / name).write_text("previous")
+    if fts_location == "output":
+        (output / "group_msg_fts.db").write_text("stale preferred source")
+    encrypted = tmp_path / "encrypted"
+    encrypted.mkdir()
+    names = ["nt_msg.db", "group_info.db"] + (["group_msg_fts.db"] if fts_location == "encrypted" else [])
+    databases = []
+    for index, name in enumerate(names):
+        path = encrypted / name
+        path.write_bytes(b"source")
+        databases.append(("global", str(path), bytes([index + 1]) * 16))
+    original_isdir = refresh_module.os.path.isdir
+    monkeypatch.setattr(refresh_module.os.path, "isdir",
+                        lambda path: True if "Tencent Files" in str(path) else original_isdir(path))
+    monkeypatch.setattr(refresh_module, "_collect_db_info", lambda _: (databases, {}))
+    monkeypatch.setattr(refresh_module, "_derive_enc_key", lambda *_: b"k" * 32)
+    monkeypatch.setattr(refresh_module, "_verify_key_hmac", lambda page, _: page[0] != 3)
+    def decrypt(source, destination, key, **kwargs):
+        destination.write_text("new")
+        return True
+    monkeypatch.setattr(refresh_module, "_decrypt_db", decrypt)
+    result = refresh_module.refresh_database(qq_number=123, output_dir=output,
+                                            snapshot_root=tmp_path / "snapshots", pid=42)
+    assert result.success is False
+    assert any("group_msg_fts.db" in error for error in result.errors)
+    assert (output / "nt_msg.db").read_text() == "previous"
+    assert (output / "group_info.db").read_text() == "previous"
