@@ -27,7 +27,7 @@ from ..task_inbox import TaskInboxService
 from ..candidate_context import candidate_source_context
 from ..collector.ntqq import NTQQCollector
 from ..config import Config, ConfigError, load_config
-from ..knowledge import KnowledgeItem, KnowledgeWriter, remove_item
+from ..knowledge import KnowledgeWriter, remove_item
 from ..scheduler import (
     daily_retry_state, pending_catchup_date, run_at_for_report_date, summary_window,
 )
@@ -47,6 +47,7 @@ from .features import add_feature_routes
 from .summary_reading_routes import add_summary_reading_routes
 from .message_routes import add_message_routes
 from .summary_generation_routes import add_summary_generation_routes
+from .knowledge_routes import add_knowledge_routes
 from ..report_selection import selected_report_groups
 
 templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"),
@@ -687,6 +688,8 @@ def create_app(
     feature_service = add_feature_routes(app, archive=archive, cookie=cookie, require_login=require_login)
     add_summary_reading_routes(app, archive=archive, config=config, require_login=require_login)
     add_message_routes(app, archive=archive, config=config, require_login=require_login)
+    knowledge_library = add_knowledge_routes(app, archive=archive, knowledge=knowledge,
+        config=config, templates=templates, require_login=require_login, operations=operations)
     add_summary_generation_routes(app, archive=archive, config=config, require_login=require_login,
                                   run_summary=_run_manual_summary_task, operations=operations)
     add_history_inspection_routes(app, archive=archive, config=config,
@@ -1775,6 +1778,7 @@ def create_app(
             "window_start_date": start_date,
             "window_end_date": end_date,
             "evidence_status": "available" if evidence_items is not None else "legacy",
+            "group_id": row["group_id"],
             "evidence_items": evidence_items or [],
             "completeness": ReportCompletenessService(ar).report(
                 revision_payload, report_kind, end_date
@@ -2019,31 +2023,15 @@ def create_app(
     @app.post("/candidates/{candidate_id}/confirm")
     async def confirm(request: Request, candidate_id: int):
         require_login(request)
-        candidate = candidates.get(candidate_id)
-        group_names = {
-            group.group_id: group.name for group in _archive(request).enabled_groups()
-        }
-        knowledge.write(
-            KnowledgeItem(
-                item_id=str(candidate_id),
-                date=candidate.created_date,
-                category="资源" if candidate.candidate_type == "resource" else "经验",
-                source_group=group_names.get(candidate.group_id, str(candidate.group_id)),
-                title=candidate.title,
-                link=candidate.link,
-                value=candidate.reason,
-                excerpt=candidate.excerpt,
-                content=candidate.content,
-            ),
-            candidate.candidate_type,
-        )
-        archive.record_knowledge_item(
-            item_id=str(candidate_id),
-            candidate_id=candidate_id,
-            markdown_path=str(knowledge.path_for(candidate.candidate_type)),
-        )
-        candidates.confirm(candidate_id)
-        archive.connection.commit()
+        try:
+            with operations.claim('knowledge_mutation'):
+                knowledge_library.confirm_candidate(candidate_id)
+        except KeyError as exc:
+            raise HTTPException(404,'候选不存在') from exc
+        except OperationBusy as exc:
+            raise HTTPException(409,'后台任务正在运行，请稍后重试入库') from exc
+        except OSError as exc:
+            raise HTTPException(503,'知识写入失败，候选和原数据已保留') from exc
         return RedirectResponse("/candidates", status_code=303)
 
     @app.post("/candidates/{candidate_id}/ignore")

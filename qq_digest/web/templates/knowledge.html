@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block title %}知识库 - QQ Digest{% endblock %}
+{% block page_title %}知识库{% endblock %}
+{% block page_description %}保存值得反复参考的资源和经验，随时回查原消息。{% endblock %}
+{% block content %}
+{% include "message_context_script.html" %}
+<p class="header-meta">这里展示已入库内容。AI 提取的候选需要确认；原消息中的“保存到知识库”会直接入库。</p>
+{% if features.get('review',true) %}<p><a class="btn btn-sm" href="/candidates">整理待确认内容</a></p>{% else %}<p class="header-meta">候选审核已关闭，已保存知识与手动保存仍可使用。<a href="/settings?section=features">开启候选整理</a></p>{% endif %}
+<section id="knowledge-browse">
+  <form class="knowledge-filters" onsubmit="knowledgeFilter(event)" aria-label="知识筛选">
+    <div class="field"><label for="knowledge-q">关键词</label><input id="knowledge-q" class="input" type="search" maxlength="100" placeholder="标题、正文或说明"></div>
+    <div class="field"><label for="knowledge-group">来源群</label><select id="knowledge-group" class="input"><option value="">全部群</option></select></div>
+    <div class="field"><label for="knowledge-type">分类</label><select id="knowledge-type" class="input"><option value="">全部分类</option><option value="resource">资源</option><option value="experience">经验</option></select></div>
+    <button class="btn btn-primary" type="submit">筛选知识</button>
+  </form>
+  <p id="knowledge-count" class="header-meta" role="status">正在读取知识库…</p>
+  <div id="knowledge-list" class="knowledge-list" aria-busy="true"></div>
+  <div id="knowledge-pages" class="actions" hidden><button id="knowledge-prev" class="btn btn-sm" type="button" onclick="knowledgePage(-1)">上一页</button><span id="knowledge-page-label"></span><button id="knowledge-next" class="btn btn-sm" type="button" onclick="knowledgePage(1)">下一页</button></div>
+</section>
+<section id="knowledge-detail" class="card" hidden aria-busy="false">
+  <div class="card-header"><h2 id="knowledge-title"></h2><button class="btn btn-sm" type="button" onclick="knowledgeReturn()">返回知识库</button></div>
+  <div class="card-body"><p id="knowledge-meta" class="header-meta"></p><div id="knowledge-body"></div><section id="knowledge-sources"><h3>原消息与上下文</h3><p id="knowledge-source-note" class="header-meta"></p><div id="knowledge-source-choices" class="actions"></div><div id="knowledge-source-body"></div></section></div>
+</section>
+<style>
+.knowledge-filters{display:grid;grid-template-columns:2fr 1fr 1fr auto;gap:14px;align-items:end;margin:24px 0}.knowledge-filters .field{margin:0}.knowledge-filters select{width:100%}.knowledge-list{display:grid;gap:14px}.knowledge-item{padding:24px;border:1px solid var(--border);border-radius:16px;background:var(--surface)}.knowledge-item h2{font-size:20px;margin:8px 0 12px}.knowledge-preview,.knowledge-content{white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.8}.knowledge-content{margin:16px 0 24px}#knowledge-title{margin:0;font-size:22px;overflow-wrap:anywhere}#knowledge-detail .card-header{gap:16px;align-items:flex-start}#knowledge-body a{overflow-wrap:anywhere}#knowledge-sources{border-top:1px solid var(--border);margin-top:24px;padding-top:16px}@media(max-width:700px){.knowledge-filters{grid-template-columns:1fr 1fr}.knowledge-filters .field:first-child,.knowledge-filters button{grid-column:1/-1}.knowledge-item{padding:18px}#knowledge-detail .card-header{flex-direction:column}}
+</style>
+{% include "knowledge_script.html" %}
+{% endblock %}

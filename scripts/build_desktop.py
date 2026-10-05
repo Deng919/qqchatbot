@@ -24,6 +24,7 @@ TEMPLATES = (
     "ai_connection_settings.html", "settings_categories_script.html",
     "find_style.html", "find_helpers.html", "find_script.html",
     "message_context_script.html",
+    "knowledge.html", "knowledge_script.html", "knowledge_save.html",
 )
 
 

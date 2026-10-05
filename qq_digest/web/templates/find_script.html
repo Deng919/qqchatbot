@@ -18,7 +18,7 @@ function findHitMarkup(item,q){var time=item.timestamp?new Date(item.timestamp).
     +'<button class="btn btn-sm" type="button" data-group="'+Number(item.group_id)+'" data-message="'+escapeHtml(item.id)+'" data-name="'+escapeHtml(item.group_name)+'" onclick="showSearchContext(this)">查看原文</button></div>';
 }
 function renderFindGroup(group,q){var first=group.items[0];if(group.kind==='message'){var initial=group.items.slice(0,3).map(function(item){return findHitMarkup(item,q);}).join(''),extra=group.items.slice(3);return '<article class="find-result"><div class="find-result-heading"><strong>'+escapeHtml(first.group_name)+'</strong>'+(group.items.length>1?'<span class="badge badge-dim">'+group.items.length+' 条匹配</span>':'')+'</div>'+(group.items.length>1?'<p class="find-result-meta">同群五分钟内的本页匹配 · 不代表完整讨论</p>':'')+initial+(extra.length?'<details class="find-extra"><summary>展开其余 '+extra.length+' 条匹配</summary>'+extra.map(function(item){return findHitMarkup(item,q);}).join('')+'</details>':'')+'</article>';}
-  var hidden=group.kind==='knowledge'&&featureFlags.review===false;
+  var hidden=false;
   return '<article class="find-result"><div class="find-result-heading"><span class="badge badge-dim">'+findKindLabels[group.kind]+'</span>'+(hidden?'<strong>'+findHighlight(first.title,q)+'</strong>':'<a class="find-result-title" href="'+escapeHtml(first.url)+'">'+findHighlight(first.title,q)+'</a>')+'</div><p class="find-result-meta">'+escapeHtml(first.group_name)+' · '+escapeHtml(first.date)+'</p><p class="find-hit-snippet">'+findHighlight(first.snippet,q)+'</p>'+(hidden?'<span class="header-meta">知识已保留；整理入口可在设置中开启。</span>':'<a class="btn btn-sm" href="'+escapeHtml(first.url)+'">查看详情</a>')+'</article>';
 }
 function loadSearch(submitted){
@@ -33,7 +33,7 @@ function closeFindContext(){++findContextToken;destroyMessageContext(findNode('f
 var findOriginalOverflow=document.body.style.overflow;
 function showSearchContext(button){findContextOpener=button;findContextTarget={group:button.dataset.group,id:button.dataset.message,name:button.dataset.name};if(findNode('find-context').hidden)findOriginalOverflow=document.body.style.overflow;findNode('find-context').hidden=false;findNode('find-context-overlay').hidden=false;document.body.style.overflow='hidden';findNode('find-context-close').focus();return loadFindContext();}
 function loadFindContext(){var token=++findContextToken,target=findContextTarget,q=findQuery,body=findNode('find-context-body');findNode('find-context-meta').textContent=target.name;findNode('find-context-actions').textContent='';
-  return mountMessageContext(body,{citedId:target.id,url:'/api/search/messages/'+encodeURIComponent(target.group)+'/'+encodeURIComponent(target.id)+'/context',
+  return mountMessageContext(body,{groupId:target.group,citedId:target.id,url:'/api/search/messages/'+encodeURIComponent(target.group)+'/'+encodeURIComponent(target.id)+'/context',
     isCurrent:function(){return token===findContextToken&&!findNode('find-context').hidden;},highlight:function(text){return findHighlight(text,q);},
     onLoaded:function(){findNode('find-context-actions').textContent='';if(featureFlags.tasks!==false){var a=document.createElement('a');a.className='btn btn-sm';a.textContent='加入待办';a.href='/tasks?'+new URLSearchParams({group_id:target.group,msg_id:target.id});findNode('find-context-actions').appendChild(a);}}}).ready;
 }

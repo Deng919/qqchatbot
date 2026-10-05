@@ -28,7 +28,7 @@ def test_find_page_has_search_entry_and_separate_context(browsing_client):
     assert '查看消息／搜索' not in page
 
 
-@pytest.mark.parametrize('script', ['find_helpers.cjs', 'find_interactions.cjs', 'message_context_ui.cjs'])
+@pytest.mark.parametrize('script', ['find_helpers.cjs', 'find_interactions.cjs', 'message_context_ui.cjs', 'knowledge_ui.cjs'])
 def test_find_helpers_behavior(script):
     node = shutil.which('node')
     if not node:

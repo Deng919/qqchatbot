@@ -378,6 +378,7 @@
       </script>
       {% include "section_navigation.html" %}
       {% block content %}{% endblock %}
+      {% include "knowledge_save.html" %}
       <script>
         document.querySelectorAll('input[type="date"]').forEach(function(input) {
           var wrapper = document.createElement('span');

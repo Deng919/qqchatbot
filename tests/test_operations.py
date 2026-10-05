@@ -41,6 +41,7 @@ def test_claim_releases_state_after_exception():
         "manual_summary_running": False,
         "group_mutation_running": False,
         "history_inspection_running": False,
+        "knowledge_mutation_running": False,
     }
 
 

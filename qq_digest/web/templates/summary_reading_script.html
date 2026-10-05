@@ -110,7 +110,7 @@
   }
   function summaryLoadSource(item,id) {
     var token=++summarySourceToken,host=document.getElementById('summary-source-messages');
-    mountMessageContext(host,{citedId:id,url:'/api/reports/'+(item.report_kind||'daily')+'/'+item.report_id+'/sources/'+encodeURIComponent(id),
+    mountMessageContext(host,{groupId:item.group_id,citedId:id,url:'/api/reports/'+(item.report_kind||'daily')+'/'+item.report_id+'/sources/'+encodeURIComponent(id),
       isCurrent:function(){return token===summarySourceToken&&!document.getElementById('summary-source-panel').hidden;}});
   }
   function summaryCloseSource() { summarySourceToken++;destroyMessageContext(document.getElementById('summary-source-messages'));document.getElementById('summary-source-panel').hidden=true;document.getElementById('summary-source-backdrop').hidden=true;if(summarySourceOpener&&summarySourceOpener.isConnected)summarySourceOpener.focus(); }

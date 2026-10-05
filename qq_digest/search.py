@@ -83,7 +83,7 @@ def search_archive(
             })
 
     if kind in {"all", "knowledge"}:
-        clauses = ["c.status='confirmed'", "(c.title LIKE ? ESCAPE '\\' OR c.content LIKE ? ESCAPE '\\' OR c.reason LIKE ? ESCAPE '\\' OR c.excerpt LIKE ? ESCAPE '\\' OR c.link LIKE ? ESCAPE '\\')"]
+        clauses = ["c.status='confirmed'", "EXISTS (SELECT 1 FROM knowledge_items k WHERE k.candidate_id=c.candidate_id)", "(c.title LIKE ? ESCAPE '\\' OR c.content LIKE ? ESCAPE '\\' OR c.reason LIKE ? ESCAPE '\\' OR c.excerpt LIKE ? ESCAPE '\\' OR c.link LIKE ? ESCAPE '\\')"]
         params = [pattern] * 5
         if group_id is not None:
             clauses.append("c.group_id=?")
@@ -109,7 +109,7 @@ def search_archive(
                 "group_id": row["group_id"], "group_name": row["group_name"],
                 "date": row["created_date"], "sort_at": row["created_date"] + "T00:00:00+00:00",
                 "title": row["title"], "snippet": _snippet(body, query), "text": body,
-                "url": f"/candidates?candidate_id={row['candidate_id']}",
+                "url": f"/knowledge?item_id={row['candidate_id']}",
             })
 
     if kind in {"all", "report"}:

@@ -297,7 +297,7 @@
     revisionReport=null; revisionPage=1; revisionLoadToken+=1; revisionControls();
     api('GET', '/api/reports/' + kind + '/' + Number(reportId)).then(function(d) {
       if (selectionToken !== reportSelectionToken) return;
-      qaReport = {kind: kind, id: Number(reportId), current_version:d.current_version, group_name: d.group_name, start: d.window_start_date, end: d.window_end_date};
+      qaReport = {kind: kind, id: Number(reportId), current_version:d.current_version, group_id:d.group_id, group_name: d.group_name, start: d.window_start_date, end: d.window_end_date};
       document.getElementById('report-detail').hidden = false; document.getElementById('report-layout').classList.add('has-detail'); summaryRenderMarkdown(d.markdown);
       summaryEnterDetail(d,kind,Number(reportId));
       renderReportEvidence(d);
@@ -356,7 +356,7 @@
   function openReportSource(messageId) {
     if (!qaReport || !revisionIsCurrent()) return;
     var report=qaReport,token=++sourceRequestToken,host=document.getElementById('report-source-context');host.hidden=false;
-    mountMessageContext(host,{title:'原消息与上下文',citedId:messageId,
+    mountMessageContext(host,{groupId:report.group_id,title:'原消息与上下文',citedId:messageId,
       url:'/api/reports/'+report.kind+'/'+report.id+'/sources/'+encodeURIComponent(messageId)+'?version='+report.current_version,
       isCurrent:function(){return token===sourceRequestToken&&qaReport===report&&revisionIsCurrent()&&!host.hidden;}});
     host.scrollIntoView({block:'nearest'});
