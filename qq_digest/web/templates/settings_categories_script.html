@@ -7,7 +7,7 @@
     if(updateUrl)history.replaceState(null,'','/settings?section='+section);
     updateWorkspaceTools();
   }
-  document.querySelectorAll('[data-settings-section]').forEach(function(link){link.addEventListener('click',function(event){if(['records','reminders'].includes(link.dataset.settingsSection)||event.ctrlKey||event.metaKey||event.shiftKey||event.altKey)return;event.preventDefault();showSettingsCategory(link.dataset.settingsSection,true);});});
+  document.querySelectorAll('[data-settings-section]').forEach(function(link){link.addEventListener('click',function(event){if(['setup','records','reminders'].includes(link.dataset.settingsSection)||event.ctrlKey||event.metaKey||event.shiftKey||event.altKey)return;event.preventDefault();showSettingsCategory(link.dataset.settingsSection,true);});});
   var settingsParams=new URLSearchParams(location.search);
   showSettingsCategory(settingsParams.has('feature')||settingsParams.get('saved')==='features'?'features':settingsParams.get('section')||'ai',false);
 </script>

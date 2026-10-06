@@ -28,6 +28,7 @@ TEMPLATES = (
     "topics.html", "topics_script.html",
     "reminders.html", "reminders_script.html",
     "bookmarks.html", "bookmarks_script.html", "bookmark_actions.html",
+    "first_use.html", "first_use_script.html",
 )
 
 

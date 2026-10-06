@@ -24,7 +24,7 @@ from .knowledge import KnowledgeWriter
 from .web.app import create_app
 
 
-DESKTOP_BACKEND_ID = "2026-10-06-bookmarks"
+DESKTOP_BACKEND_ID = "2026-10-06-first-use"
 
 
 def resolve_config_path(install_dir: Path) -> Path:
@@ -127,6 +127,7 @@ def make_server(config_path: Path, *, port: int | None = None,
         session_secret=config.resolve_session_secret(),
         session_hours=config.security.session_hours,
         config=config,
+        config_path=config_path,
     )
     web_app.state.desktop_config_signature = config_signature(config_path)
     web_app.state.desktop_settings_api_version = 1

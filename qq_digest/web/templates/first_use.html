@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+{% block title %}首次设置 - QQ Digest{% endblock %}
+{% block page_title %}首次设置{% endblock %}
+{% block actions %}<a class="btn" href="/reports">返回摘要</a>{% endblock %}
+{% block content %}
+<div class="setup-layout" id="setup-root" aria-busy="true">
+  <nav class="setup-steps" aria-label="设置步骤">
+    {% for label in ['数据源','群聊','导入','AI','计划','预览'] %}<button class="btn" type="button" data-setup-step="{{ loop.index }}">{{ loop.index }} {{ label }}</button>{% endfor %}
+  </nav>
+  <p id="setup-status" role="status" aria-live="polite">正在读取设置…</p>
+  <p id="setup-pause" class="header-meta" hidden>设置期间暂停自动采集、日报和巡检。</p>
+  <button class="btn btn-sm" type="button" id="setup-reload" hidden>重新载入</button>
+  <fieldset id="setup-fields" disabled>
+    <section class="card setup-card" data-setup-panel="1" aria-labelledby="setup-source-title">
+      <h2 id="setup-source-title">连接 QQ 数据</h2>
+      <div class="field"><label for="setup-accounts">本机账号</label><div class="setup-row"><select class="input" id="setup-accounts"><option value="">选择账号</option></select><button class="btn" type="button" id="setup-detect">检测 QQ</button></div></div>
+      <div class="field"><label for="setup-qq">QQ 账号</label><input class="input" id="setup-qq" type="text" inputmode="numeric" maxlength="18" placeholder="填写当前登录的 QQ 账号"></div>
+      <p class="header-meta">保持 QQ 登录。读取结果保存到 D:\Cache\QQDigestSources\账号。</p>
+      <button class="btn btn-primary" type="button" id="setup-refresh">读取当前 QQ</button>
+      <details id="setup-existing"><summary>使用已有解密库</summary>
+        <div class="field"><label for="setup-source">数据库文件夹</label><input class="input" id="setup-source" type="text" spellcheck="false" maxlength="1024" placeholder="例如 D:\Cache\QQDigestSources\123456"></div>
+        <p class="header-meta">需包含 group_info.db 和消息库。仅浏览已有库时，QQ 账号可留空。</p>
+        <button class="btn" type="button" id="setup-save-source">检查并继续</button>
+      </details>
+    </section>
+    <section class="card setup-card" data-setup-panel="2" hidden aria-labelledby="setup-groups-title">
+      <h2 id="setup-groups-title">选择群聊</h2><p class="header-meta">未选群保持原设置。</p>
+      <div class="field"><label for="setup-group-filter">筛选群名或群号</label><input class="input" id="setup-group-filter" type="search"></div>
+      <div id="setup-group-list" class="setup-group-list"></div>
+      <div class="setup-row"><button class="btn" type="button" id="setup-scan">重新扫描</button><button class="btn btn-primary" type="button" id="setup-save-groups">保存并继续</button></div>
+    </section>
+    <section class="card setup-card" data-setup-panel="3" hidden aria-labelledby="setup-import-title">
+      <h2 id="setup-import-title">首次导入</h2>
+      <div class="setup-row"><div class="field"><label for="setup-start">开始日期</label><input class="input" id="setup-start" type="date"></div><div class="field"><label for="setup-end">结束日期</label><input class="input" id="setup-end" type="date"></div></div>
+      <p class="header-meta">最多 31 天。重复导入会去重。</p>
+      <div id="setup-import-list"></div>
+      <div class="setup-row"><button class="btn btn-primary" type="button" id="setup-import">导入所选群</button><button class="btn" type="button" id="setup-import-next">继续</button></div>
+    </section>
+    <section class="card setup-card" data-setup-panel="4" hidden aria-labelledby="setup-ai-title">
+      <h2 id="setup-ai-title">AI 连接</h2>
+      <div class="field"><label for="setup-provider">使用渠道</label><select class="input" id="setup-provider"><option value="chatgpt_bridge">本机订阅桥接</option><option value="compatible">兼容 API</option></select></div>
+      <p class="header-meta" id="setup-bridge-note"></p>
+      <div id="setup-api-options"><div class="field"><label for="setup-url">接口地址</label><input class="input" id="setup-url" type="url" spellcheck="false" maxlength="1024" placeholder="https://服务地址/v1"></div>
+        <div class="field"><label for="setup-key">API Key</label><input class="input" id="setup-key" type="password" autocomplete="new-password" maxlength="4096" placeholder="留空保留已有密钥"><span class="header-meta" id="setup-key-status"></span><small class="header-meta">保存到本机文件，备份包含密钥。</small></div></div>
+      <div class="field"><label for="setup-model">模型</label><input class="input" id="setup-model" type="text" maxlength="200" spellcheck="false"></div>
+      <p class="header-meta">连接测试只发送测试文本。生成摘要会发送所选聊天内容。</p>
+      <div class="setup-row"><button class="btn" type="button" id="setup-save-ai">保存 AI 设置</button><button class="btn btn-primary" type="button" id="setup-test-ai">测试连接并继续</button><button class="btn" type="button" id="setup-skip-ai">暂不配置</button></div>
+    </section>
+    <section class="card setup-card" data-setup-panel="5" hidden aria-labelledby="setup-schedule-title">
+      <h2 id="setup-schedule-title">自动运行计划</h2>
+      <div class="field"><label><input id="setup-auto-collect" type="checkbox"> 自动采集</label><label for="setup-interval">采集间隔（分钟）</label><input class="input" id="setup-interval" type="number" min="1" max="1440"></div>
+      <div class="field"><label><input id="setup-auto-daily" type="checkbox"> 每天生成摘要</label><label for="setup-time">生成时间</label><input class="input" id="setup-time" type="time"></div>
+      <p class="header-meta" id="setup-schedule-note">程序运行时执行。</p>
+      <button class="btn btn-primary" type="button" id="setup-save-schedule">保存并预览</button>
+    </section>
+    <section class="card setup-card" data-setup-panel="6" hidden aria-labelledby="setup-preview-title">
+      <h2 id="setup-preview-title">查看导入结果</h2>
+      <p id="setup-preview-scope"></p><div id="setup-preview-groups"></div>
+      <p class="header-meta">仅代表本地可读记录。更早的缺失消息无法确认。</p>
+      <div id="setup-preview-samples"></div>
+      <div class="setup-row"><button class="btn btn-primary" type="button" id="setup-finish">完成设置</button><a class="btn" id="setup-open-reports" href="/reports" hidden>去生成摘要</a><a class="btn" id="setup-open-search" href="/search" hidden>查找原消息</a></div>
+    </section>
+  </fieldset>
+</div>
+<style>
+.setup-layout{max-width:880px;margin:0 auto}.setup-steps{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:18px}.setup-steps button[aria-current=step]{background:var(--primary);color:white;border-color:var(--primary)}.setup-card{padding:24px}.setup-card h2{margin:0 0 20px;font-size:20px}.setup-card .field{display:grid;gap:7px;margin:16px 0}.setup-card .input{width:100%;min-width:0}.setup-row{display:flex;gap:12px;align-items:center;flex-wrap:wrap}.setup-row>.field{flex:1;min-width:130px}#setup-fields{border:0;padding:0;margin:0;min-width:0}.setup-group-list{max-height:360px;overflow:auto;margin-bottom:20px}.setup-group-row,.setup-result-row{display:flex;align-items:center;gap:10px;padding:12px 0;border-bottom:1px solid var(--border);overflow-wrap:anywhere}.setup-group-row span{flex:1}.setup-result-row strong{flex:1}.setup-card details{margin-top:24px}.setup-card summary{cursor:pointer}.setup-sample{background:var(--surface-subtle);padding:12px;margin:12px 0;white-space:pre-wrap;overflow-wrap:anywhere}.setup-sample a{display:block;font-size:12px;margin-bottom:6px}#setup-status[data-error]{color:var(--red)}@media(max-width:600px){.setup-card{padding:16px}.setup-steps{gap:4px}.setup-steps .btn{padding:7px 10px}.setup-row>.btn{max-width:100%}.setup-result-row{flex-wrap:wrap}}
+</style>
+{% include "first_use_script.html" %}
+{% endblock %}

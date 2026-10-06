@@ -264,6 +264,7 @@ def create_app(
     session_secret: str,
     session_hours: int = 12,
     config: Config | None = None,
+    config_path: Path | None = None,
 ):
     # QQ Bot WebSocket listener state
     ws_state = {"listener": None, "task": None}
@@ -507,6 +508,7 @@ def create_app(
             await asyncio.sleep(60)
             if (
                 not config
+                or setup_in_progress(config)
                 or not feature_service.enabled('auto_daily')
                 or scheduler_state["running"]
                 or not operations.can_start("daily")
@@ -616,6 +618,7 @@ def create_app(
         while True:
             if (
                 config.collection.enabled
+                and not setup_in_progress(config)
                 and feature_service.enabled('auto_collection')
                 and config.ntqq.enabled
                 and operations.can_start("sync")
@@ -675,7 +678,7 @@ def create_app(
             _message_sync_loop()
         )
         inspection_task = asyncio.create_task(history_inspection_loop(
-            config, operations, enabled=lambda: feature_service.enabled('history_inspection')))
+            config, operations, enabled=lambda: feature_service.enabled('history_inspection') and not setup_in_progress(config)))
         reminder_task = asyncio.create_task(reminder_loop(
             archive.connection.execute('PRAGMA database_list').fetchone()['file'], operations,
             enabled=lambda: feature_service.enabled('reminders'),
@@ -715,6 +718,10 @@ def create_app(
     app.state.config = config
     app.state.operations = operations
     app.state.desktop_bridge = None
+    from ..first_use import setup_in_progress
+    from .first_use_routes import add_first_use_routes
+    add_first_use_routes(app, config=config, config_path=config_path, archive=archive,
+                         templates=templates, require_login=require_login, operations=operations)
     feature_service = add_feature_routes(app, archive=archive, cookie=cookie, require_login=require_login, operations=operations)
     add_summary_reading_routes(app, archive=archive, config=config, require_login=require_login)
     add_message_routes(app, archive=archive, config=config, require_login=require_login)
@@ -1596,7 +1603,8 @@ def create_app(
         tz = ZoneInfo(cfg.summary.timezone) if cfg else ZoneInfo("Asia/Shanghai")
         now = datetime.now(tz)
         return {
-            "enabled": bool(cfg and feature_service.enabled('auto_daily')),
+            "enabled": bool(cfg and not setup_in_progress(cfg) and feature_service.enabled('auto_daily')),
+            "setup_paused": setup_in_progress(cfg),
             "schedule": f"{cfg.summary.hour:02d}:{cfg.summary.minute:02d}" if cfg else "",
             "timezone": cfg.summary.timezone if cfg else "Asia/Shanghai",
             "running": scheduler_state["running"],
@@ -1604,7 +1612,7 @@ def create_app(
             "last_result": scheduler_state["last_result"],
             "next_check": "within 60s",
             "collection": {
-                "enabled": bool(cfg and cfg.collection.enabled and cfg.ntqq.enabled and feature_service.enabled('auto_collection')),
+                "enabled": bool(cfg and not setup_in_progress(cfg) and cfg.collection.enabled and cfg.ntqq.enabled and feature_service.enabled('auto_collection')),
                 "interval_minutes": cfg.collection.interval_minutes if cfg else 0,
                 "running": sync_scheduler_state["running"],
                 "last_run_at": sync_scheduler_state["last_run_at"],

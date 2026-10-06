@@ -780,6 +780,7 @@ def test_scheduler_api_returns_status(web_client):
     assert response.status_code == 200
     assert response.json() == {
         "enabled": True,
+        "setup_paused": False,
         "schedule": "09:30",
         "timezone": "Asia/Shanghai",
         "running": False,

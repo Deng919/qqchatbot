@@ -198,6 +198,7 @@ def serve(config_path: Path = typer.Option(Path("config/config.yaml"))) -> None:
         session_secret=config.resolve_session_secret(),
         session_hours=config.security.session_hours,
         config=config,
+        config_path=config_path,
     )
     if not web_app.state.cookie.secret:
         raise typer.Exit("Session secret 未设置")

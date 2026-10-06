@@ -52,6 +52,7 @@
     var actions=summaryNode('div','actions');
     if(filtered)actions.appendChild(summaryButton('查看全部要点',function(){document.getElementById('summary-read-filter').value='all';summaryFilterPoints();}));
     else actions.appendChild(summaryButton('选择范围并生成',function(){openRangeSummary();},'btn btn-primary'));
+    if(!filtered){var setupLink=summaryNode('a','btn','首次设置');setupLink.href='/setup';actions.appendChild(setupLink);}
     actions.appendChild(summaryButton('查看最近七天',function(){summarySetDates('week');}));
     if(summaryView==='points')actions.appendChild(summaryButton('按群阅读',function(){summarySetView('groups');}));
     box.appendChild(actions);host.appendChild(box);

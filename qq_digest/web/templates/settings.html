@@ -2,6 +2,7 @@
 {% block title %}设置 - QQ Digest{% endblock %}
 {% block page_title %}设置{% endblock %}
 {% block page_description %}{% endblock %}
+{% block actions %}<a class="btn" href="/setup">数据源与首次设置</a>{% endblock %}
 {% block content %}
 <div class="desktop-settings">
   <div data-settings-panel="ai">{% include "ai_connection_settings.html" %}</div>
@@ -152,7 +153,7 @@
   var savedCategory=new URLSearchParams(location.search).get('saved');
   if(savedCategory==='features')setResult('features-result','功能设置已保存');
   if(savedCategory==='automatic')setResult('automatic-result','自动运行设置已保存');
-  function refreshAutomaticSchedule(){return api('GET','/api/scheduler').then(function(data){document.getElementById('automatic-schedule').textContent='每日摘要时间 '+data.schedule+'（'+data.timezone+'） · 消息更新间隔 '+data.collection.interval_minutes+' 分钟。'+(!data.collection.enabled?'自动更新未运行，请检查群聊和数据源设置。':'');}).catch(function(){document.getElementById('automatic-schedule').textContent='运行状态读取失败。';});}
+  function refreshAutomaticSchedule(){return api('GET','/api/scheduler').then(function(data){document.getElementById('automatic-schedule').textContent='每日摘要时间 '+data.schedule+'（'+data.timezone+'） · 消息更新间隔 '+data.collection.interval_minutes+' 分钟。'+(data.setup_paused?'首次设置尚未完成，自动任务暂停。':!data.collection.enabled?'自动更新未运行，请检查群聊和数据源设置。':'');}).catch(function(){document.getElementById('automatic-schedule').textContent='运行状态读取失败。';});}
   refreshAutomaticSchedule();
   var restorePreview = null;
   function settingsError(error) { toast(error && error.message ? error.message : String(error), 'error'); }

@@ -6,7 +6,7 @@ from threading import Lock
 
 OPERATION_KINDS = (
     "daily", "refresh", "collect", "sync", "manual_summary", "group_mutation", "history_inspection", "knowledge_mutation",
-    "backup", "storage_mutation", "topic_mutation", "reminder_mutation", "bookmark_mutation"
+    "backup", "storage_mutation", "topic_mutation", "reminder_mutation", "bookmark_mutation", "setup_mutation"
 )
 CONFLICTS = {kind: frozenset(OPERATION_KINDS) for kind in OPERATION_KINDS}
 
