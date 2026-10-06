@@ -24,15 +24,17 @@ jobs:
       - name: Install build dependencies
         run: python -m pip install ".[test,desktop,desktop-build]"
       - name: Test public distribution and installation
-        run: >-
-          python -m pytest -q
-          tests/test_public_distribution.py tests/test_public_installer.py
-          tests/test_public_build.py tests/test_runtime_paths.py
-          tests/test_desktop.py tests/test_desktop_settings.py
-          tests/test_desktop_updates.py tests/test_desktop_releases.py
-          tests/test_desktop_update_web.py tests/test_backup_restore.py
-          tests/test_first_use.py tests/test_first_use_web.py
-          tests/test_ai_client.py tests/test_ai_settings.py
+        run: |
+          python -m pytest -q tests/test_public_distribution.py tests/test_public_installer.py tests/test_public_build.py tests/test_runtime_paths.py tests/test_desktop.py tests/test_desktop_settings.py tests/test_desktop_updates.py tests/test_desktop_releases.py tests/test_desktop_update_web.py tests/test_backup_restore.py tests/test_first_use.py tests/test_first_use_web.py tests/test_ai_client.py tests/test_ai_settings.py *> pytest-public.log
+          $testExit = $LASTEXITCODE
+          Get-Content pytest-public.log
+          if ($testExit -ne 0) {
+            Get-Content pytest-public.log | Select-Object -Last 140 | ForEach-Object {
+              $diagnostic = $_.Replace('%', '%25').Replace("`r", '%0D').Replace("`n", '%0A')
+              Write-Output "::error::$diagnostic"
+            }
+          }
+          exit $testExit
       - name: Build DeepSeek-only desktop
         run: python scripts/build_desktop.py --public --release-dir D:\Apps\QQDigestDesktop-0.2.0-beta.1
       - name: Build installer
