@@ -13,6 +13,7 @@ from zoneinfo import ZoneInfo
 from fastapi import FastAPI, Form, HTTPException, Query, Request
 from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
+from ..distribution import is_public_distribution
 from pydantic import BaseModel, Field, field_validator
 from typing import Literal
 
@@ -56,6 +57,7 @@ from ..report_selection import selected_report_groups
 
 templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"),
                            context_processors=[lambda request: {'features': getattr(request.state, 'features', {})}])
+templates.env.globals["public_distribution"] = is_public_distribution
 
 
 class ManualRangePayload(BaseModel):
@@ -1123,7 +1125,7 @@ def create_app(
             "base_url": cfg.ai.base_url,
             "model": cfg.ai.model,
             "provider_priority": cfg.ai.provider_priority,
-            "bridge_model": cfg.ai.bridge_model,
+            **({} if is_public_distribution() else {"bridge_model": cfg.ai.bridge_model}),
             "key_configured": bool(
                 cfg.ai.ui_api_key_file
                 and ui_api_key_exists(Path(cfg.ai.ui_api_key_file))

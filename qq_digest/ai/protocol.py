@@ -1,0 +1,6 @@
+from typing import Any, Protocol
+
+
+class ChatProvider(Protocol):
+    def chat(self, messages: list[dict[str, str]]) -> dict[str, Any]: ...
+    def close(self) -> None: ...

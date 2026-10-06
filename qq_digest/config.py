@@ -8,6 +8,7 @@ import yaml
 from pydantic import BaseModel, Field
 
 from .models import GroupConfig
+from .distribution import is_public_distribution, validate_public_ai, validate_public_base_url
 
 
 class ConfigError(ValueError):
@@ -149,6 +150,8 @@ class Config(BaseModel):
             if not value or any(char.isspace() for char in value):
                 raise ConfigError("API 密钥文件必须包含一行非空密钥")
             return value
+        if is_public_distribution():
+            raise ConfigError("请配置您自己的 DeepSeek API 密钥")
         return self._discover_codex_api_key()
 
     @staticmethod
@@ -214,6 +217,9 @@ class Config(BaseModel):
     def resolve_base_url(self) -> str:
         """Return configured base_url, or auto-discover from codexID."""
         url = self.ai.base_url.strip()
+        if is_public_distribution():
+            validate_public_base_url(url)
+            return url
         if url and url not in ("auto", "https://api.example.com/v1"):
             return url
         entry = self._discover_codex_entry()
@@ -254,6 +260,9 @@ def load_config(path: Path, *, create_dirs: bool = True) -> Config:
         config = Config.model_validate(raw)
     except Exception as exc:
         raise ConfigError(str(exc)) from exc
+
+    if is_public_distribution():
+        validate_public_ai(config.ai.provider_priority, config.ai.base_url)
 
     if not 0 <= config.summary.hour <= 23:
         raise ConfigError("summary.hour 必须在 0 到 23 之间")

@@ -20,8 +20,10 @@ import yaml
 from .config import ConfigError, load_config
 
 
-BACKUP_ROOT = Path(r"D:\Downloads\QQDigestBackups")
-TEMP_ROOT = Path(r"D:\Cache\QQDigestDesktop")
+from .runtime_paths import cache_root, download_root
+
+BACKUP_ROOT = download_root() / 'QQDigestBackups'
+TEMP_ROOT = cache_root()
 DATA_FOLDERS = ("reports", "knowledge", "work", "logs")
 CONFIG_PATH_FIELDS = (("knowledge", "resource_path"), ("knowledge", "experience_path"),
                       ("ai", "api_key_file"), ("ai", "ui_api_key_file"),

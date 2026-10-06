@@ -33,24 +33,7 @@ TEMPLATES = (
 )
 
 
-def main() -> int:
-    parser = argparse.ArgumentParser(description="Build QQ Digest Desktop for Windows")
-    parser.add_argument("--config", type=Path, default=PROJECT / "config" / "config.yaml")
-    parser.add_argument("--release-dir", type=Path, default=RELEASE)
-    args = parser.parse_args()
-    config = args.config.resolve()
-    release = args.release_dir.resolve()
-    if not config.is_file():
-        parser.error(f"config file does not exist: {config}")
-    if release.exists():
-        parser.error(f"release directory already exists: {release}")
-    if not release.is_relative_to(Path(r"D:\Apps")):
-        parser.error("release directory must be within D:\\Apps")
-
-    cache = CACHE.resolve()
-    built = (cache / "dist" / "QQDigestDesktop").resolve()
-    if not built.is_relative_to(cache):
-        parser.error("build output must stay within D:\\Cache\\QQDigestDesktop")
+def build_command(cache: Path, *, public=False, version='0.2.0-beta.1') -> list[str]:
     cache.mkdir(parents=True, exist_ok=True)
     command = [
         sys.executable, "-m", "PyInstaller",
@@ -60,6 +43,12 @@ def main() -> int:
         "--distpath", str(cache / "dist"),
         "--specpath", str(cache / "spec"),
     ]
+    if public:
+        profile = cache / 'distribution.json'
+        profile.write_text(json.dumps({'edition': 'deepseek-only', 'version': version}), encoding='utf-8')
+        hook = cache / 'public_runtime_hook.py'
+        hook.write_text('import sys\nsys._qq_digest_public_build = True\n', encoding='utf-8')
+        command.extend(['--exclude-module', 'qq_digest.ai.bridge', '--add-data', f'{profile};qq_digest', '--runtime-hook', str(hook)])
     template_dir = PROJECT / "qq_digest" / "web" / "templates"
     for name in TEMPLATES:
         source = template_dir / name
@@ -67,20 +56,50 @@ def main() -> int:
             raise FileNotFoundError(f"required template not found: {source}")
         command.extend(["--add-data", f"{source};qq_digest/web/templates"])
     command.append(str(PROJECT / "scripts" / "desktop_entry.py"))
+    return command
+
+
+def finalize_release(release: Path, config: Path, *, public=False, version='0.2.0-beta.1'):
+    from qq_digest.desktop import DESKTOP_BACKEND_ID
+    from qq_digest.desktop_releases import ReleaseRegistry, write_release
+    from qq_digest.desktop_updates import STATE_DIR
+    if public:
+        for source, name in [(PROJECT / 'LICENSE', 'LICENSE.txt'), (PROJECT / 'docs' / 'PUBLIC_BETA.md', '使用说明.md')]:
+            shutil.copyfile(source, release / name)
+        write_release(release, version, DESKTOP_BACKEND_ID + '-deepseek-only', compatibility='archive-2026-10-06-deepseek-only')
+        return
+    (release / "launcher.json").write_text(
+        json.dumps({"config_path": str(config)}, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    write_release(release, release.name, DESKTOP_BACKEND_ID)
+    ReleaseRegistry(Path(r'D:\Apps'), STATE_DIR).register(release)
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Build QQ Digest Desktop for Windows")
+    parser.add_argument("--config", type=Path, default=PROJECT / "config" / "config.yaml")
+    parser.add_argument("--release-dir", type=Path, default=RELEASE)
+    parser.add_argument('--public', action='store_true')
+    parser.add_argument('--version', default='0.2.0-beta.1')
+    args = parser.parse_args()
+    config = args.config.resolve()
+    release = args.release_dir.resolve()
+    if not args.public and not config.is_file():
+        parser.error(f"config file does not exist: {config}")
+    if release.exists():
+        parser.error(f"release directory already exists: {release}")
+    if not release.is_relative_to(Path(r"D:\Apps")):
+        parser.error("release directory must be within D:\\Apps")
+    cache = (CACHE.parent / 'QQDigestPublicBeta-2026-10-06' if args.public else CACHE).resolve()
+    built = cache / 'dist' / 'QQDigestDesktop'
+    command = build_command(cache, public=args.public, version=args.version)
     subprocess.run(command, cwd=PROJECT, check=True)
     if not (built / "QQDigestDesktop.exe").is_file():
         raise RuntimeError(f"built executable not found: {built}")
     release.parent.mkdir(parents=True, exist_ok=True)
     shutil.copytree(built, release)
-    (release / "launcher.json").write_text(
-        json.dumps({"config_path": str(config)}, ensure_ascii=False, indent=2) + "\n",
-        encoding="utf-8",
-    )
-    from qq_digest.desktop import DESKTOP_BACKEND_ID
-    from qq_digest.desktop_releases import ReleaseRegistry, write_release
-    from qq_digest.desktop_updates import STATE_DIR
-    write_release(release, release.name, DESKTOP_BACKEND_ID)
-    ReleaseRegistry(Path(r'D:\Apps'), STATE_DIR).register(release)
+    finalize_release(release, config, public=args.public, version=args.version)
     print(release / "QQDigestDesktop.exe")
     return 0
 

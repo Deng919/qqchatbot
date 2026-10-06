@@ -15,10 +15,10 @@
       <h2 id="setup-source-title">连接 QQ 数据</h2>
       <div class="field"><label for="setup-accounts">本机账号</label><div class="setup-row"><select class="input" id="setup-accounts"><option value="">选择账号</option></select><button class="btn" type="button" id="setup-detect">检测 QQ</button></div></div>
       <div class="field"><label for="setup-qq">QQ 账号</label><input class="input" id="setup-qq" type="text" inputmode="numeric" maxlength="18" placeholder="填写当前登录的 QQ 账号"></div>
-      <p class="header-meta">保持 QQ 登录。读取结果保存到 D:\Cache\QQDigestSources\账号。</p>
+      <p class="header-meta">保持 QQ 登录。读取结果保存在本机缓存目录。</p>
       <button class="btn btn-primary" type="button" id="setup-refresh">读取当前 QQ</button>
       <details id="setup-existing"><summary>使用已有解密库</summary>
-        <div class="field"><label for="setup-source">数据库文件夹</label><input class="input" id="setup-source" type="text" spellcheck="false" maxlength="1024" placeholder="例如 D:\Cache\QQDigestSources\123456"></div>
+        <div class="field"><label for="setup-source">数据库文件夹</label><input class="input" id="setup-source" type="text" spellcheck="false" maxlength="1024" placeholder="选择包含解密数据库的文件夹"></div>
         <p class="header-meta">需包含 group_info.db 和消息库。仅浏览已有库时，QQ 账号可留空。</p>
         <button class="btn" type="button" id="setup-save-source">检查并继续</button>
       </details>
@@ -38,9 +38,9 @@
     </section>
     <section class="card setup-card" data-setup-panel="4" hidden aria-labelledby="setup-ai-title">
       <h2 id="setup-ai-title">AI 连接</h2>
-      <div class="field"><label for="setup-provider">使用渠道</label><select class="input" id="setup-provider"><option value="chatgpt_bridge">本机订阅桥接</option><option value="compatible">兼容 API</option></select></div>
-      <p class="header-meta" id="setup-bridge-note"></p>
-      <div id="setup-api-options"><div class="field"><label for="setup-url">接口地址</label><input class="input" id="setup-url" type="url" spellcheck="false" maxlength="1024" placeholder="https://服务地址/v1"></div>
+      <div class="field"><label for="setup-provider">使用渠道</label><select class="input" id="setup-provider">{% if not public_distribution() %}<option value="chatgpt_bridge">本机订阅桥接</option>{% endif %}<option value="compatible">{{ "DeepSeek API" if public_distribution() else "兼容 API" }}</option></select></div>
+      {% if not public_distribution() %}<p class="header-meta" id="setup-bridge-note"></p>{% endif %}
+      <div id="setup-api-options"><div class="field"><label for="setup-url">接口地址</label><input class="input" id="setup-url" type="url" spellcheck="false" maxlength="1024" placeholder="https://api.deepseek.com" {% if public_distribution() %}readonly{% endif %}></div>
         <div class="field"><label for="setup-key">API Key</label><input class="input" id="setup-key" type="password" autocomplete="new-password" maxlength="4096" placeholder="留空保留已有密钥"><span class="header-meta" id="setup-key-status"></span><small class="header-meta">保存到本机文件，备份包含密钥。</small></div></div>
       <div class="field"><label for="setup-model">模型</label><input class="input" id="setup-model" type="text" maxlength="200" spellcheck="false"></div>
       <p class="header-meta">连接测试只发送测试文本。生成摘要会发送所选聊天内容。</p>

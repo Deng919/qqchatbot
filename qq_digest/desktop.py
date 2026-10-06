@@ -19,12 +19,15 @@ import uvicorn
 from .archive import Archive
 from .candidates import CandidateService
 from .config import load_config
+from .runtime_paths import cache_root
 from .desktop_settings import DesktopBridge
 from .knowledge import KnowledgeWriter
 from .web.app import create_app
 
 
-DESKTOP_BACKEND_ID = "2026-10-06-desktop-updates"
+from .distribution import is_public_distribution
+
+DESKTOP_BACKEND_ID = "2026-10-06-desktop-updates" + ('-deepseek-only' if is_public_distribution() else '')
 
 
 def resolve_config_path(install_dir: Path) -> Path:
@@ -215,7 +218,7 @@ def main() -> int:
         bridge._owns_service = runtime.owned
         bridge._runtime_url = runtime.url
         show_window(runtime, gui=webview, bridge=bridge,
-                    storage_path=Path(r"D:\Cache\QQDigestDesktop\WebView2"))
+                    storage_path=cache_root() / 'WebView2')
         return 0
     except Exception as exc:
         if len(sys.argv) > 1 and sys.argv[1] in {'--update-worker', '--update-start', '--update-recover'}:

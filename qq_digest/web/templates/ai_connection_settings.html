@@ -1,4 +1,5 @@
 
+{% if not public_distribution() %}
 <section class="card ai-settings-card" aria-labelledby="summary-provider-title">
   <div class="card-header" id="summary-provider-title">摘要引擎</div>
   <p class="settings-note">首选失败时使用备用连接。</p>
@@ -7,6 +8,7 @@
     <div><dt>备用</dt><dd id="summary-fallback">加载中...</dd></div>
   </dl>
 </section>
+{% endif %}
 <section class="card ai-settings-card" aria-labelledby="deepseek-settings-title">
   <div class="card-header" id="deepseek-settings-title">DeepSeek API</div>
   <p class="settings-note">密钥保存在本机，不在页面显示。</p>
@@ -37,6 +39,7 @@
 <script>
   function loadAISettings() {
     api('GET', '/api/ai-settings').then(function(data) {
+      {% if not public_distribution() %}
       var providers = data.provider_priority || [];
       function providerLabel(name) {
         if (name === 'chatgpt_bridge') return '本机 ChatGPT 桥接' + (data.bridge_model ? ' · ' + data.bridge_model : '');
@@ -45,6 +48,7 @@
       }
       document.getElementById('summary-primary').textContent = providerLabel(providers[0]);
       document.getElementById('summary-fallback').textContent = providers[1] ? providerLabel(providers[1]) : '无';
+      {% endif %}
       document.getElementById('deepseek-base-url').textContent = data.base_url || '未配置';
       document.getElementById('deepseek-model').textContent = data.model || '未配置';
       document.getElementById('deepseek-key-status').textContent = data.key_configured ? '已保存到本机' : '尚未通过网页保存';

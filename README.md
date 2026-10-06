@@ -2,6 +2,16 @@
 
 本地 QQ 群消息采集、每日摘要、重点信息审核和 Markdown 知识库工具。
 
+## Windows 试用版
+
+普通用户从 [GitHub Releases](https://github.com/Deng919/qqchatbot/releases) 下载 Windows x64 安装包，无需安装 Python。安装时设置自己的登录密码，启动后按「首次设置」选择 QQ 账号、导入群聊，再填写自己的 DeepSeek API Key。
+
+公开安装包仅支持 DeepSeek API，不包含 GPT 桥接、账号或密钥。也可跳过 AI，先使用本地采集和查找。AI 摘要与问答会把所选聊天片段发送到 DeepSeek。
+
+[安装说明](docs/PUBLIC_BETA.md) · [问题反馈](https://github.com/Deng919/qqchatbot/issues)
+
+以下为源码开发说明。
+
 ## 已实现功能
 
 - 从本机 QQ NT 的解密数据库发现群聊并读取消息。

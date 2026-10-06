@@ -21,7 +21,9 @@ from .backup_restore import (BACKUP_ROOT, CONFIG_PATH_FIELDS, DATA_FOLDERS,
 from .operations import OperationBusy
 
 
-EXPORT_ROOT = Path(r"D:\Downloads\QQDigestReports")
+from .runtime_paths import download_root, release_root
+
+EXPORT_ROOT = download_root() / 'QQDigestReports'
 RUN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
 RUN_NAME = "QQDigestDesktop"
 
@@ -191,7 +193,7 @@ class DesktopBridge:
             launched_config = self._install_dir / launched_config
         if launched_config.resolve() != self._config_path.resolve():
             raise ValueError('存储位置已切换，请先重启程序')
-        registry = ReleaseRegistry(Path(r'D:\Apps'), STATE_DIR)
+        registry = ReleaseRegistry(release_root(), STATE_DIR)
         registry.register(self._install_dir)
         config = load_config(self._config_path)
         data_paths = [config.data_dir, config.archive_path, config.ntqq.db_dir,

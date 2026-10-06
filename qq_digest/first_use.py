@@ -17,6 +17,7 @@ import yaml
 from .archive import Archive
 from .collector.ntqq import NTQQCollector
 from .config import load_config
+from .distribution import is_public_distribution, validate_public_ai
 from .features import FeatureService, FeatureConflict
 
 
@@ -43,7 +44,8 @@ def detect_accounts(root: Path | None = None) -> list[dict]:
 def refresh_setup_source(qq_number: int, work_dir: Path) -> Path:
     """Only decrypt to this program's account-specific cache, never a caller's path."""
     from .refresh import refresh_database
-    root = Path(r'D:\Cache\QQDigestSources')
+    from .runtime_paths import cache_root
+    root = cache_root() / 'QQSources' if is_public_distribution() else Path(r'D:\Cache\QQDigestSources')
     destination = root / str(qq_number)
     if destination.resolve() != destination.absolute() or root.resolve() != root.absolute():
         raise ValueError('数据缓存目录存在重定向，请改用已有解密库')
@@ -150,10 +152,12 @@ class FirstUseService:
             'end_date': state.get('end_date', today.isoformat()),
             'ntqq': cfg.ntqq.model_dump(),
             'ai': {'base_url': cfg.ai.base_url, 'model': cfg.ai.model,
-                'bridge_model': cfg.ai.bridge_model,
+
                 'provider': cfg.ai.provider_priority[0],
                 'key_configured': bool(cfg.ai.ui_api_key_file and Path(cfg.ai.ui_api_key_file).is_file()),
-                'bridge_available': Path(cfg.ai.bridge_wrapper_path).is_file()},
+                **({} if is_public_distribution() else {
+                    'bridge_model': cfg.ai.bridge_model,
+                    'bridge_available': Path(cfg.ai.bridge_wrapper_path).is_file()})},
             'schedule': {'auto_collection': features['values']['auto_collection'] and cfg.collection.enabled,
                 'auto_daily': features['values']['auto_daily'], 'interval_minutes': cfg.collection.interval_minutes,
                 'hour': cfg.summary.hour, 'minute': cfg.summary.minute, 'timezone': cfg.summary.timezone},
@@ -247,6 +251,8 @@ class FirstUseService:
 
     def set_ai(self, revision, provider, base_url, model, api_key=''):
         self.store.check(revision)
+        if is_public_distribution():
+            validate_public_ai([provider], base_url)
         if provider == 'compatible':
             parsed = urlsplit(base_url)
             if parsed.scheme not in ('http', 'https') or not parsed.hostname or parsed.username or parsed.password or parsed.query or parsed.fragment:

@@ -9,7 +9,9 @@ from pathlib import Path
 
 from .desktop_releases import ReleaseRegistry
 
-STATE_DIR = Path(r'D:\Cache\QQDigestDesktop\updates')
+from .runtime_paths import cache_root
+
+STATE_DIR = cache_root() / 'updates'
 ACTIVE = {'prepared', 'waiting', 'starting', 'committing', 'recovering'}
 
 

@@ -11,6 +11,7 @@ import time
 import urllib.request
 
 from .desktop_releases import ReleaseRegistry
+from .runtime_paths import release_root
 from .desktop_updates import STATE_DIR, atomic_json, read_transaction, run_transaction, signature
 
 
@@ -193,7 +194,7 @@ class WindowsRuntime:
 
 
 def acknowledge_start(state_dir, install_dir, config_path, backend_id, *, recovery=False):
-    registry = ReleaseRegistry(Path(r'D:\Apps'), Path(state_dir))
+    registry = ReleaseRegistry(release_root(), Path(state_dir))
     transaction = read_transaction(registry)
     record = transaction.get('source' if recovery else 'target', {})
     expected_signature = transaction.get('recovery_config_signature') if recovery else transaction.get('config_signature')
@@ -209,5 +210,5 @@ def acknowledge_start(state_dir, install_dir, config_path, backend_id, *, recove
 
 
 def worker_main(state_dir):
-    registry = ReleaseRegistry(Path(r'D:\Apps'), Path(state_dir))
+    registry = ReleaseRegistry(release_root(), Path(state_dir))
     return run_transaction(registry, WindowsRuntime(state_dir))

@@ -3,12 +3,14 @@ from __future__ import annotations
 from pathlib import Path
 
 from ..config import Config
-from .bridge import BridgeAIClient, ChatProvider, FallbackAIClient
+from .protocol import ChatProvider
+from ..distribution import is_public_distribution, validate_public_ai
 from .client import AIClient
 
 
 def _build_provider(config: Config, name: str) -> ChatProvider:
     if name == "chatgpt_bridge":
+        from .bridge import BridgeAIClient
         return BridgeAIClient(
             wrapper_path=Path(config.ai.bridge_wrapper_path),
             account_directory=Path(config.ai.bridge_account_directory),
@@ -32,9 +34,13 @@ def _build_provider(config: Config, name: str) -> ChatProvider:
 
 def build_ai_client(config: Config) -> ChatProvider:
     names = config.ai.provider_priority
+    if is_public_distribution():
+        validate_public_ai(names, config.ai.base_url)
     primary = _build_provider(config, names[0])
     if len(names) == 1:
         return primary
+    from .bridge import FallbackAIClient
+
     return FallbackAIClient(
         primary=primary,
         fallback_factory=lambda: _build_provider(config, names[1]),

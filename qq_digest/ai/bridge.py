@@ -4,15 +4,12 @@ import json
 import subprocess
 import tempfile
 from pathlib import Path
-from typing import Any, Callable, Protocol
+from typing import Any, Callable
 
 from .client import AIError
 
 
-class ChatProvider(Protocol):
-    def chat(self, messages: list[dict[str, str]]) -> dict[str, Any]: ...
-
-    def close(self) -> None: ...
+from .protocol import ChatProvider
 
 
 def _parse_json_content(text: str) -> dict[str, Any]:
