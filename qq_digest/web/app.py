@@ -32,7 +32,6 @@ from ..knowledge import KnowledgeWriter, remove_item
 from ..scheduler import (
     daily_retry_state, pending_catchup_date, run_at_for_report_date, summary_window,
 )
-from ..search import search_archive
 from ..message_context import message_context
 from ..report_qa import (
     NoReportEvidence, ReportNotFound, answer_report_question, load_report_evidence,
@@ -47,6 +46,7 @@ from .report_revisions import add_report_revision_routes
 from .features import add_feature_routes
 from .summary_reading_routes import add_summary_reading_routes
 from .message_routes import add_message_routes
+from .search_routes import add_search_routes
 from .summary_generation_routes import add_summary_generation_routes
 from .knowledge_routes import add_knowledge_routes
 from .topic_routes import add_topic_routes
@@ -730,6 +730,7 @@ def create_app(
     feature_service = add_feature_routes(app, archive=archive, cookie=cookie, require_login=require_login, operations=operations)
     add_summary_reading_routes(app, archive=archive, config=config, require_login=require_login)
     add_message_routes(app, archive=archive, config=config, require_login=require_login)
+    add_search_routes(app, archive=archive, config=config, require_login=require_login)
     add_topic_routes(app, archive=archive, config=config, templates=templates,
                      require_login=require_login, operations=operations)
     add_reminder_routes(app, archive=archive, config=config, templates=templates,
@@ -1224,24 +1225,6 @@ def create_app(
             "failed_notifications": failed_notifications,
             "daily_coverage": ReportCompletenessService(ar).daily(latest_daily_date or ""),
         }
-
-    @app.get("/api/search")
-    async def api_search(
-        request: Request, q: str = "",
-        kind: Literal["all", "message", "report", "knowledge"] = "all",
-        group_id: int | None = None,
-        date_from: date | None = None, date_to: date | None = None,
-        page: int = Query(1, ge=1), page_size: int = Query(20, ge=1, le=100),
-    ):
-        require_login(request)
-        try:
-            return search_archive(
-                _archive(request), query=q, kind=kind, group_id=group_id,
-                date_from=date_from, date_to=date_to, page=page, page_size=page_size,
-                timezone_name=_config(request).summary.timezone if _config(request) else "Asia/Shanghai",
-            )
-        except ValueError as exc:
-            raise HTTPException(status_code=422, detail=str(exc)) from exc
 
     @app.get("/api/search/messages/{group_id}/{msg_id}/context")
     async def api_search_message_context(request: Request, group_id: int, msg_id: str,

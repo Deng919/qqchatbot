@@ -9,6 +9,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from .models import GroupConfig, NormalizedMessage
+from .message_search import install_message_index
 
 
 @dataclass(frozen=True)
@@ -40,6 +41,7 @@ class Archive:
         self.connection.row_factory = sqlite3.Row
         self.connection.execute("PRAGMA foreign_keys=ON")
         self._migrate()
+        self.message_search_indexed = install_message_index(self.connection)
 
     @classmethod
     def open(cls, path: Path) -> "Archive":

@@ -7,6 +7,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from .archive import Archive
+from .message_search import MESSAGE_TYPES, search_tokens
 
 
 def _like_pattern(query: str) -> str:
@@ -40,12 +41,23 @@ def search_archive(
     archive: Archive, *, query: str, kind: str = "all", group_id: int | None = None,
     date_from: date | None = None, date_to: date | None = None,
     page: int = 1, page_size: int = 20, timezone_name: str = "Asia/Shanghai",
+    sender_qq: int | None = None, message_type: str | None = None,
 ) -> dict:
     query = query.strip()
     if len(query) < 2 or len(query) > 100:
         raise ValueError("搜索词需为 2 到 100 个字符")
     if kind not in {"all", "message", "report", "knowledge"}:
         raise ValueError("非法搜索类型")
+    if page < 1 or not 1 <= page_size <= 100 or page * page_size > 2**63 - 1:
+        raise ValueError("分页超出有效范围")
+    if sender_qq is not None and not 1 <= sender_qq < 2**63:
+        raise ValueError("发送人 QQ 号超出有效范围")
+    if group_id is not None and not -(2**63) <= group_id < 2**63:
+        raise ValueError("群号超出有效范围")
+    if message_type is not None and message_type not in MESSAGE_TYPES:
+        raise ValueError("非法消息类型")
+    if kind != 'message' and (sender_qq is not None or message_type is not None):
+        raise ValueError("发送人与消息类型筛选仅用于聊天消息")
     if date_from and date_to and date_from > date_to:
         raise ValueError("开始日期不能晚于结束日期")
     zone = ZoneInfo(timezone_name)
@@ -58,6 +70,15 @@ def search_archive(
     if kind in {"all", "message"}:
         clauses = ["m.text LIKE ? ESCAPE '\\'"]
         params: list[object] = [pattern]
+        if archive.message_search_indexed and '\x00' not in query:
+            clauses.append('m.rowid IN (SELECT rowid FROM message_search_fts WHERE message_search_fts MATCH ?)')
+            params.append(search_tokens(query))
+        if sender_qq is not None:
+            clauses.append('m.sender_qq=?')
+            params.append(sender_qq)
+        if message_type is not None:
+            clauses.append('m.message_type=?')
+            params.append(message_type)
         if group_id is not None:
             clauses.append("m.group_id=?")
             params.append(group_id)
@@ -72,7 +93,7 @@ def search_archive(
         source = " FROM messages m JOIN groups g ON g.group_id=m.group_id"
         total += connection.execute("SELECT COUNT(*)" + source + where, params).fetchone()[0]
         rows = connection.execute(
-            "SELECT m.msg_id, m.group_id, m.sender_qq, m.timestamp, m.text, g.name AS group_name"
+            "SELECT m.msg_id, m.group_id, m.sender_qq, m.timestamp, m.text, m.message_type, g.name AS group_name"
             + source + where + " ORDER BY m.timestamp DESC, m.msg_id DESC, m.group_id DESC LIMIT ?",
             [*params, fetch_limit],
         ).fetchall()
@@ -85,6 +106,7 @@ def search_archive(
                 "title": f"{row['group_name']} · {row['sender_qq'] or '未知发送者'}",
                 "snippet": _snippet(row["text"], query), "text": row["text"],
                 "timestamp": row["timestamp"], "sender_qq": row["sender_qq"],
+                "message_type": row["message_type"],
                 "url": "",
             })
 

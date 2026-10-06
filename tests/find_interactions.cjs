@@ -8,6 +8,16 @@ for(const file of ['bookmark_actions.html','message_context_script.html','find_h
 (async()=>{
   requests.shift().resolve({groups:[]});await new Promise(resolve=>setImmediate(resolve));
   assert.equal(requests.length,0,'Opening empty find page does not read messages or search');
+  get('search-sender').value='1001';get('search-message-type').value='file';
+  assert.equal(scope.searchParams().get('sender_qq'),'1001');
+  assert.equal(scope.searchParams().get('message_type'),'file');
+  assert.ok(scope.findScope(scope.searchParams()).includes('发送人 1001 · 文件'));
+  get('search-kind').value='report';scope.updateFindControls();
+  assert.equal(scope.searchParams().has('sender_qq'),false);
+  assert.equal(get('find-message-filters').hidden,true);
+  assert.equal(get('search-sender').value,'');
+  get('search-kind').value='message';scope.updateFindControls();
+  assert.equal(get('find-message-filters').hidden,false);
   await scope.loadSearch();assert.equal(requests.length,0);
   get('search-q').value='配置';const first=scope.loadSearch();const old=requests.shift();
   get('search-q').value='接口';const second=scope.loadSearch();const latest=requests.shift();
@@ -36,5 +46,14 @@ for(const file of ['bookmark_actions.html','message_context_script.html','find_h
   vm.runInContext(fs.readFileSync('qq_digest/web/templates/find_script.html','utf8').replace(/<\/?script>/g,''),scope);
   get('search-q').value='尚未提交';requests.shift().resolve({groups:[]});await new Promise(resolve=>setImmediate(resolve));
   assert.equal(requests.length,0,'Late group loading must not submit draft input');
+  scope.location.search='?q=配置&kind=message&sender_qq=1001&message_type=file&page=2';
+  vm.runInContext(fs.readFileSync('qq_digest/web/templates/find_script.html','utf8').replace(/<\/?script>/g,''),scope);
+  requests.shift().resolve({groups:[]});await new Promise(resolve=>setImmediate(resolve));
+  const restored=requests.shift(),restoredParams=new URLSearchParams(restored.url.split('?')[1]);
+  assert.equal(restoredParams.has('date_from'),false,'Unlimited dates must remain unlimited after reload');
+  assert.equal(restoredParams.has('date_to'),false);
+  assert.equal(restoredParams.get('sender_qq'),'1001');assert.equal(restoredParams.get('message_type'),'file');
+  assert.equal(restoredParams.get('page'),'2');
+  restored.resolve({results:[],total:0,page:2,page_size:20});await new Promise(resolve=>setImmediate(resolve));
   console.log('Empty entry, stale results, context state and preserved search scope verified');
 })().catch(error=>{console.error(error);process.exitCode=1;});

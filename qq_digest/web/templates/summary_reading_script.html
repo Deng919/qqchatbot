@@ -4,6 +4,9 @@
   var summarySaved=null, summaryStorageKey='qq-digest-summary-reading-v1',summaryDetailActive=false,summaryReportOpener=null;
   var summaryPreviousReading=null,summaryGeneratedReading=null,summaryNavigationToken=0,summarySinceRevision=0;
   function summaryNode(tag,cls,text) { var n=document.createElement(tag); if(cls)n.className=cls; if(text!==undefined)n.textContent=text; return n; }
+  function summaryCleanText(text) {
+    return String(text||'').replace(/\s*(?:〔原消息\s*[：:][^〕]*〕|\[原消息\s*[：:][^\]]*\]|【原消息\s*[：:][^】]*】)/g,'').replace(/\*\*([^\n]+?)\*\*/g,'$1').trim();
+  }
   function summaryButton(text,action,cls) { var b=summaryNode('button',cls||'btn btn-sm',text); b.type='button'; b.onclick=action; return b; }
   function summarySelectGroups(ids){var value=ids.join(','),select=document.getElementById('report-group');if(value&&!Array.from(select.options).some(function(option){return option.value===value;})){var option=summaryNode('option','',ids.length>1?'已选 '+ids.length+' 个群':'群 '+value);option.value=value;select.appendChild(option);}select.value=value;}
   function summaryGroupParams(params,value){if(!value)return;if(value.includes(','))value.split(',').forEach(function(id){params.append('group_ids',id);});else params.set('group_id',value);}
@@ -73,8 +76,8 @@
       data.items.forEach(function(item){
         var card=summaryNode('article','summary-item'+(item.read?' is-read':''));card.dataset.key=item.key;
         var meta=summaryNode('div','summary-item-meta');meta.appendChild(summaryNode('strong','',item.group_name));meta.appendChild(summaryNode('span','',item.date_label||item.report_date));meta.appendChild(summaryNode('span','badge badge-dim',item.section));meta.appendChild(summaryNode('span','badge '+(item.read?'badge-dim':'badge-blue'),item.read?'已读':'未读'));card.appendChild(meta);
-        var split=String(item.text||'').match(/^([^\n：。！？]{1,48})[：。！？\n]/),title=split?split[1]:String(item.text||'').slice(0,48),body=split?String(item.text).slice(split[0].length):String(item.text||'');
-        card.appendChild(summaryNode('h2','',title));var text=summaryNode('p','summary-item-body',body||item.text);var long=String(item.text||'').length>160||String(item.text||'').split('\n').length>4;
+        var cleanText=summaryCleanText(item.text),split=cleanText.match(/^([^\n：。！？]{1,48})[：。！？\n]/),title=split?split[1]:cleanText.slice(0,48),body=split?cleanText.slice(split[0].length):cleanText;
+        card.appendChild(summaryNode('h2','',title));var text=summaryNode('p','summary-item-body',body||cleanText);var long=cleanText.length>160||cleanText.split('\n').length>4;
         if(long&&!summaryExpanded[item.key])text.classList.add('is-collapsed');if(body||!split)card.appendChild(text);
         if(long){var expand=summaryButton(summaryExpanded[item.key]?'收起':'展开全文',function(){var open=!summaryExpanded[item.key];summaryExpanded[item.key]=open;text.classList.toggle('is-collapsed',!open);expand.textContent=open?'收起':'展开全文';summarySave();});expand.setAttribute('aria-expanded',String(!!summaryExpanded[item.key]));expand.addEventListener('click',function(){expand.setAttribute('aria-expanded',String(!!summaryExpanded[item.key]));});card.appendChild(expand);}
         var footer=summaryNode('div','summary-item-footer');if(item.status==='cited'&&item.source_ids.length)footer.appendChild(summaryButton('查看原消息',function(){summaryOpenSource(item,this);}));else footer.appendChild(summaryNode('span','header-meta',item.status==='legacy'?'旧报告未记录逐条来源':'这条要点未提供有效来源'));
@@ -90,8 +93,8 @@
     if(!data.reports.length)summaryEmpty(host,false);
     data.reports.forEach(function(report){var card=summaryNode('article','summary-item');var meta=summaryNode('div','summary-item-meta');meta.appendChild(summaryNode('strong','',report.group_name));card.appendChild(meta);
       card.appendChild(summaryNode('h2','',report.window_start_date===report.window_end_date?report.window_start_date:report.window_start_date+' 至 '+report.window_end_date));
-      var preview=report.preview||{};var body=summaryNode('p','summary-item-body is-collapsed',preview.available?(preview.overview||'这份摘要未记录概览，请阅读下方要点或打开完整摘要。'):'预览不可用，请打开完整摘要。');card.appendChild(body);
-      var list=null;if(preview.available&&preview.points&&preview.points.length){list=summaryNode('ul','summary-preview-points is-collapsed');preview.points.forEach(function(point){list.appendChild(summaryNode('li','',point));});card.appendChild(list);}
+      var preview=report.preview||{};var body=summaryNode('p','summary-item-body is-collapsed',preview.available?(summaryCleanText(preview.overview)||'这份摘要未记录概览，请阅读下方要点或打开完整摘要。'):'预览不可用，请打开完整摘要。');card.appendChild(body);
+      var list=null;if(preview.available&&preview.points&&preview.points.length){list=summaryNode('ul','summary-preview-points is-collapsed');preview.points.forEach(function(point){list.appendChild(summaryNode('li','',summaryCleanText(point)));});card.appendChild(list);}
       if(String(preview.overview||'').length>160||String(preview.overview||'').split('\n').length>4||(preview.points||[]).some(function(point){return point.length>120||point.split('\n').length>2;})){var expand=summaryButton('展开预览',function(){var collapsed=body.classList.toggle('is-collapsed');if(list)list.classList.toggle('is-collapsed',collapsed);expand.textContent=collapsed?'展开预览':'收起预览';expand.setAttribute('aria-expanded',String(!collapsed));});expand.setAttribute('aria-expanded','false');card.appendChild(expand);}
       var footer=summaryNode('div','summary-item-footer');footer.appendChild(summaryNode('span','header-meta','更新于 '+new Date(report.created_at).toLocaleString('zh-CN')));footer.appendChild(summaryButton('阅读完整摘要',function(){viewReport(report.report_kind,Number(report.report_id));}));card.appendChild(footer);host.appendChild(card);
     });summaryPages(data);summarySave();summaryRestoreScroll();
@@ -122,6 +125,7 @@
     String(markdown||'').split('\n').forEach(function(line){
       if(line.trim().startsWith('```')){flush();if(code){code=null;}else{code=summaryNode('pre','');host.appendChild(code);}return;}
       if(code){code.textContent+=line+'\n';return;}
+      line=summaryCleanText(line);
       var heading=line.match(/^(#{1,6})\s+(.+)$/);if(heading){flush();host.appendChild(summaryNode('h'+Math.min(heading[1].length+1,6),'',heading[2]));return;}
       var bullet=line.match(/^\s*[-*]\s+(.+)$/);if(bullet){if(paragraph.length)flush();if(!list){list=summaryNode('ul','');host.appendChild(list);}list.appendChild(summaryNode('li','',bullet[1]));return;}
       if(!line.trim()){flush();return;}if(list)list=null;paragraph.push(line);
