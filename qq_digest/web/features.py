@@ -19,6 +19,7 @@ class FeatureUpdate(BaseModel):
 
 def path_feature(path):
     for key, prefix in (('topics', 'topics'), ('topics', 'topic-discussions'),
+                        ('archive_qa', 'archive-qa'),
                         ('bookmarks', 'bookmarks'),
                         ('reminders', 'reminders'), ('reminders', 'reminder-rules'),
                         ('catchup', 'catchup'), ('tasks', 'tasks'), ('failures', 'failures'),
@@ -44,7 +45,7 @@ def add_feature_routes(app, *, archive, cookie, require_login, operations):
         if feature and not values[feature] and cookie.verify(request.cookies.get('qq_digest_session')):
             if request.url.path.startswith('/api/') or request.method != 'GET':
                 return JSONResponse(status_code=403, content={'detail': disabled_message(feature)})
-            return RedirectResponse('/settings?feature=' + feature, status_code=303)
+            if feature!='archive_qa':return RedirectResponse('/settings?feature=' + feature, status_code=303)
         return await call_next(request)
 
     @app.get('/api/features', dependencies=[Depends(require_login)])

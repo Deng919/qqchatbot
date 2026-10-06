@@ -50,7 +50,7 @@ def test_search_api_message_filters_auth_and_validation(browsing_client):
         assert client.get('/api/search', params={**params, **patch}).status_code == 422
 
 
-@pytest.mark.parametrize('script', ['find_helpers.cjs', 'find_interactions.cjs', 'message_context_ui.cjs', 'knowledge_ui.cjs', 'bookmarks_ui.cjs', 'summary_clean_display.cjs'])
+@pytest.mark.parametrize('script', ['find_helpers.cjs', 'find_interactions.cjs', 'message_context_ui.cjs', 'knowledge_ui.cjs', 'bookmarks_ui.cjs', 'summary_clean_display.cjs', 'archive_qa_ui.cjs'])
 def test_find_helpers_behavior(script):
     node = shutil.which('node')
     if not node:

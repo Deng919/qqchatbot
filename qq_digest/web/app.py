@@ -47,6 +47,7 @@ from .features import add_feature_routes
 from .summary_reading_routes import add_summary_reading_routes
 from .message_routes import add_message_routes
 from .search_routes import add_search_routes
+from .archive_qa_routes import add_archive_qa_routes
 from .summary_generation_routes import add_summary_generation_routes
 from .knowledge_routes import add_knowledge_routes
 from .topic_routes import add_topic_routes
@@ -731,6 +732,8 @@ def create_app(
     add_summary_reading_routes(app, archive=archive, config=config, require_login=require_login)
     add_message_routes(app, archive=archive, config=config, require_login=require_login)
     add_search_routes(app, archive=archive, config=config, require_login=require_login)
+    add_archive_qa_routes(app, archive=archive, config=config, templates=templates,
+        require_login=require_login, operations=operations)
     add_topic_routes(app, archive=archive, config=config, templates=templates,
                      require_login=require_login, operations=operations)
     add_reminder_routes(app, archive=archive, config=config, templates=templates,

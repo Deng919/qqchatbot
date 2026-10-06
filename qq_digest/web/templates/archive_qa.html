@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block title %}归档问答 - QQ Digest{% endblock %}
+{% block page_title %}归档问答{% endblock %}
+{% block page_description %}{% endblock %}
+{% block content %}
+{% if not features.get('archive_qa',false) %}
+<div class="card"><h2>归档问答已关闭</h2><a class="btn btn-primary" href="/settings?section=features">开启归档问答</a></div>
+{% else %}
+<div class="qa-workspace">
+<form id="archive-qa-form" class="card" data-timezone="{{ qa_timezone }}" onsubmit="archiveQAPreview(event)">
+  <label for="qa-question">想了解什么？</label><textarea class="input" id="qa-question" required minlength="2" maxlength="2000" rows="3" placeholder="例如：接口配置最后决定用哪个方案？"></textarea>
+  <div class="qa-fields"><div class="field"><label for="qa-group">来源群</label><select id="qa-group"><option value="">全部群</option></select></div><div class="field"><label for="qa-from">开始日期</label><input class="input" id="qa-from" type="date" value="{{ qa_date_from }}" required></div><div class="field"><label for="qa-to">结束日期</label><input class="input" id="qa-to" type="date" value="{{ qa_date_to }}" required></div></div>
+  <details class="qa-keywords"><summary>指定检索关键词</summary><label for="qa-query">关键词</label><input class="input" id="qa-query" maxlength="100" placeholder="留空时根据问题查找"></details>
+  <button class="btn btn-primary" id="qa-preview-button" type="submit">查找相关消息</button>
+</form>
+<p id="qa-status" role="status"></p>
+<section class="card" id="qa-preview" hidden><h2>本次发送内容</h2><p id="qa-scope"></p><p id="qa-preview-note"></p><div id="qa-messages"></div><button class="btn btn-primary" id="qa-send" type="button" onclick="archiveQAAsk()">发送给 DeepSeek</button></section>
+<section class="card" id="qa-result" hidden><h2>回答</h2><p id="qa-answer" class="qa-text"></p><div id="qa-sources" class="actions"></div><div id="qa-original" hidden><h3>原消息</h3><p id="qa-original-meta"></p><p id="qa-original-text" class="qa-text"></p></div></section>
+</div>
+{% include "archive_qa_style.html" %}
+{% include "archive_qa_script.html" %}
+{% endif %}
+{% endblock %}

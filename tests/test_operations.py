@@ -53,6 +53,7 @@ def test_claim_releases_state_after_exception():
         "bookmark_mutation_running": False,
         "setup_mutation_running": False,
         "version_mutation_running": False,
+        "archive_qa_running": False,
     }
 
 

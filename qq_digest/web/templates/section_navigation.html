@@ -9,8 +9,8 @@
   <a href="{{ url }}" data-settings-section="{{ key }}" {% if key == 'reminders' and not features.get('reminders',false) %}hidden{% endif %} {% if key == settings_section %}aria-current="page" class="active"{% endif %}>{{ label }}</a>
   {% endfor %}
 </nav>
-{% elif page_path in ['/search','/knowledge'] %}
-<nav class="section-nav" aria-label="查找与知识"><a href="/search" {% if page_path == '/search' %}aria-current="page" class="active"{% endif %}>关键词查找</a><a href="/knowledge" {% if page_path == '/knowledge' %}aria-current="page" class="active"{% endif %}>知识库</a></nav>
+{% elif page_path in ['/search','/knowledge','/archive-qa'] %}
+<nav class="section-nav" aria-label="查找与知识"><a href="/search" {% if page_path == '/search' %}aria-current="page" class="active"{% endif %}>关键词查找</a><a href="/archive-qa" {% if page_path == '/archive-qa' %}aria-current="page" class="active"{% endif %}>归档问答</a><a href="/knowledge" {% if page_path == '/knowledge' %}aria-current="page" class="active"{% endif %}>知识库</a></nav>
 {% elif page_path in ['/groups','/collect'] %}
 <nav class="section-nav" aria-label="群聊操作">
   <a href="/groups" {% if page_path == '/groups' %}aria-current="page" class="active"{% endif %}>关注的群聊</a>

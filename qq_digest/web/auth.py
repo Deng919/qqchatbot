@@ -44,12 +44,20 @@ class SessionCookie:
 
     def issue(self) -> str:
         expires = str(int(time.time()) + self.ttl_seconds)
-        signature = hmac.new(self.secret, expires.encode(), hashlib.sha256).hexdigest()
-        return f"{expires}.{signature}"
+        payload = f"{expires}.{secrets.token_hex(16)}"
+        signature = hmac.new(self.secret, payload.encode(), hashlib.sha256).hexdigest()
+        return f"{payload}.{signature}"
 
     def verify(self, value: str | None) -> bool:
-        if not value or "." not in value:
+        if not value:
             return False
-        expires, signature = value.split(".", 1)
-        expected = hmac.new(self.secret, expires.encode(), hashlib.sha256).hexdigest()
+        parts = value.split(".")
+        if len(parts) != 3:
+            return False
+        expires, nonce, signature = parts
+        if (not expires.isascii() or not expires.isdecimal() or len(expires) > 12
+                or len(nonce) != 32 or len(signature) != 64 or not signature.isascii()):
+            return False
+        payload = f"{expires}.{nonce}"
+        expected = hmac.new(self.secret, payload.encode(), hashlib.sha256).hexdigest()
         return hmac.compare_digest(signature, expected) and int(expires) >= int(time.time())

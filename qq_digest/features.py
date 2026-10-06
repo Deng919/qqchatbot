@@ -10,6 +10,7 @@ FEATURES = {
     'failures': ('异常处理', '失败记录与重试', '扩展功能'),
     'review': ('审核与知识整理', '确认候选后入库；关闭不影响已有知识', '扩展功能'),
     'report_qa': ('摘要问答', '回答附原消息来源', '扩展功能'),
+    'archive_qa': ('归档问答', '按群和日期提问，发送前预览消息', '扩展功能'),
     'report_revisions': ('版本与纠错', '历史版本、纠错和重新生成', '扩展功能'),
     'topics': ('话题跟踪', '跨天、跨群的讨论与进展', '扩展功能'),
     'reminders': ('提醒规则', '关键词、资源、到期及故障通知', '扩展功能'),
@@ -32,7 +33,7 @@ class FeatureService:
     def snapshot(self):
         row = self.archive.connection.execute('SELECT revision,payload FROM feature_settings WHERE singleton=1').fetchone()
         saved = json.loads(row['payload'])
-        values = {key: saved.get(key, key not in {'topics', 'reminders'}) for key in FEATURES}
+        values = {key: saved.get(key, key not in {'topics', 'reminders', 'archive_qa'}) for key in FEATURES}
         return {'revision': row['revision'], 'values': values,
                 'catalog': [{'key': key, 'title': value[0], 'description': value[1], 'group': value[2]}
                             for key, value in FEATURES.items() if key != 'catchup']}
