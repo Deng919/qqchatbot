@@ -19,5 +19,15 @@ vm.runInThisContext(source.slice(source.indexOf('  function saveFeatureCategory(
   saveFeatureCategory({preventDefault(){}},false);
   await new Promise(setImmediate);
   assert.deepEqual(calls[1],{values:{tasks:true},expected_revision:4});
+  const categories=fs.readFileSync('qq_digest/web/templates/settings_categories_script.html','utf8');
+  nodes.set('desktop-required',{hidden:false,dataset:{unavailable:true}});
+  document.querySelectorAll=()=>[];
+  history.replaceState=(_state,_title,url)=>{location.search=url.slice(url.indexOf('?'));};
+  const selectedQueries=[];
+  global.updateWorkspaceTools=()=>selectedQueries.push(location.search);
+  vm.runInThisContext(categories.slice(categories.indexOf('  function showSettingsCategory('),categories.indexOf("\n  document.querySelectorAll('[data-settings-section]').forEach")));
+  showSettingsCategory('features',true);
+  showSettingsCategory('ai',true);
+  assert.deepEqual(selectedQueries,['?section=features','?section=ai'],'header selection must follow category URLs without reload or save');
   console.log('Category save isolation and unsaved drafts verified');
 })().catch(error=>{console.error(error);process.exitCode=1;});

@@ -233,6 +233,11 @@
     .global-nav a:hover { background: var(--surface-subtle); color: var(--text); }
     .global-nav a:active { background: var(--surface-strong); }
     .global-nav a.active { background: var(--primary-soft); color: var(--primary-dark); font-weight: 700; }
+    .extension-nav { width: min(100%, 1360px); margin: 0 auto; padding: 5px 32px 8px; display: flex; flex-wrap: wrap; align-items: center; gap: 4px; border-top: 1px solid var(--border); }
+    .extension-nav a { min-height: 34px; display: inline-flex; align-items: center; padding: 6px 11px; border-radius: 7px; color: var(--text-soft); text-decoration: none; font-size: 13px; font-weight: 550; white-space: nowrap; }
+    .extension-nav a:hover { color: var(--primary-dark); background: var(--surface-subtle); }
+    .extension-nav a.active { color: var(--primary-dark); background: var(--primary-soft); font-weight: 700; }
+    .extension-nav .extension-manage { margin-left: auto; color: var(--primary); }
     .page-toolbar { background: transparent; border-bottom: 0; }
     .page-toolbar-inner { width: min(100%, 1360px); min-height: 0; padding: 38px 32px 21px; align-items: flex-end; }
     .page-heading { min-width: 0; }
@@ -284,6 +289,9 @@
       .brand { min-height: 54px; padding: 0 18px; border-bottom: 1px solid var(--header-border); }
       .global-nav { gap: 3px; padding: 6px 12px; }
       .global-nav a { min-height: 36px; padding: 0 12px; }
+      .extension-nav { padding: 5px 12px 8px; }
+      .extension-nav a { min-height: 36px; padding: 6px 9px; }
+      .extension-nav .extension-manage { margin-left: 0; }
       .page-toolbar-inner { padding: 27px 18px 18px; gap: 17px; align-items: stretch; }
       .page-toolbar h1 { font-size: 27px; }
       .content { padding: 0 18px 44px; }
@@ -316,6 +324,14 @@
       <a class="brand" href="/">群聊简报 <small>QQ Digest</small></a>
       {% include "primary_navigation.html" %}
     </div>
+    <nav id="workspace-tools-area" class="extension-nav" aria-label="扩展功能">
+      {% for key,label,url in [('knowledge','知识库','/knowledge'),('tasks','待办','/tasks'),('topics','话题跟踪','/topics'),('review','知识整理','/candidates'),('reminders','提醒','/reminders'),('failures','异常处理','/failures'),('features','功能开关','/settings?section=features')] %}
+      {% if key in ['knowledge','features'] or features.get(key,key not in ['topics','reminders']) %}
+      {% set selected = url == request.url.path or (key == 'features' and request.url.path == '/settings' and (request.query_params.get('section') == 'features' or request.query_params.get('feature') or request.query_params.get('saved') == 'features')) %}
+      <a href="{{ url }}" {% if selected %}aria-current="page"{% endif %} class="{% if key == 'features' %}extension-manage {% endif %}{% if selected %}active{% endif %}">{{ label }}</a>
+      {% endif %}
+      {% endfor %}
+    </nav>
   </header>
   <main id="main-content">
     <header class="page-toolbar">

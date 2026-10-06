@@ -1,14 +1,6 @@
 {% set page_path = request.url.path %}
 <div class="workspace-context">
   <a class="workspace-status" href="/overview" id="workspace-status" aria-label="查看运行记录">正在读取运行状态…</a>
-  <div id="workspace-tools-area">
-  <details class="workspace-tools"><summary>更多工具</summary><nav aria-label="更多工具">
-    <a href="/knowledge">知识库</a>
-    {% if features.get('topics',false) %}<a href="/topics">话题跟踪</a>{% endif %}
-    {% if features.get('tasks',true) %}<a href="/tasks">待办</a>{% endif %}
-    {% if features.get('review',true) %}<a href="/candidates">知识整理</a>{% endif %}
-  </nav></details>
-  </div>
 </div>
 {% if page_path in ['/settings','/ai-settings','/overview','/failures','/reminders'] %}
 {% set settings_section = 'reminders' if page_path == '/reminders' else 'ai' if page_path == '/ai-settings' else 'records' if page_path in ['/overview','/failures'] else 'features' if request.query_params.get('feature') or request.query_params.get('saved') == 'features' else request.query_params.get('section','ai') %}
@@ -33,19 +25,31 @@
   .workspace-status { color:var(--text-soft); text-decoration:none; overflow-wrap:anywhere; }
   .workspace-status:hover { color:var(--primary); text-decoration:underline; }
   .workspace-status[data-warning] { color:#805321; }
-  .workspace-tools { position:relative; flex-shrink:0; }
-  .workspace-tools summary { cursor:pointer; padding:6px 8px; }
-  .workspace-tools nav { position:absolute; right:0; z-index:20; width:240px; background:var(--surface); border:1px solid var(--border); border-radius:10px; box-shadow:0 8px 25px rgb(28 48 34 / .1); padding:8px; }
-  .workspace-tools a { display:block; padding:10px; color:var(--text); text-decoration:none; font-weight:600; }
-  .workspace-tools a:hover { background:var(--primary-soft); }
-  .workspace-tools span { display:block; font-size:12px; font-weight:400; color:var(--text-soft); margin-top:4px; }
   .section-nav { display:flex; flex-wrap:wrap; gap:5px; border-bottom:1px solid var(--border); margin-bottom:24px; padding-bottom:8px; }
   .section-nav a { padding:9px 12px; color:var(--text-soft); text-decoration:none; font-size:13px; border-radius:7px; }
   .section-nav a:hover,.section-nav a.active { color:var(--primary-dark); background:var(--primary-soft); }
   .section-back { display:inline-block; color:var(--primary); margin:0 0 20px; font-size:13px; }
 </style>
 <script>
-  function updateWorkspaceTools(){document.querySelectorAll('[data-settings-section=reminders]').forEach(function(link){link.hidden=featureFlags.reminders!==true;});var host=document.getElementById('workspace-tools-area');host.textContent='';var items=[['/knowledge','知识库']];if(featureFlags.topics===true)items.push(['/topics','话题跟踪']);if(featureFlags.tasks!==false)items.push(['/tasks','待办']);if(featureFlags.review!==false)items.push(['/candidates','知识整理']);if(!items.length)return;var details=document.createElement('details');details.className='workspace-tools';var summary=document.createElement('summary');summary.textContent='更多工具';details.appendChild(summary);var nav=document.createElement('nav');nav.setAttribute('aria-label','更多工具');items.forEach(function(item){var link=document.createElement('a');link.href=item[0];link.textContent=item[1];nav.appendChild(link);});details.appendChild(nav);host.appendChild(details);}
+  function updateWorkspaceTools() {
+    document.querySelectorAll('[data-settings-section=reminders]').forEach(function(link){link.hidden=featureFlags.reminders!==true;});
+    var host=document.getElementById('workspace-tools-area');host.textContent='';
+    var items=[['/knowledge','知识库']];
+    if(featureFlags.tasks!==false)items.push(['/tasks','待办']);
+    if(featureFlags.topics===true)items.push(['/topics','话题跟踪']);
+    if(featureFlags.review!==false)items.push(['/candidates','知识整理']);
+    if(featureFlags.reminders===true)items.push(['/reminders','提醒']);
+    if(featureFlags.failures!==false)items.push(['/failures','异常处理']);
+    items.push(['/settings?section=features','功能开关']);
+    var query=new URLSearchParams(location.search);
+    items.forEach(function(item) {
+      var link=document.createElement('a');link.href=item[0];link.textContent=item[1];
+      var manage=item[0].includes('?'),selected=location.pathname===item[0].split('?')[0]&&(!manage||query.get('section')==='features'||query.has('feature')||query.get('saved')==='features');
+      if(manage)link.classList.add('extension-manage');
+      if(selected){link.classList.add('active');link.setAttribute('aria-current','page');}
+      host.appendChild(link);
+    });
+  }
   function loadWorkspaceStatus() {
     api('GET','/api/health').then(function(data) {
       var node=document.getElementById('workspace-status'),warning=data.latest_job_status==='failed'||data.latest_job_status==='partial_success'||data.latest_daily_status==='failed'||data.latest_daily_status==='partial_success'||data.failed_notifications>0||(data.daily_coverage&&data.daily_coverage.status==='limited');

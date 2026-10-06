@@ -32,16 +32,30 @@ def test_default_home_is_reading_and_overview_remains_available(web_client):
     assert client.get('/overview',follow_redirects=False).status_code == 303
 
 
-def test_optional_tools_never_expand_primary_navigation(web_client):
+def test_optional_tools_are_visible_in_header_and_follow_feature_switches(web_client):
     client, _, _ = web_client
     login(client)
     page = client.get('/').text
-    assert 'aria-label="更多工具"' in page
+    header = page.split('</header>', 1)[0]
+    tools = re.search(r'<nav[^>]+id="workspace-tools-area"[^>]*>(.*?)</nav>', header, re.S)
+    assert tools is not None, 'tool links must be visible directly in the shared header'
+    assert '<details' not in tools.group(1)
+    for path in ('/knowledge', '/tasks', '/candidates', '/failures', '/settings?section=features'):
+        assert 'href="'+path+'"' in tools.group(1)
+    assert 'href="/topics"' not in tools.group(1) and 'href="/reminders"' not in tools.group(1)
     state = client.get('/api/features').json()
-    client.put('/api/features',json={'values':{'tasks':False,'review':False,'failures':False},'expected_revision':state['revision']})
+    client.put('/api/features',json={'values':{'topics':True,'reminders':True},'expected_revision':state['revision']})
+    page = client.get('/topics').text
+    tools = re.search(r'<nav[^>]+id="workspace-tools-area"[^>]*>(.*?)</nav>', page, re.S).group(1)
+    assert re.search(r'href="/topics"[^>]*aria-current="page"', tools)
+    assert 'href="/reminders"' in tools
+    state = client.get('/api/features').json()
+    client.put('/api/features',json={'values':{'tasks':False,'review':False,'failures':False,'topics':False,'reminders':False},'expected_revision':state['revision']})
     page = client.get('/').text
     assert 'href="/tasks"' not in page and 'href="/candidates"' not in page
     assert 'href="/failures"' not in page
+    assert 'href="/topics"' not in page and 'href="/reminders"' not in page
+    assert 'href="/knowledge"' in page and 'href="/settings?section=features"' in page
 
 
 def test_settings_categories_and_group_details(web_client):
