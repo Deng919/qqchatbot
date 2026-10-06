@@ -50,6 +50,7 @@ from .summary_generation_routes import add_summary_generation_routes
 from .knowledge_routes import add_knowledge_routes
 from .topic_routes import add_topic_routes
 from .reminder_routes import add_reminder_routes
+from .bookmark_routes import add_bookmark_routes
 from ..reminder_scheduler import reminder_loop
 from ..report_selection import selected_report_groups
 
@@ -720,6 +721,8 @@ def create_app(
     add_topic_routes(app, archive=archive, config=config, templates=templates,
                      require_login=require_login, operations=operations)
     add_reminder_routes(app, archive=archive, config=config, templates=templates,
+                        require_login=require_login, operations=operations)
+    add_bookmark_routes(app, archive=archive, config=config, templates=templates,
                         require_login=require_login, operations=operations)
     knowledge_library = add_knowledge_routes(app, archive=archive, knowledge=knowledge,
         config=config, templates=templates, require_login=require_login, operations=operations)

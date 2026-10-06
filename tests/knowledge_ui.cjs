@@ -1,9 +1,10 @@
 const assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm');
 function node(){return {value:'',hidden:false,open:false,options:[],children:[],attrs:{},style:{},isConnected:true,_text:'',get textContent(){return this._text;},set textContent(v){this._text=v;this.children=[];},appendChild(n){this.children.push(n);},setAttribute(k,v){this.attrs[k]=v;},removeAttribute(k){delete this.attrs[k];},addEventListener(){},focus(){},scrollIntoView(){},showModal(){this.open=true;},close(){this.open=false;}};}
 const elements={},requests=[],get=id=>elements[id]??=node(),tick=()=>new Promise(r=>setImmediate(r));
-const scope={console,URLSearchParams,Date,Number,Array,Object,Promise,String,location:{search:''},history:{replaceState(){}},window:{scrollY:120,scrollTo(){}},requestAnimationFrame(f){f();},document:{activeElement:node(),getElementById:get,createElement:node},destroyMessageContext(){},mountMessageContext(){},api(method,url,body){return new Promise((resolve,reject)=>requests.push({method,url,body,resolve,reject}));}};
+const scope={console,URLSearchParams,Date,Number,Array,Object,Promise,String,featureFlags:{bookmarks:false},location:{search:''},history:{replaceState(){}},window:{scrollY:120,scrollTo(){}},requestAnimationFrame(f){f();},document:{activeElement:node(),getElementById:get,createElement:node},destroyMessageContext(){},mountMessageContext(){},api(method,url,body){return new Promise((resolve,reject)=>requests.push({method,url,body,resolve,reject}));}};
 vm.createContext(scope);
 function script(name){return fs.readFileSync('qq_digest/web/templates/'+name,'utf8').match(/<script>([\s\S]*?)<\/script>/)[1];}
+vm.runInContext(script('bookmark_actions.html'),scope);
 vm.runInContext(script('knowledge_script.html'),scope);
 vm.runInContext(script('knowledge_save.html'),scope);
 const list={total:0,items:[],page:1,page_size:20};

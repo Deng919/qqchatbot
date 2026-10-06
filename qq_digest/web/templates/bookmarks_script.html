@@ -1,0 +1,36 @@
+<script>
+var bookmarksToken=0,bookmarksPageNumber=1,bookmarkDetailToken=0;
+var bookmarkLabels={message:'原消息',report:'摘要要点',resource:'资源',knowledge:'知识'};
+function bookmarkNode(tag,cls,text){var n=document.createElement(tag);if(cls)n.className=cls;if(text!==undefined)n.textContent=text;return n;}
+function bookmarkButton(text,action){var b=bookmarkNode('button','btn btn-sm',text);b.type='button';b.onclick=function(){action(b);};return b;}
+function bookmarkDate(value){return String(value).includes('T')?new Date(value).toLocaleString('zh-CN'):value;}
+function bookmarksParams(){var p=new URLSearchParams({page:String(bookmarksPageNumber),status:document.getElementById('bookmarks-status').value});[['q','bookmarks-q'],['kind','bookmarks-kind']].forEach(function(pair){var v=document.getElementById(pair[1]).value.trim();if(v)p.set(pair[0],v);});return p;}
+function bookmarksFilter(event){event.preventDefault();bookmarksPageNumber=1;bookmarksLoad();}
+function bookmarksPage(step){bookmarksPageNumber+=step;bookmarksLoad();}
+function bookmarksChange(item,remove,button){
+  button.disabled=true;
+  api(remove?'DELETE':'PATCH','/api/bookmarks/'+item.bookmark_id+(remove?'?expected_revision='+item.revision:''),remove?undefined:{status:item.status==='pending'?'completed':'pending',expected_revision:item.revision})
+  .then(function(){toast(remove?'已取消收藏':item.status==='pending'?'已完成':'已恢复待处理');bookmarksLoad();})
+  .catch(function(e){button.disabled=false;toast(e.message,'error');if(e.status===409)bookmarksLoad();});
+}
+function bookmarksLoad(){
+  var token=++bookmarksToken,p=bookmarksParams(),host=document.getElementById('bookmarks-list');history.replaceState(null,'','/bookmarks?'+p.toString());host.setAttribute('aria-busy','true');document.getElementById('bookmarks-count').textContent='正在读取…';
+  return api('GET','/api/bookmarks?'+p.toString()).then(function(data){if(token!==bookmarksToken)return;var last=Math.max(1,Math.ceil(data.total/data.page_size));if(bookmarksPageNumber>last){bookmarksPageNumber=last;return bookmarksLoad();}host.textContent='';document.getElementById('bookmarks-count').textContent='共 '+data.total+' 条 · 待处理 '+(data.counts.pending||0)+' · 已完成 '+(data.counts.completed||0);
+    if(!data.items.length)host.appendChild(bookmarkNode('div','empty','暂无收藏'));
+    data.items.forEach(function(item){var s=item.snapshot,card=bookmarkNode('article','bookmark-item');card.appendChild(bookmarkNode('span','badge badge-dim',bookmarkLabels[item.kind]+' · '+(item.status==='pending'?'待处理':'已完成')));card.appendChild(bookmarkNode('h2','',s.title));card.appendChild(bookmarkNode('p','header-meta',s.group_name+' · '+bookmarkDate(s.date)));card.appendChild(bookmarkNode('p','bookmark-text',s.text));var actions=bookmarkNode('div','actions');actions.appendChild(bookmarkButton('打开收藏',function(){bookmarksOpen(item.bookmark_id);}));actions.appendChild(bookmarkButton(item.status==='pending'?'标记完成':'恢复待处理',function(b){bookmarksChange(item,false,b);}));actions.appendChild(bookmarkButton('取消收藏',function(b){bookmarksChange(item,true,b);}));card.appendChild(actions);host.appendChild(card);});
+    document.getElementById('bookmarks-pages').hidden=data.total<=data.page_size;document.getElementById('bookmarks-page-label').textContent='第 '+data.page+' / '+last+' 页';document.getElementById('bookmarks-prev').disabled=data.page<=1;document.getElementById('bookmarks-next').disabled=data.page>=last;
+  }).catch(function(e){if(token!==bookmarksToken)return;host.textContent=e.message;host.appendChild(bookmarkButton('重试',bookmarksLoad));document.getElementById('bookmarks-count').textContent='收藏读取失败';document.getElementById('bookmarks-pages').hidden=true;}).finally(function(){if(token===bookmarksToken)host.removeAttribute('aria-busy');});
+}
+function bookmarksClose(){bookmarkDetailToken++;destroyMessageContext(document.getElementById('bookmark-context'));document.getElementById('bookmark-dialog').close();}
+function bookmarksOpen(id){
+  var token=++bookmarkDetailToken,dialog=document.getElementById('bookmark-dialog'),host=document.getElementById('bookmark-context'),actions=document.getElementById('bookmark-origin-actions');destroyMessageContext(host);host.textContent='';actions.textContent='';document.getElementById('bookmark-title').textContent='正在读取…';document.getElementById('bookmark-body').textContent='';document.getElementById('bookmark-meta').textContent='';document.getElementById('bookmark-origin-note').textContent='';if(!dialog.open)dialog.showModal();
+  api('GET','/api/bookmarks/'+id).then(function(item){if(token!==bookmarkDetailToken||!dialog.open)return;var s=item.snapshot;document.getElementById('bookmark-title').textContent=s.title;document.getElementById('bookmark-body').textContent=s.text;document.getElementById('bookmark-meta').textContent=bookmarkLabels[item.kind]+' · '+s.group_name+' · '+bookmarkDate(s.date);document.getElementById('bookmark-origin-note').textContent=item.origin_available?(s.evidence_status&&s.evidence_status!=='cited'?'该要点未记录原消息来源。':''):'来源不可用，收藏内容已保留。';
+    if(!item.origin_available)return;
+    if(item.origin_url){var link=bookmarkNode('a','btn btn-sm',item.kind==='resource'?'打开资源':'打开原内容');link.href=item.origin_url;if(item.kind==='resource'){link.target='_blank';link.rel='noopener noreferrer';}actions.appendChild(link);}
+    if(item.kind==='message'){actions.appendChild(bookmarkButton('查看原消息',function(){mountMessageContext(host,{groupId:s.group_id,citedId:s.target.msg_id,url:'/api/bookmarks/'+id+'/context',isCurrent:function(){return token===bookmarkDetailToken&&dialog.open;}});}));}
+    if(item.kind==='resource'){actions.appendChild(bookmarkButton('查看资源记录',function(){host.textContent='';host.appendChild(bookmarkNode('h3','','当前资源记录'));host.appendChild(bookmarkNode('p','bookmark-text',item.origin.text));}));}
+  }).catch(function(e){if(token!==bookmarkDetailToken||!dialog.open)return;document.getElementById('bookmark-title').textContent='无法打开收藏';document.getElementById('bookmark-body').textContent=e.message;actions.appendChild(bookmarkButton('重试',function(){bookmarksOpen(id);}));});
+}
+document.getElementById('bookmark-dialog').addEventListener('cancel',function(event){event.preventDefault();bookmarksClose();});
+(function(){var p=new URLSearchParams(location.search);['status','kind'].forEach(function(key){var select=document.getElementById('bookmarks-'+key);if(Array.from(select.options).some(function(o){return o.value===p.get(key);}))select.value=p.get(key);});document.getElementById('bookmarks-q').value=(p.get('q')||'').slice(0,100);bookmarksPageNumber=Math.max(1,Number(p.get('page'))||1);bookmarksLoad();})();
+</script>

@@ -67,6 +67,18 @@ class Archive:
                     payload TEXT NOT NULL DEFAULT '{}'
                 );
                 INSERT OR IGNORE INTO feature_settings(singleton) VALUES(1);
+                CREATE TABLE IF NOT EXISTS bookmarks (
+                    bookmark_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    source_key TEXT NOT NULL UNIQUE,
+                    kind TEXT NOT NULL CHECK(kind IN ('message','report','resource','knowledge')),
+                    group_id INTEGER NOT NULL,
+                    snapshot TEXT NOT NULL,
+                    status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','completed')),
+                    revision INTEGER NOT NULL DEFAULT 0,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_bookmarks_status ON bookmarks(status,bookmark_id);
                 CREATE TABLE IF NOT EXISTS groups (
                     group_id INTEGER PRIMARY KEY,
                     name TEXT NOT NULL,
@@ -984,6 +996,7 @@ class Archive:
             cursor = self.connection.execute('DELETE FROM topic_discussions WHERE group_id=?', (group_id,))
             deleted['topic_discussions'] = int(cursor.rowcount)
             for table in (
+                "bookmarks",
                 "tasks",
                 "manual_reports",
                 "candidates",

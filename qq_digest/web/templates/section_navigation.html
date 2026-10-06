@@ -35,6 +35,8 @@
     document.querySelectorAll('[data-settings-section=reminders]').forEach(function(link){link.hidden=featureFlags.reminders!==true;});
     var host=document.getElementById('workspace-tools-area');host.textContent='';
     var items=[['/knowledge','知识库']];
+    if(featureFlags.bookmarks!==false)items.push(['/bookmarks','收藏']);
+    document.querySelectorAll('[data-bookmark-action]').forEach(function(button){button.hidden=featureFlags.bookmarks===false;});
     if(featureFlags.tasks!==false)items.push(['/tasks','待办']);
     if(featureFlags.topics===true)items.push(['/topics','话题跟踪']);
     if(featureFlags.review!==false)items.push(['/candidates','知识整理']);

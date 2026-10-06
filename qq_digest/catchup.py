@@ -18,6 +18,13 @@ _ITEM_KEY = re.compile(r"[0-9a-f]{64}\Z")
 _SECTIONS = {"主要话题", "重要结论", "资源与链接", "任务或承诺", "未解决问题或争议"}
 
 
+def report_item_key(kind, report_id, section, text, source_ids, occurrence):
+    identity_id = report_id if kind == 'daily' else f'range:{report_id}'
+    material = json.dumps([identity_id, section, text, source_ids, occurrence],
+                          ensure_ascii=False, separators=(',', ':'))
+    return hashlib.sha256(material.encode('utf-8')).hexdigest()
+
+
 class CatchupService:
     def __init__(self, archive: Archive, *, timezone_name: str):
         self.archive = archive
@@ -150,13 +157,9 @@ class CatchupService:
                 )
                 occurrence = duplicates.get(identity, 0)
                 duplicates[identity] = occurrence + 1
-                identity_id = report['report_id'] if report['report_kind']=='daily' else f"range:{report['report_id']}"
-                key_material = json.dumps(
-                    [identity_id, item["section"], item["text"], source_ids, occurrence],
-                    ensure_ascii=False, separators=(",", ":"),
-                )
                 items.append({
-                    "key": hashlib.sha256(key_material.encode("utf-8")).hexdigest(),
+                    "key": report_item_key(report['report_kind'], report['report_id'],
+                                           item['section'], item['text'], source_ids, occurrence),
                     "group_id": report["group_id"],
                     "group_name": report["group_name"],
                     "report_date": report["report_date"],

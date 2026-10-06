@@ -19,6 +19,7 @@ class FeatureUpdate(BaseModel):
 
 def path_feature(path):
     for key, prefix in (('topics', 'topics'), ('topics', 'topic-discussions'),
+                        ('bookmarks', 'bookmarks'),
                         ('reminders', 'reminders'), ('reminders', 'reminder-rules'),
                         ('catchup', 'catchup'), ('tasks', 'tasks'), ('failures', 'failures'),
                         ('review', 'candidates'), ('history_inspection', 'history-inspection')):

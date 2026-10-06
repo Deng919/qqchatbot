@@ -88,6 +88,7 @@
       document.getElementById('candidate-detail-actions').innerHTML = c.status === 'confirmed'
         ? '<button class="btn btn-danger" type="button" onclick="undoCandidate()">撤销入库</button>'
         : (c.status === 'pending' || c.status === 'later' ? '<button class="btn" type="button" onclick="editCandidate()">编辑后入库</button>' : '');
+      if(c.candidate_type==='resource')appendBookmarkAction(document.getElementById('candidate-detail-actions'),{kind:'resource',candidate_id:Number(c.candidate_id)});
       renderCandidateContext(c);
       document.getElementById('candidate-detail').hidden = false;
       document.getElementById('candidate-detail-backdrop').hidden = false;

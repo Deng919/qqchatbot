@@ -325,7 +325,7 @@
       {% include "primary_navigation.html" %}
     </div>
     <nav id="workspace-tools-area" class="extension-nav" aria-label="扩展功能">
-      {% for key,label,url in [('knowledge','知识库','/knowledge'),('tasks','待办','/tasks'),('topics','话题跟踪','/topics'),('review','知识整理','/candidates'),('reminders','提醒','/reminders'),('failures','异常处理','/failures'),('features','功能开关','/settings?section=features')] %}
+      {% for key,label,url in [('knowledge','知识库','/knowledge'),('bookmarks','收藏','/bookmarks'),('tasks','待办','/tasks'),('topics','话题跟踪','/topics'),('review','知识整理','/candidates'),('reminders','提醒','/reminders'),('failures','异常处理','/failures'),('features','功能开关','/settings?section=features')] %}
       {% if key in ['knowledge','features'] or features.get(key,key not in ['topics','reminders']) %}
       {% set selected = url == request.url.path or (key == 'features' and request.url.path == '/settings' and (request.query_params.get('section') == 'features' or request.query_params.get('feature') or request.query_params.get('saved') == 'features')) %}
       <a href="{{ url }}" {% if selected %}aria-current="page"{% endif %} class="{% if key == 'features' %}extension-manage {% endif %}{% if selected %}active{% endif %}">{{ label }}</a>
@@ -393,6 +393,7 @@
         }
       </script>
       {% include "section_navigation.html" %}
+      {% include "bookmark_actions.html" %}
       {% block content %}{% endblock %}
       {% include "knowledge_save.html" %}
       <script>

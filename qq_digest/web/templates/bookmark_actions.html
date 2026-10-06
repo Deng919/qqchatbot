@@ -1,0 +1,11 @@
+<script>
+function saveBookmark(target,button){
+  if(button.disabled)return Promise.resolve();button.disabled=true;
+  return api('POST','/api/bookmarks',target).then(function(item){button.textContent='已收藏';toast(item.reused?'已在收藏中':'已收藏');}).catch(function(e){button.disabled=false;toast(e.message,'error');});
+}
+function appendBookmarkAction(host,target){
+  if(featureFlags.bookmarks===false)return;
+  var button=document.createElement('button');button.type='button';button.className='btn btn-sm';button.textContent='收藏';button.dataset.bookmarkAction='';
+  button.onclick=function(){saveBookmark(target,button);};host.appendChild(button);return button;
+}
+</script>

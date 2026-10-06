@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block title %}收藏 - QQ Digest{% endblock %}
+{% block page_title %}收藏{% endblock %}
+{% block content %}
+<form class="bookmark-filters" onsubmit="bookmarksFilter(event)" aria-label="收藏筛选">
+  <div class="field"><label for="bookmarks-q">关键词</label><input class="input" id="bookmarks-q" type="search" maxlength="100" placeholder="标题、内容或链接"></div>
+  <div class="field"><label for="bookmarks-status">状态</label><select class="input" id="bookmarks-status"><option value="pending">待处理</option><option value="completed">已完成</option><option value="all">全部</option></select></div>
+  <div class="field"><label for="bookmarks-kind">类型</label><select class="input" id="bookmarks-kind"><option value="">全部类型</option><option value="message">原消息</option><option value="report">摘要要点</option><option value="resource">资源</option><option value="knowledge">知识</option></select></div>
+  <button class="btn btn-primary" type="submit">筛选</button>
+</form>
+<p class="header-meta" id="bookmarks-count" role="status"></p>
+<div class="bookmark-list" id="bookmarks-list" aria-live="polite"></div>
+<div class="bookmark-pages" id="bookmarks-pages" hidden><button class="btn btn-sm" id="bookmarks-prev" type="button" onclick="bookmarksPage(-1)">上一页</button><span id="bookmarks-page-label"></span><button class="btn btn-sm" id="bookmarks-next" type="button" onclick="bookmarksPage(1)">下一页</button></div>
+<dialog class="bookmark-dialog" id="bookmark-dialog" aria-labelledby="bookmark-title">
+  <div class="bookmark-heading"><h2 id="bookmark-title"></h2><button class="btn btn-sm" type="button" onclick="bookmarksClose()">关闭</button></div>
+  <p id="bookmark-meta" class="header-meta"></p><p class="header-meta">收藏时的内容</p><div class="bookmark-text" id="bookmark-body"></div>
+  <p id="bookmark-origin-note" role="status" class="header-meta"></p><div class="actions" id="bookmark-origin-actions"></div><div id="bookmark-context"></div>
+</dialog>
+<style>
+.bookmark-filters{display:grid;grid-template-columns:2fr 1fr 1fr auto;gap:14px;align-items:end;margin:20px 0}.bookmark-filters select{width:100%}.bookmark-list{display:grid;gap:14px}.bookmark-item{padding:22px;background:var(--surface);border:1px solid var(--border);border-radius:14px;overflow-wrap:anywhere}.bookmark-item h2{font-size:19px;margin:10px 0}.bookmark-text{white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.8;margin:14px 0}.bookmark-heading{display:flex;justify-content:space-between;align-items:start;gap:14px}.bookmark-heading h2{font-size:20px;overflow-wrap:anywhere;margin:0}.bookmark-pages{display:flex;justify-content:center;align-items:center;gap:12px;margin:24px 0}.bookmark-dialog{width:min(780px,calc(100vw - 32px));max-height:calc(100vh - 40px);overflow:auto;padding:22px;color:var(--text);background:var(--surface);border:1px solid var(--border);border-radius:12px}.bookmark-dialog::backdrop{background:rgb(12 24 19 / .38)}#bookmark-context{margin-top:16px}#bookmark-origin-note{overflow-wrap:anywhere}@media(max-width:700px){.bookmark-filters{grid-template-columns:1fr 1fr}.bookmark-filters .field:first-child,.bookmark-filters>button{grid-column:1/-1}.bookmark-filters input,.bookmark-filters select{min-width:0;width:100%}.bookmark-item,.bookmark-dialog{padding:16px}.bookmark-heading{flex-wrap:wrap}}
+</style>
+{% include "message_context_script.html" %}
+{% include "bookmarks_script.html" %}
+{% endblock %}
