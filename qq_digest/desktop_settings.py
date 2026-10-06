@@ -177,6 +177,133 @@ class DesktopBridge:
         self._backup_lock = Lock()
         self._last_backup_error = ""
         self._operations = None
+        self._update_claim = None
+        self._update_guard = Lock()
+        self._owns_service = False
+        self._runtime_url = ''
+
+    def _updates(self):
+        from .desktop_releases import ReleaseRegistry
+        from .desktop_updates import STATE_DIR, UpdateService
+        launcher = json.loads((self._install_dir / 'launcher.json').read_text(encoding='utf-8'))
+        launched_config = Path(launcher['config_path'])
+        if not launched_config.is_absolute():
+            launched_config = self._install_dir / launched_config
+        if launched_config.resolve() != self._config_path.resolve():
+            raise ValueError('存储位置已切换，请先重启程序')
+        registry = ReleaseRegistry(Path(r'D:\Apps'), STATE_DIR)
+        registry.register(self._install_dir)
+        config = load_config(self._config_path)
+        data_paths = [config.data_dir, config.archive_path, config.ntqq.db_dir,
+                      *config.resolve_knowledge_paths().values()]
+        for section, field in CONFIG_PATH_FIELDS:
+            value = getattr(getattr(config, section), field, '')
+            if value:
+                path = Path(value).expanduser()
+                data_paths.append(path if path.is_absolute() else config.data_dir / path)
+        def verified_backup():
+            result = backup_data(self._config_path, self._backup_root,
+                                 temp_root=self._temp_root, kind='before-update')
+            inspect_backup(Path(result['path']), temp_root=self._temp_root)
+            return result
+        return UpdateService(registry, self._install_dir, self._config_path,
+                             verified_backup, data_paths=data_paths)
+
+    def get_updates(self):
+        from .desktop_updates import ACTIVE, read_transaction
+        from .desktop_update_worker import process_alive
+        service = self._updates()
+        result = service.snapshot()
+        transaction = read_transaction(service.registry)
+        worker_pid = transaction.get('worker_pid')
+        recoverable = transaction.get('status') in ACTIVE | {'recovery_failed'}
+        if worker_pid and recoverable:
+            recoverable = not process_alive(worker_pid)
+        result['transaction']['recoverable'] = bool(recoverable)
+        return result
+
+    def clean_version(self, version, digest):
+        with self._claim_operation('version_mutation'):
+            service = self._updates()
+            return service.registry.clean(version, digest,
+                protected=[service.current()['version']], data_paths=service.data_paths)
+
+    def release_update_claim(self, expected=None):
+        with self._update_guard:
+            if expected is not None and self._update_claim is not expected:
+                return
+            claim, self._update_claim = self._update_claim, None
+        if claim is not None:
+            claim.__exit__(None, None, None)
+
+    def _start_update_worker(self, service):
+        import subprocess
+        from threading import Timer, Thread
+        with self._update_guard:
+            launched_claim = self._update_claim
+        child = subprocess.Popen([str(self._executable), '--update-worker', str(service.registry.state_dir)],
+            cwd=self._install_dir,
+            creationflags=subprocess.CREATE_NO_WINDOW | subprocess.CREATE_NEW_PROCESS_GROUP)
+        # Return the API response before closing the HTTP server and its window.
+        timer = Timer(1, self._window.destroy)
+        timer.daemon = True
+        timer.start()
+        def release_if_canceled():
+            child.wait()
+            self.release_update_claim(expected=launched_claim)
+        Thread(target=release_if_canceled, name='qq-digest-update-watch', daemon=True).start()
+
+    def switch_version(self, version, digest):
+        if not self._owns_service or self._window is None:
+            raise ValueError('请在拥有本地服务的桌面窗口中切换版本')
+        claim = self._claim_operation('version_mutation')
+        claim.__enter__()
+        with self._update_guard:
+            self._update_claim = claim
+        service = None
+        prepared = False
+        try:
+            with self._backup_lock:
+                service = self._updates()
+                result = service.prepare(version, digest, parent_pid=os.getpid(), url=self._runtime_url)
+                prepared = True
+                self._start_update_worker(service)
+                return result
+        except Exception:
+            if prepared and service is not None:
+                from .desktop_updates import atomic_json, read_transaction
+                transaction = read_transaction(service.registry)
+                if transaction.get('status') == 'prepared':
+                    transaction.update(status='canceled', error='工作进程未能启动，当前版本未改变')
+                    atomic_json(service.registry.state_dir / 'transaction.json', transaction)
+            self.release_update_claim()
+            raise
+
+    def recover_version(self):
+        from .desktop_update_worker import process_alive
+        from .desktop_updates import ACTIVE, atomic_json, read_transaction
+        if not self._owns_service or self._window is None:
+            raise ValueError('请先打开原版本桌面窗口')
+        claim = self._claim_operation('version_mutation')
+        claim.__enter__()
+        with self._update_guard:
+            self._update_claim = claim
+        try:
+            with self._backup_lock:
+                service = self._updates()
+                transaction = read_transaction(service.registry)
+                if transaction.get('status') not in ACTIVE | {'recovery_failed'}:
+                    raise ValueError('没有需要恢复的切换')
+                if transaction.get('worker_pid') and process_alive(transaction['worker_pid']):
+                    raise ValueError('切换仍在运行，请稍后重试')
+                service.backup()
+                transaction.update(status='recovering', parent_pid=os.getpid())
+                atomic_json(service.registry.state_dir / 'transaction.json', transaction)
+            self._start_update_worker(service)
+        except Exception:
+            self.release_update_claim()
+            raise
+        return {'status': 'recovering'}
 
     def _claim_operation(self, kind: str):
         return self._operations.claim(kind) if self._operations is not None else nullcontext()

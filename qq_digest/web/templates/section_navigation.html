@@ -2,10 +2,10 @@
 <div class="workspace-context">
   <a class="workspace-status" href="/overview" id="workspace-status" aria-label="查看运行记录">正在读取运行状态…</a>
 </div>
-{% if page_path in ['/settings','/setup','/ai-settings','/overview','/failures','/reminders'] %}
-{% set settings_section = 'setup' if page_path == '/setup' else 'reminders' if page_path == '/reminders' else 'ai' if page_path == '/ai-settings' else 'records' if page_path in ['/overview','/failures'] else 'features' if request.query_params.get('feature') or request.query_params.get('saved') == 'features' else request.query_params.get('section','ai') %}
+{% if page_path in ['/settings','/setup','/ai-settings','/overview','/failures','/reminders','/desktop-updates'] %}
+{% set settings_section = 'updates' if page_path == '/desktop-updates' else 'setup' if page_path == '/setup' else 'reminders' if page_path == '/reminders' else 'ai' if page_path == '/ai-settings' else 'records' if page_path in ['/overview','/failures'] else 'features' if request.query_params.get('feature') or request.query_params.get('saved') == 'features' else request.query_params.get('section','ai') %}
 <nav class="section-nav" aria-label="设置分类">
-  {% for key,label,url in [('setup','首次设置','/setup'),('ai','AI 连接','/settings?section=ai'),('automatic','自动运行','/settings?section=automatic'),('features','界面与功能','/settings?section=features'),('reminders','提醒规则','/reminders'),('storage','存储与导出','/settings?section=storage'),('backup','备份与恢复','/settings?section=backup'),('records','运行记录','/overview')] %}
+  {% for key,label,url in [('setup','首次设置','/setup'),('ai','AI 连接','/settings?section=ai'),('automatic','自动运行','/settings?section=automatic'),('features','界面与功能','/settings?section=features'),('reminders','提醒规则','/reminders'),('storage','存储与导出','/settings?section=storage'),('backup','备份与恢复','/settings?section=backup'),('updates','版本更新','/desktop-updates'),('records','运行记录','/overview')] %}
   <a href="{{ url }}" data-settings-section="{{ key }}" {% if key == 'reminders' and not features.get('reminders',false) %}hidden{% endif %} {% if key == settings_section %}aria-current="page" class="active"{% endif %}>{{ label }}</a>
   {% endfor %}
 </nav>

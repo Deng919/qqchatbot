@@ -29,6 +29,7 @@ TEMPLATES = (
     "reminders.html", "reminders_script.html",
     "bookmarks.html", "bookmarks_script.html", "bookmark_actions.html",
     "first_use.html", "first_use_script.html",
+    "desktop_updates.html", "desktop_updates_script.html",
 )
 
 
@@ -75,6 +76,11 @@ def main() -> int:
         json.dumps({"config_path": str(config)}, ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8",
     )
+    from qq_digest.desktop import DESKTOP_BACKEND_ID
+    from qq_digest.desktop_releases import ReleaseRegistry, write_release
+    from qq_digest.desktop_updates import STATE_DIR
+    write_release(release, release.name, DESKTOP_BACKEND_ID)
+    ReleaseRegistry(Path(r'D:\Apps'), STATE_DIR).register(release)
     print(release / "QQDigestDesktop.exe")
     return 0
 

@@ -718,6 +718,9 @@ def create_app(
     app.state.config = config
     app.state.operations = operations
     app.state.desktop_bridge = None
+    from .desktop_update_routes import add_desktop_update_routes
+    add_desktop_update_routes(app, templates=templates, require_login=require_login,
+                             desktop_bridge=_desktop_bridge, desktop_mutation=_desktop_mutation)
     from ..first_use import setup_in_progress
     from .first_use_routes import add_first_use_routes
     add_first_use_routes(app, config=config, config_path=config_path, archive=archive,

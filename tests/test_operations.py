@@ -19,6 +19,8 @@ from qq_digest.web.operations import OperationBusy, OperationCoordinator
         ("collect", "history_inspection"),
         ("setup_mutation", "backup"),
         ("backup", "setup_mutation"),
+        ("version_mutation", "collect"),
+        ("setup_mutation", "version_mutation"),
     ],
 )
 def test_conflicting_operations_are_rejected(first, second):
@@ -50,6 +52,7 @@ def test_claim_releases_state_after_exception():
         "reminder_mutation_running": False,
         "bookmark_mutation_running": False,
         "setup_mutation_running": False,
+        "version_mutation_running": False,
     }
 
 

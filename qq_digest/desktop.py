@@ -24,7 +24,7 @@ from .knowledge import KnowledgeWriter
 from .web.app import create_app
 
 
-DESKTOP_BACKEND_ID = "2026-10-06-first-use"
+DESKTOP_BACKEND_ID = "2026-10-06-desktop-updates"
 
 
 def resolve_config_path(install_dir: Path) -> Path:
@@ -155,6 +155,9 @@ def show_window(runtime: DesktopService, *, gui, storage_path: Path,
         )
         if bridge is not None:
             bridge._window = window
+            callback = getattr(bridge, '_startup_callback', None)
+            if callback is not None:
+                window.events.loaded += callback
             if hasattr(bridge, "run_backup_schedule"):
                 backup_thread = Thread(target=bridge.run_backup_schedule,
                                        args=(backup_stop,), name="qq-digest-backup", daemon=True)
@@ -165,6 +168,9 @@ def show_window(runtime: DesktopService, *, gui, storage_path: Path,
         if backup_thread is not None:
             backup_thread.join(timeout=5)
         runtime.stop()
+        release_claim = getattr(bridge, 'release_update_claim', None)
+        if release_claim is not None:
+            release_claim()
         sink = getattr(bridge, '_reminder_sink', None)
         if sink is not None:
             sink.close()
@@ -172,6 +178,16 @@ def show_window(runtime: DesktopService, *, gui, storage_path: Path,
 
 def main() -> int:
     try:
+        from .desktop_updates import STATE_DIR
+        update_mode = None
+        if len(sys.argv) == 3 and sys.argv[1] in {'--update-worker', '--update-start', '--update-recover'}:
+            state_dir = Path(sys.argv[2]).resolve()
+            if state_dir != STATE_DIR.resolve():
+                raise ValueError('更新状态目录无效')
+            update_mode = sys.argv[1]
+            if update_mode == '--update-worker':
+                from .desktop_update_worker import worker_main
+                return worker_main(state_dir)
         import webview
 
         install_dir = (
@@ -182,6 +198,9 @@ def main() -> int:
         config_path = resolve_config_path(install_dir)
         config = load_config(config_path)
         bridge = DesktopBridge(install_dir, config_path, Path(sys.executable), gui=webview)
+        if update_mode in {'--update-start', '--update-recover'}:
+            from .desktop_update_worker import acknowledge_start
+            bridge._startup_callback = lambda: acknowledge_start(state_dir, install_dir, config_path, DESKTOP_BACKEND_ID, recovery=update_mode == '--update-recover')
         from .windows_notifications import WindowsNotificationSink
         bridge._reminder_sink = WindowsNotificationSink()
         preferred_url = f"http://127.0.0.1:{config.web.port}/"
@@ -193,10 +212,15 @@ def main() -> int:
                 f"http://127.0.0.1:{port}/",
                 make_server=lambda: make_server(config_path, port=port, bridge=bridge),
             )
+        bridge._owns_service = runtime.owned
+        bridge._runtime_url = runtime.url
         show_window(runtime, gui=webview, bridge=bridge,
                     storage_path=Path(r"D:\Cache\QQDigestDesktop\WebView2"))
         return 0
     except Exception as exc:
+        if len(sys.argv) > 1 and sys.argv[1] in {'--update-worker', '--update-start', '--update-recover'}:
+            # The worker owns failure reporting; a modal dialog would prevent timeout recovery.
+            return 1
         message = f"QQ Digest 桌面版启动失败：\n{exc}"
         if sys.platform == "win32":
             import ctypes

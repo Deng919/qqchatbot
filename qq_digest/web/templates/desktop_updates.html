@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block title %}版本更新 - QQ Digest{% endblock %}
+{% block page_title %}版本更新{% endblock %}
+{% block page_description %}{% endblock %}
+{% block actions %}<button class="btn" id="versions-refresh" type="button">检查本机版本</button>{% endblock %}
+{% block content %}
+<div class="card"><h2>当前版本</h2><p id="version-current">正在读取…</p><p id="version-result" role="status" hidden></p><button class="btn" id="version-recover" hidden>重试回退</button></div>
+<div class="card"><h2>本机版本</h2><p class="setting-help">切换前备份数据，启动失败自动回退。</p><div id="version-list"></div><p id="version-empty" hidden>暂无其他已登记版本。</p></div>
+<section class="card" id="version-preview" hidden aria-labelledby="version-preview-title"><h2 id="version-preview-title">确认操作</h2><p id="version-preview-text"></p><div class="actions"><button class="btn btn-primary" id="version-confirm">确认</button><button class="btn" id="version-cancel">取消</button></div></section>
+<style>.release-item{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:18px 0;border-bottom:1px solid var(--border);min-width:0}.release-item:last-child{border-bottom:0}.release-details{min-width:0}.release-details strong,.release-details small{display:block;overflow-wrap:anywhere}.release-details small{color:var(--text-soft);margin-top:5px}.release-actions{display:flex;gap:8px;flex-shrink:0}@media(max-width:640px){.release-item{align-items:flex-start;flex-direction:column}.release-actions{flex-wrap:wrap}#version-preview-text{overflow-wrap:anywhere}}</style>
+{% include 'desktop_updates_script.html' %}
+{% endblock %}
