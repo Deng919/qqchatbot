@@ -29,10 +29,9 @@ jobs:
           $testExit = $LASTEXITCODE
           Get-Content pytest-public.log
           if ($testExit -ne 0) {
-            Get-Content pytest-public.log | Select-Object -Last 140 | ForEach-Object {
-              $diagnostic = $_.Replace('%', '%25').Replace("`r", '%0D').Replace("`n", '%0A')
-              Write-Output "::error::$diagnostic"
-            }
+            $diagnostic = (Get-Content pytest-public.log | Select-Object -Last 180) -join "`n"
+            $diagnostic = $diagnostic.Replace('%', '%25').Replace("`r", '%0D').Replace("`n", '%0A')
+            Write-Output "::error::$diagnostic"
           }
           exit $testExit
       - name: Build DeepSeek-only desktop
