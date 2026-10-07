@@ -31,10 +31,18 @@
   .section-back { display:inline-block; color:var(--primary); margin:0 0 20px; font-size:13px; }
 </style>
 <script>
+  function navigateSummaryReading(event) {
+    if(event.button!==0||event.ctrlKey||event.metaKey||event.shiftKey||event.altKey)return;
+    if((location.pathname==='/'||location.pathname==='/reports')&&typeof summarySetView==='function'){
+      event.preventDefault();summarySetView(summaryView==='groups'?'groups':'points');
+      var url=new URL(location.href);url.searchParams.delete('kind');url.searchParams.delete('id');history.replaceState(null,'',url.pathname+url.search);
+      requestAnimationFrame(function(){window.scrollTo({top:0,behavior:'instant'});});
+    }
+  }
   function updateWorkspaceTools() {
     document.querySelectorAll('[data-settings-section=reminders]').forEach(function(link){link.hidden=featureFlags.reminders!==true;});
     var host=document.getElementById('workspace-tools-area');host.textContent='';
-    var items=[['/knowledge','知识库']];
+    var items=[['/reports?view=points','阅读摘要'],['/knowledge','知识库']];
     if(featureFlags.bookmarks!==false)items.push(['/bookmarks','收藏']);
     document.querySelectorAll('[data-bookmark-action]').forEach(function(button){button.hidden=featureFlags.bookmarks===false;});
     if(featureFlags.tasks!==false)items.push(['/tasks','待办']);
@@ -46,7 +54,8 @@
     var query=new URLSearchParams(location.search);
     items.forEach(function(item) {
       var link=document.createElement('a');link.href=item[0];link.textContent=item[1];
-      var manage=item[0].includes('?'),selected=location.pathname===item[0].split('?')[0]&&(!manage||query.get('section')==='features'||query.has('feature')||query.get('saved')==='features');
+      var reading=item[0]==='/reports?view=points',manage=item[0]==='/settings?section=features',selected=reading?(location.pathname==='/'||location.pathname==='/reports'):location.pathname===item[0].split('?')[0]&&(!manage||query.get('section')==='features'||query.has('feature')||query.get('saved')==='features');
+      if(reading){link.setAttribute('data-summary-home','');link.onclick=navigateSummaryReading;}
       if(manage)link.classList.add('extension-manage');
       if(selected){link.classList.add('active');link.setAttribute('aria-current','page');}
       host.appendChild(link);
