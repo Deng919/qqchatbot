@@ -345,8 +345,8 @@
       if (item.status === 'unverified') {
         var warning = document.createElement('span'); warning.className = 'badge badge-orange'; warning.textContent = '待核实 · 无有效原消息引用'; actions.appendChild(warning);
       } else {
-        (item.source_ids || []).forEach(function(id) {
-          var button = document.createElement('button'); button.type = 'button'; button.className = 'btn btn-sm'; button.textContent = '查看原消息 ' + id;
+        (item.source_ids || []).forEach(function(id, index) {
+          var button = document.createElement('button'); button.type = 'button'; button.className = 'btn btn-sm'; button.textContent = '原消息 ' + (index + 1);
           button.addEventListener('click', function() { openReportSource(id); }); actions.appendChild(button);
         });
       }
@@ -393,9 +393,9 @@
   function renderQASources(data) {
     var container = document.getElementById('report-qa-sources'), block = document.createElement('section');
     var note = document.createElement('div'); note.textContent = '第 ' + (Math.floor(qaHistory.length / 2) + 1) + ' 次回答：参考 ' + data.context_message_count + ' 条原始消息' + (data.context_truncated ? '（已按问题筛选）' : '') + '。'; block.appendChild(note);
-    (data.sources || []).forEach(function(source) {
+    (data.sources || []).forEach(function(source, index) {
       var details = document.createElement('details'), summary = document.createElement('summary'), excerpt = document.createElement('div');
-      summary.textContent = source.timestamp + ' · ' + (source.sender_label || source.sender_qq || '未知发送者') + ' · ' + source.msg_id;
+      summary.textContent = '原消息 ' + (index + 1) + ' · ' + source.timestamp + ' · ' + (source.sender_name || source.sender_qq || '未知发送者');
       excerpt.textContent = source.excerpt; details.appendChild(summary); details.appendChild(excerpt); block.appendChild(details);
     });
     container.appendChild(block); container.scrollTop = container.scrollHeight;

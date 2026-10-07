@@ -14,7 +14,7 @@ function clearFindRecent(){try{localStorage.removeItem(findRecentKey);}catch(err
 function submitSearch(event){event.preventDefault();currentSearchPage=1;loadSearch();}
 function searchPage(step){currentSearchPage+=step;loadSearch(findSubmitted);findNode('find-results-card').scrollIntoView({block:'start',behavior:'smooth'});}
 function findHitMarkup(item,q){var time=item.timestamp?new Date(item.timestamp).toLocaleString('zh-CN'):item.date,body=item.snippet||item.text||'',full=item.text||'';
-  return '<div class="find-hit"><div class="find-hit-meta">'+escapeHtml(item.sender_label||item.sender_qq||'未知发送者')+' · '+escapeHtml(time)+'</div><p class="find-hit-snippet">'+findHighlight(body,q)+'</p>'
+  return '<div class="find-hit"><div class="find-hit-meta">'+escapeHtml(item.sender_name||item.sender_qq||'未知发送者')+' · '+escapeHtml(time)+'</div><p class="find-hit-snippet">'+findHighlight(body,q)+'</p>'
     +(full.length>body.length?'<details><summary>展开完整消息</summary><p class="find-hit-snippet">'+findHighlight(full,q)+'</p></details>':'')
     +'<button class="btn btn-sm" type="button" data-group="'+Number(item.group_id)+'" data-message="'+escapeHtml(item.id)+'" data-name="'+escapeHtml(item.group_name)+'" onclick="showSearchContext(this)">查看原文</button></div>';
 }

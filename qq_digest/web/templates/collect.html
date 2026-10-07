@@ -180,7 +180,7 @@
         var t = m.timestamp.slice(11,16);
         var d2 = m.timestamp.slice(5,10);
         var typeBadge = m.message_type === 'text' ? 'badge-blue' : m.message_type === 'file' ? 'badge-orange' : 'badge-dim';
-        return '<div class="msg-item"><span class="msg-time">' + escapeHtml(d2) + ' ' + escapeHtml(t) + '</span><span class="msg-sender">' + escapeHtml(m.sender_label||m.sender_qq||'未知发送者') + '</span><span class="badge ' + typeBadge + '">' + escapeHtml(m.message_type) + '</span><span class="msg-text">' + escapeHtml(m.text) + '</span></div>';
+        return '<div class="msg-item"><span class="msg-time">' + escapeHtml(d2) + ' ' + escapeHtml(t) + '</span><span class="msg-sender">' + escapeHtml(m.sender_name||m.sender_qq||'未知发送者') + '</span><span class="badge ' + typeBadge + '">' + escapeHtml(m.message_type) + '</span><span class="msg-text">' + escapeHtml(m.text) + '</span></div>';
       }).join('');
       toast('采集到 ' + formatNumber(d.total) + ' 条消息，新增 ' + formatNumber(d.inserted) + ' 条', 'success');
     }).catch(function(e) { result.textContent='消息更新失败：'+e.message+'。已有归档保留，可检查 QQ 和数据源后重试。'; })
