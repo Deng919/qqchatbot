@@ -105,33 +105,6 @@ class SnapshotError(RuntimeError):
     pass
 
 
-def _copy_stable_snapshot(
-    source: str | Path,
-    target: str | Path,
-    *,
-    retries: int = 3,
-    retry_delay: float = 0.25,
-) -> Path:
-    """Copy a live QQ database only when its source metadata stays stable."""
-    source = Path(source)
-    target = Path(target)
-    target.parent.mkdir(parents=True, exist_ok=True)
-    for attempt in range(retries):
-        before = source.stat()
-        shutil.copy2(source, target)
-        after = source.stat()
-        copied = target.stat()
-        if (
-            before.st_size == after.st_size == copied.st_size
-            and before.st_mtime_ns == after.st_mtime_ns
-        ):
-            return target
-        target.unlink(missing_ok=True)
-        if attempt + 1 < retries:
-            time.sleep(retry_delay)
-    raise SnapshotError(f"数据库复制期间持续变化: {source.name}")
-
-
 def _copy_database_snapshot(
     source: str | Path,
     target: str | Path,

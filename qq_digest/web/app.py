@@ -3,7 +3,6 @@ from __future__ import annotations
 import asyncio
 import json
 import os
-import sqlite3
 from contextlib import asynccontextmanager
 from dataclasses import asdict
 from datetime import date, datetime, timezone
@@ -11,7 +10,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from fastapi import FastAPI, Form, HTTPException, Query, Request
-from fastapi.responses import JSONResponse, RedirectResponse
+from fastapi.responses import RedirectResponse
 from fastapi.templating import Jinja2Templates
 from ..distribution import is_public_distribution
 from pydantic import BaseModel, Field, field_validator
@@ -28,7 +27,7 @@ from ..report_completeness import ReportCompletenessService
 from ..task_inbox import TaskInboxService
 from ..candidate_context import candidate_source_context
 from ..collector.ntqq import NTQQCollector
-from ..config import Config, ConfigError, load_config
+from ..config import Config, ConfigError
 from ..knowledge import KnowledgeWriter, remove_item
 from ..scheduler import (
     daily_retry_state, pending_catchup_date, run_at_for_report_date, summary_window,

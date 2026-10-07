@@ -10,7 +10,7 @@ import qq_digest.refresh as refresh_module
 from qq_digest.refresh import EXT_HEADER, PAGE_SIZE, _decrypt_db
 
 
-def test_stable_snapshot_retries_when_source_changes(tmp_path: Path, monkeypatch):
+def test_database_snapshot_without_wal_retries_when_source_changes(tmp_path: Path, monkeypatch):
     source = tmp_path / "source.db"
     target = tmp_path / "snapshot.db"
     source.write_bytes(b"first")
@@ -25,13 +25,13 @@ def test_stable_snapshot_retries_when_source_changes(tmp_path: Path, monkeypatch
 
     monkeypatch.setattr(refresh_module.shutil, "copy2", changing_copy)
 
-    refresh_module._copy_stable_snapshot(source, target, retries=2, retry_delay=0)
+    refresh_module._copy_database_snapshot(source, target, retries=2, retry_delay=0)
 
     assert attempts == 2
     assert target.read_bytes() == b"second-version"
 
 
-def test_stable_snapshot_raises_after_repeated_source_changes(tmp_path: Path, monkeypatch):
+def test_database_snapshot_without_wal_raises_after_repeated_source_changes(tmp_path: Path, monkeypatch):
     source = tmp_path / "source.db"
     target = tmp_path / "snapshot.db"
     source.write_bytes(b"0")
@@ -47,7 +47,7 @@ def test_stable_snapshot_raises_after_repeated_source_changes(tmp_path: Path, mo
     monkeypatch.setattr(refresh_module.shutil, "copy2", changing_copy)
 
     with pytest.raises(refresh_module.SnapshotError):
-        refresh_module._copy_stable_snapshot(source, target, retries=2, retry_delay=0)
+        refresh_module._copy_database_snapshot(source, target, retries=2, retry_delay=0)
 
     assert not target.exists()
 

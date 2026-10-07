@@ -1,7 +1,6 @@
 from __future__ import annotations
 import json
 import logging
-import time
 
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
@@ -20,19 +19,6 @@ from .notify import QQBotNotifier, BotConfig, NotificationQueueProcessor
 
 
 logger = logging.getLogger(__name__)
-
-
-def with_retry(fn, max_retries=3, base_delay=2.0, exceptions=(Exception,)):
-    """指数退避重试。"""
-    for attempt in range(max_retries):
-        try:
-            return fn()
-        except exceptions as exc:
-            if attempt + 1 >= max_retries:
-                raise
-            delay = base_delay * (2 ** attempt)
-            logger.warning("第 %d 次重试，%s 秒后重试: %s", attempt + 1, delay, exc)
-            time.sleep(delay)
 
 
 @dataclass

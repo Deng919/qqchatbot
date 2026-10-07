@@ -12,7 +12,7 @@ import urllib.request
 
 from .desktop_releases import ReleaseRegistry
 from .runtime_paths import release_root
-from .desktop_updates import STATE_DIR, atomic_json, read_transaction, run_transaction, signature
+from .desktop_updates import atomic_json, read_transaction, run_transaction, signature
 
 
 def process_alive(pid):

@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import re
 from contextlib import nullcontext
-from fastapi import Depends, HTTPException, Request
+from fastapi import Depends, HTTPException
 from fastapi.responses import JSONResponse, RedirectResponse
 from pydantic import BaseModel, Field, StrictBool
 
