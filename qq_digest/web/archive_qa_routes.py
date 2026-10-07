@@ -30,7 +30,7 @@ class AskQuestion(BaseModel):
 
 def add_archive_qa_routes(app, *, archive, config, templates, require_login, operations):
     service=ArchiveQAService(archive,config.summary.timezone if config else 'Asia/Shanghai',
-        max_chars=min(config.ai.max_context_chars,16000) if config else 16000)
+        max_chars=min(config.ai.max_context_chars,16000) if config else 16000,attachment_config=config)
     app.state.archive_qa=service
 
     def owner(request):

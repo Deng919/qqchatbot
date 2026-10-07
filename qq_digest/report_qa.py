@@ -59,6 +59,8 @@ def load_report_evidence(
     start = datetime.combine(date.fromisoformat(start_date), time.min, timezone)
     end = datetime.combine(date.fromisoformat(end_date) + timedelta(days=1), time.min, timezone)
     messages = archive.messages_in_window(int(row["group_id"]), start, end)
+    from .attachments import cached_messages
+    messages=cached_messages(archive,messages)
     if not messages:
         raise NoReportEvidence("该报告时段没有已归档的原始消息")
     return ReportEvidence(

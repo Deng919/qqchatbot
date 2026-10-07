@@ -35,6 +35,8 @@ class GroupConfig(BaseModel):
     keywords: list[str] = Field(default_factory=list)
     important_candidates: bool = True
     collection_window_days: int = 30
+    read_images: bool = False
+    read_files: bool = False
 
 
 class SummaryCandidate(BaseModel):

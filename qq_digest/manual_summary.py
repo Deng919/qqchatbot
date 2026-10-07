@@ -86,8 +86,11 @@ class ManualSummaryService:
         timezone_name: str,
         knowledge_paths: dict[str, Path] | None = None,
         single_day_as_daily: bool = False,
+        attachment_config=None,
     ) -> None:
         self.archive = archive
+        from .attachments import AttachmentService
+        self.attachments=AttachmentService(archive,attachment_config)
         self.candidates = CandidateService(archive)
         self.report_writer = ReportWriter(report_dir)
         self.max_context_chars = max_context_chars
@@ -146,6 +149,7 @@ class ManualSummaryService:
         for group in groups:
             progress(group, 'scanning')
             messages = self.archive.messages_in_window(group.group_id, start, end)
+            messages = self.attachments.prepare(messages)
             if not messages:
                 result.skipped_groups.append(
                     {

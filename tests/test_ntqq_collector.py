@@ -180,6 +180,7 @@ class TestCollect:
             "资料.pdf",
             "转发的聊天记录",
             "[分享]有用网站",
+            "[图片]",
         ]
         assert [message.message_type for message in messages] == [
             "text",
@@ -187,6 +188,7 @@ class TestCollect:
             "file",
             "forward",
             "link",
+            "file",
         ]
         assert messages[0].sender_qq is None
         assert messages[0].content_json == {"sender_uid": "u_sender"}

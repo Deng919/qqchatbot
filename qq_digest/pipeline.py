@@ -82,8 +82,11 @@ class DailyPipeline:
         window_mode: str = "today",
         bot_config: BotConfig | None = None,
         knowledge_paths: dict[str, Path] | None = None,
+        attachment_config=None,
     ) -> None:
         self.archive = archive
+        from .attachments import AttachmentService
+        self.attachments=AttachmentService(archive,attachment_config)
         self.collector = collector
         self.candidates = CandidateService(archive)
         self.report_dir = report_dir
@@ -203,6 +206,7 @@ class DailyPipeline:
             )
 
             messages = self.archive.messages_between(group.group_id, start, end)
+            messages = self.attachments.prepare(messages)
             if not messages:
                 result.groups_processed += 1
                 result.skipped_groups.append(group.group_id)

@@ -39,13 +39,21 @@ class EvidenceTicket:
 
 
 class ArchiveQAService:
-    def __init__(self, archive, timezone_name='Asia/Shanghai', *, max_chars=16000, clock=time.monotonic):
+    def __init__(self, archive, timezone_name='Asia/Shanghai', *, max_chars=16000, clock=time.monotonic,attachment_config=None):
         self.archive=archive
         self.zone=ZoneInfo(timezone_name)
         self.max_chars=max(1000,min(max_chars,16000))
         self.clock=clock
         self.tickets={}
         self.lock=RLock()
+        self.attachment_config=attachment_config
+
+    @staticmethod
+    def evidence_text():
+        return """m.text || COALESCE((SELECT group_concat('[附件 ' || a.name || CASE WHEN a.status='partial' THEN '，已截断' ELSE '' END || '] ' || a.text,' ')
+            FROM message_attachments a JOIN groups ag ON ag.group_id=a.group_id
+            WHERE a.group_id=m.group_id AND a.msg_id=m.msg_id AND a.version=1 AND a.status IN ('success','partial') AND ag.enabled=1
+              AND ((a.kind='image' AND ag.read_images=1) OR (a.kind='file' AND ag.read_files=1))), '')"""
 
     def preview(self, *, owner, question, query='', group_id=None, date_from, date_to):
         question=question.strip();query=query.strip()
@@ -59,18 +67,27 @@ class ArchiveQAService:
                 raise LookupError('群聊不存在')
         terms=[query] if query else sorted(_terms(question)-STOP_TERMS,key=lambda term:(-len(term),term))[:12]
         start,end=_message_bounds(first,last,self.zone)
+        text_sql=self.evidence_text()
+        if self.attachment_config:
+            from .attachments import AttachmentService
+            scope_clause=' AND group_id=?' if group_id is not None else ''
+            raw=self.archive.connection.execute('SELECT * FROM messages WHERE timestamp>=? AND timestamp<?'+scope_clause+' AND (message_type=\'file\' OR json_type(content_json,\'$.attachments\')=\'array\') ORDER BY timestamp DESC LIMIT 200',
+                (start,end,*([group_id] if group_id is not None else []))).fetchall()
+            AttachmentService(self.archive,self.attachment_config).prepare([self.archive._row_to_message(row) for row in raw])
         messages=[];total=0
         if terms:
             clauses=['m.timestamp>=?','m.timestamp<?'];params=[start,end]
             if group_id is not None:clauses.append('m.group_id=?');params.append(group_id)
-            clauses.append('('+' OR '.join("m.text LIKE ? ESCAPE '\\'" for _ in terms)+')')
+            clauses.append('('+' OR '.join("("+text_sql+") LIKE ? ESCAPE '\\'" for _ in terms)+')')
             params.extend(_like_pattern(term) for term in terms)
-            if self.archive.message_search_indexed and all('\x00' not in term for term in terms):
+            attachments_enabled=self.archive.connection.execute('SELECT 1 FROM groups WHERE enabled=1 AND (read_images=1 OR read_files=1)'+(' AND group_id=?' if group_id is not None else '')+' LIMIT 1',
+                (group_id,) if group_id is not None else ()).fetchone()
+            if not attachments_enabled and self.archive.message_search_indexed and all('\x00' not in term for term in terms):
                 clauses.append('m.rowid IN (SELECT rowid FROM message_search_fts WHERE message_search_fts MATCH ?)')
                 params.append(' OR '.join('('+search_tokens(term)+')' for term in terms))
             source=' FROM messages m JOIN groups g ON g.group_id=m.group_id WHERE '+' AND '.join(clauses)
             total=self.archive.connection.execute('SELECT COUNT(*)'+source,params).fetchone()[0]
-            rows=self.archive.connection.execute('SELECT m.msg_id,m.group_id,m.sender_qq,m.content_json,m.timestamp,m.text,g.name AS group_name'+source+
+            rows=self.archive.connection.execute('SELECT m.msg_id,m.group_id,m.sender_qq,m.content_json,m.timestamp,('+text_sql+') AS text,g.name AS group_name'+source+
                 ' ORDER BY m.timestamp DESC,m.group_id,m.msg_id DESC LIMIT 200',params).fetchall()
             rows=sorted(rows,key=lambda row:-sum(term.lower() in row['text'].lower() for term in terms))
             used=0
@@ -109,7 +126,7 @@ class ArchiveQAService:
 
     def _verify(self, item):
         for source in item.messages:
-            row=self.archive.connection.execute('SELECT group_id,msg_id,timestamp,sender_qq,content_json,text FROM messages WHERE group_id=? AND msg_id=?',
+            row=self.archive.connection.execute('SELECT m.group_id,m.msg_id,m.timestamp,m.sender_qq,m.content_json,('+self.evidence_text()+') AS text FROM messages m WHERE group_id=? AND msg_id=?',
                 (source['group_id'],source['msg_id'])).fetchone()
             if row is None or _fingerprint(row)!=source['fingerprint']:
                 raise ValueError('原消息发生变化，请重新预览')
@@ -150,6 +167,6 @@ class ArchiveQAService:
             source=next((row for row in item.messages if row['source_id']==source_id),None)
             if source is None:raise LookupError('来源不在本次查询范围内')
             self._verify(item)
-            row=self.archive.connection.execute('SELECT text FROM messages WHERE group_id=? AND msg_id=?',
+            row=self.archive.connection.execute('SELECT ('+self.evidence_text()+') AS text FROM messages m WHERE group_id=? AND msg_id=?',
                 (source['group_id'],source['msg_id'])).fetchone()
             return {**{key:value for key,value in source.items() if key!='fingerprint'},'text':row['text'],'scope':item.scope}

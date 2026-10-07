@@ -144,7 +144,23 @@ class NTQQCollector(Collector):
         """
         self._prepare_identities()
         if (self.db_dir / "group_msg_fts.db").exists():
-            yield from self._collect_searchable(group_id, start, end)
+            messages=list(self._collect_searchable(group_id,start,end))
+            by_id={message.msg_id:message for message in messages}
+            if (self.db_dir/'nt_msg.db').is_file():
+                try:
+                    connection=self._open_msg_db()
+                    try:rows=self._scan_metadata(connection,group_id,int(start.timestamp()),int(end.timestamp()))
+                    finally:connection.close()
+                    for message in self._fetch_blobs(rows,group_id,datetime.now(self.timezone)):
+                        if not message.content_json.get('attachments'):continue
+                        previous=by_id.get(message.msg_id)
+                        if previous is not None:
+                            if previous.timestamp==message.timestamp:
+                                by_id[message.msg_id]=previous.model_copy(update={'content_json':{**previous.content_json,'attachments':message.content_json['attachments']}})
+                        else:by_id[message.msg_id]=message
+                except (sqlite3.Error,CollectionIncompleteError):
+                    for message in messages:message.content_json['attachment_source_unavailable']=True
+            yield from sorted(by_id.values(),key=lambda message:(message.timestamp,message.msg_id))
             return
 
         start_ts = int(start.timestamp())
@@ -209,6 +225,7 @@ class NTQQCollector(Collector):
         sender_text = str(sender_uid or "")
         sender_qq = int(sender_text) if sender_text.isdigit() else None
         content_json = {"sender_uid": sender_text} if sender_text else {}
+        if str(kind)=='3':content_json['attachments']=[{'key':'file:unknown:0','kind':'file','name':filename or text,'path':'','md5':''}]
         return self._resolve_sender(NormalizedMessage(
             msg_id=str(msg_id),
             group_id=group_id,
@@ -277,8 +294,8 @@ class NTQQCollector(Collector):
                 placeholders = ",".join("?" * len(ids))
                 mcur.execute(
                     f'SELECT "40001","40800" FROM group_msg_table '
-                    f'WHERE "40001" IN ({placeholders})',
-                    ids,
+                    f'WHERE "40001" IN ({placeholders}) AND "40021"=?',
+                    [*ids,str(group_id)],
                 )
                 blob_map: dict[int, bytes | None] = {}
                 for row in mcur.fetchall():
@@ -294,6 +311,10 @@ class NTQQCollector(Collector):
                     if not text:
                         continue  # unsupported messages are intentionally omitted
                     kind = self._map_kind(msg_type)
+                    from ..attachment_sources import attachment_refs
+                    refs=attachment_refs(blob)
+                    metadata={'sender_uid':sender_uid} if sender_uid else {}
+                    if refs:metadata['attachments']=refs
                     yield self._resolve_sender(NormalizedMessage(
                         msg_id=str(msg_id),
                         group_id=group_id,
@@ -301,7 +322,7 @@ class NTQQCollector(Collector):
                         timestamp=datetime.fromtimestamp(ts, tz=self.timezone),
                         message_type=kind,
                         text=text,
-                        content_json={'sender_uid':sender_uid} if sender_uid else {},
+                        content_json=metadata,
                         collected_at=collected_at,
                     ))
         except sqlite3.DatabaseError as exc:

@@ -332,6 +332,8 @@ def summarize(
     try:
         for group in archive.enabled_groups(daily_summary=True):
             messages = archive.messages_between(group.group_id, start, end)
+            from .attachments import AttachmentService
+            messages=AttachmentService(archive,config).prepare(messages)
             if not messages:
                 typer.echo(_console_safe(f"  {group.name}: 无消息"))
                 continue
@@ -517,6 +519,7 @@ def run_daily(
         archive=archive,
         collector=collector,
         ai_client=build_ai_client(config),
+        attachment_config=config,
         report_dir=config.report_dir,
         max_context_chars=config.ai.max_context_chars,
         timezone_name=config.summary.timezone,

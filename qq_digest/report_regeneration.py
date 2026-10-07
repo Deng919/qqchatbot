@@ -64,6 +64,8 @@ def regenerate_report(*, config, kind, report_id, expected_version, reason, ai_c
             inclusive = payload['window_end_inclusive'] is True
         messages = (archive.messages_between(group.group_id,start,end) if inclusive
                     else archive.messages_in_window(group.group_id,start,end))
+        from .attachments import AttachmentService
+        messages=AttachmentService(archive,config).prepare(messages)
         if not messages:
             raise ValueError('原报告范围没有归档消息，保留当前报告')
         if ai_client is None:

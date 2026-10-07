@@ -237,6 +237,8 @@ class FirstUseService:
             collector = NTQQCollector(self.config.ntqq.db_dir, self.config.ntqq.qq_number, self.config.ntqq.timezone)
             messages = list(collector.collect(group_id, start, end))
             result = worker.ingest(messages)
+            from .attachments import AttachmentService
+            AttachmentService(worker,self.config).prepare(messages)
             worker.mark_manual_collect_success(group_id=group_id)
             state['imports'][str(group_id)] = {'status': 'success', 'total': len(messages),
                 'inserted': result.inserted, 'skipped': result.skipped}

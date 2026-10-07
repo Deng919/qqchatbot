@@ -409,6 +409,7 @@ def create_app(
             worker_archive = Archive.open(cfg.archive_path)
             pipeline = DailyPipeline(
                 archive=worker_archive,
+                attachment_config=cfg,
                 collector=collector,
                 ai_client=ai_client,
                 report_dir=cfg.report_dir,
@@ -471,6 +472,7 @@ def create_app(
         try:
             ai_client = build_ai_client(cfg)
             service = ManualSummaryService(
+                attachment_config=cfg,
                 archive=worker_archive,
                 ai_client=ai_client,
                 report_dir=cfg.report_dir,
@@ -736,6 +738,8 @@ def create_app(
     add_report_related_routes(app, archive=_archive, config=_config, require_login=require_login)
     from .failure_ignore_routes import add_failure_ignore_routes
     add_failure_ignore_routes(app, archive=_archive, require_login=require_login)
+    from .attachment_routes import add_attachment_routes
+    add_attachment_routes(app,archive=_archive,config=_config,require_login=require_login,operations=operations)
     add_search_routes(app, archive=archive, config=config, require_login=require_login)
     add_archive_qa_routes(app, archive=archive, config=config, templates=templates,
         require_login=require_login, operations=operations)
@@ -1395,13 +1399,16 @@ def create_app(
             "important_candidates",
             "keywords",
             "collection_window_days",
+            "read_images","read_files",
         }
+        for key in ('read_images','read_files'):
+            if key in body and type(body[key]) is not bool:raise HTTPException(400,key+' 必须是开关值')
         sets = []
         vals = []
         for k, v in body.items():
             if k in allowed:
                 sets.append(f"{k}=?")
-                if k in ("enabled", "daily_summary", "important_candidates"):
+                if k in ("enabled", "daily_summary", "important_candidates","read_images","read_files"):
                     vals.append(1 if v else 0)
                 elif k == "keywords":
                     if (
@@ -1436,8 +1443,12 @@ def create_app(
         if not sets:
             raise HTTPException(status_code=400, detail="无有效字段")
         vals.append(group_id)
-        with ar.transaction():
-            ar.connection.execute(f"UPDATE groups SET {', '.join(sets)} WHERE group_id=?", vals)
+        from contextlib import nullcontext
+        try:
+            with operations.claim('group_mutation') if any(key in body for key in ('read_images','read_files')) else nullcontext():
+                with ar.transaction():
+                    ar.connection.execute(f"UPDATE groups SET {', '.join(sets)} WHERE group_id=?", vals)
+        except OperationBusy as exc:raise HTTPException(409,str(exc)) from exc
         return {"ok": True}
 
     @app.delete("/api/groups/{group_id}")
@@ -1538,6 +1549,8 @@ def create_app(
                     ingest = IngestResult(inserted=0, skipped=len(msgs) - len(seen_ids))
                 else:
                     ingest = worker_archive.ingest(msgs)
+                    from ..attachments import AttachmentService
+                    AttachmentService(worker_archive,cfg).prepare(msgs)
                     worker_archive.mark_manual_collect_success(group_id=gid)
             finally:
                 worker_archive.connection.close()
@@ -1894,27 +1907,32 @@ def create_app(
             raise HTTPException(status_code=422, detail=str(exc)) from exc
 
         def ask_in_worker():
-            client = AIClient(
-                base_url=cfg.resolve_base_url(),
-                api_key=cfg.resolve_api_key(),
-                model=cfg.ai.model,
-                json_mode=True,
-                timeout_seconds=cfg.ai.timeout_seconds,
-                max_retries=2,
-            )
-            try:
-                return answer_report_question(
-                    evidence,
-                    payload.question,
-                    [turn.model_dump() for turn in payload.history],
-                    client,
-                    max_chars=min(cfg.ai.max_context_chars, 30000),
+            with app.state.operations.claim("archive_qa"):
+                from dataclasses import replace
+                from ..attachments import AttachmentService
+                prepared_evidence=replace(evidence,messages=AttachmentService(_archive(request),cfg).prepare(evidence.messages))
+                client = AIClient(
+                    base_url=cfg.resolve_base_url(),
+                    api_key=cfg.resolve_api_key(),
+                    model=cfg.ai.model,
+                    json_mode=True,
+                    timeout_seconds=cfg.ai.timeout_seconds,
+                    max_retries=2,
                 )
-            finally:
-                client.close()
-
+                try:
+                    return answer_report_question(
+                        prepared_evidence,
+                        payload.question,
+                        [turn.model_dump() for turn in payload.history],
+                        client,
+                        max_chars=min(cfg.ai.max_context_chars, 30000),
+                    )
+                finally:
+                    client.close()
         try:
             return await asyncio.to_thread(ask_in_worker)
+        except OperationBusy as exc:
+            raise HTTPException(409, detail=str(exc)) from exc
         except NoReportEvidence as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
         except (AIError, ConfigError, OSError, ValueError) as exc:

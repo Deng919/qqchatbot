@@ -117,6 +117,21 @@ class Archive:
                 );
                 CREATE INDEX IF NOT EXISTS idx_messages_group_time
                     ON messages(group_id, timestamp);
+                CREATE TABLE IF NOT EXISTS message_attachments (
+                    group_id INTEGER NOT NULL,
+                    msg_id TEXT NOT NULL,
+                    attachment_key TEXT NOT NULL,
+                    kind TEXT NOT NULL,
+                    name TEXT NOT NULL,
+                    source_md5 TEXT NOT NULL,
+                    version INTEGER NOT NULL,
+                    status TEXT NOT NULL,
+                    text TEXT NOT NULL DEFAULT '',
+                    error TEXT NOT NULL DEFAULT '',
+                    updated_at TEXT NOT NULL,
+                    PRIMARY KEY(group_id,msg_id,attachment_key),
+                    FOREIGN KEY(group_id,msg_id) REFERENCES messages(group_id,msg_id) ON DELETE CASCADE
+                );
                 CREATE TABLE IF NOT EXISTS message_ingest_sequence (
                     singleton INTEGER PRIMARY KEY CHECK(singleton=1),
                     high_water INTEGER NOT NULL DEFAULT 0
@@ -390,6 +405,8 @@ class Archive:
             except sqlite3.OperationalError:
                 pass  # column already exists
             for statement in (
+                "ALTER TABLE groups ADD COLUMN read_images INTEGER NOT NULL DEFAULT 0",
+                "ALTER TABLE groups ADD COLUMN read_files INTEGER NOT NULL DEFAULT 0",
                 "ALTER TABLE reports ADD COLUMN input_fingerprint TEXT NOT NULL DEFAULT ''",
                 "ALTER TABLE reports ADD COLUMN source_message_count INTEGER NOT NULL DEFAULT 0",
                 "ALTER TABLE reports ADD COLUMN effective_template TEXT NOT NULL DEFAULT ''",
@@ -615,13 +632,13 @@ class Archive:
                 self.connection.execute(
                     """INSERT OR IGNORE INTO groups(
                         group_id, name, enabled, daily_summary, template, keywords,
-                        important_candidates, collection_window_days, category
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                        important_candidates, collection_window_days, category,read_images,read_files
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                     (group.group_id, group.name, int(group.enabled),
                      int(group.daily_summary), group.template,
                      json.dumps(group.keywords, ensure_ascii=False),
                      int(group.important_candidates), group.collection_window_days,
-                     group.category),
+                     group.category,int(group.read_images),int(group.read_files)),
                 )
                 self.connection.execute(
                     "INSERT INTO seeded_groups(group_id) VALUES (?)", (group.group_id,)
@@ -635,8 +652,8 @@ class Archive:
                     INSERT INTO groups(
                         group_id, name, enabled, daily_summary, template,
                         keywords, important_candidates, collection_window_days,
-                        category
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        category,read_images,read_files
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     ON CONFLICT(group_id) DO UPDATE SET
                         name=excluded.name,
                         enabled=excluded.enabled,
@@ -645,7 +662,8 @@ class Archive:
                         keywords=excluded.keywords,
                         important_candidates=excluded.important_candidates,
                         collection_window_days=excluded.collection_window_days,
-                        category=excluded.category
+                        category=excluded.category,
+                        read_images=excluded.read_images,read_files=excluded.read_files
                     """,
                     (
                         group.group_id,
@@ -657,6 +675,7 @@ class Archive:
                         int(group.important_candidates),
                         group.collection_window_days,
                         group.category,
+                        int(group.read_images),int(group.read_files),
                     ),
                 )
 
@@ -708,6 +727,8 @@ class Archive:
                     )
                 else:
                     skipped += 1
+                    from .attachment_sources import refresh_attachment_metadata
+                    refresh_attachment_metadata(self.connection,message)
                     refresh_message_sender(self.connection,message)
         return IngestResult(inserted=inserted, skipped=skipped)
 
@@ -805,6 +826,7 @@ class Archive:
             keywords=json.loads(row["keywords"]),
             important_candidates=bool(row["important_candidates"]),
             collection_window_days=int(row["collection_window_days"]),
+            read_images=bool(row['read_images']),read_files=bool(row['read_files']),
             category=row["category"] if "category" in row.keys() else "general",
         )
     def mark_sync(

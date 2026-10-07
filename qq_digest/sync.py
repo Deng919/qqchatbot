@@ -75,6 +75,8 @@ def run_message_sync(
             try:
                 messages = list(active_collector.collect(group.group_id, start, current))
                 ingest = archive.ingest(messages)
+                from .attachments import AttachmentService
+                AttachmentService(archive,config).prepare(messages)
                 archive.mark_sync(group_id=group.group_id, last_timestamp=current)
                 group_outcomes[group.group_id] = "success"
                 result.groups_succeeded += 1

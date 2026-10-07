@@ -45,7 +45,7 @@ class AIClient:
             transport=transport,
         )
 
-    def chat(self, messages: list[dict[str, str]]) -> dict[str, Any]:
+    def chat(self, messages: list[dict[str, Any]]) -> dict[str, Any]:
         payload = {
             "model": self.model,
             "messages": messages,
