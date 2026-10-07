@@ -8,6 +8,7 @@ from zoneinfo import ZoneInfo
 
 from .archive import Archive
 from .message_search import MESSAGE_TYPES, search_tokens
+from .sender_identity import sender_fields
 
 
 def _like_pattern(query: str) -> str:
@@ -93,7 +94,7 @@ def search_archive(
         source = " FROM messages m JOIN groups g ON g.group_id=m.group_id"
         total += connection.execute("SELECT COUNT(*)" + source + where, params).fetchone()[0]
         rows = connection.execute(
-            "SELECT m.msg_id, m.group_id, m.sender_qq, m.timestamp, m.text, m.message_type, g.name AS group_name"
+            "SELECT m.msg_id, m.group_id, m.sender_qq, m.content_json, m.timestamp, m.text, m.message_type, g.name AS group_name"
             + source + where + " ORDER BY m.timestamp DESC, m.msg_id DESC, m.group_id DESC LIMIT ?",
             [*params, fetch_limit],
         ).fetchall()
@@ -103,10 +104,11 @@ def search_archive(
                 "kind": "message", "id": row["msg_id"], "group_id": row["group_id"],
                 "group_name": row["group_name"], "date": local_time.date().isoformat(),
                 "sort_at": row["timestamp"],
-                "title": f"{row['group_name']} · {row['sender_qq'] or '未知发送者'}",
+                "title": f"{row['group_name']} · {sender_fields(row).get('sender_label') or row['sender_qq'] or '未知发送者'}",
                 "snippet": _snippet(row["text"], query), "text": row["text"],
                 "timestamp": row["timestamp"], "sender_qq": row["sender_qq"],
                 "message_type": row["message_type"],
+                **sender_fields(row),
                 "url": "",
             })
 

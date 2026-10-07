@@ -18,6 +18,7 @@ from pydantic import BaseModel, Field, field_validator
 from typing import Literal
 
 from ..archive import Archive, IngestResult
+from ..sender_identity import sender_fields
 from ..ai.client import AIClient, AIError
 from ..ai.key_store import save_ui_api_key, ui_api_key_exists
 from ..candidates import CandidateService
@@ -1569,6 +1570,7 @@ def create_app(
                 {
                     "msg_id": m.msg_id,
                     "sender_qq": m.sender_qq,
+                    **sender_fields({'sender_qq':m.sender_qq,'content_json':m.content_json}),
                     "timestamp": m.timestamp.isoformat(),
                     "message_type": m.message_type,
                     "text": m.text,

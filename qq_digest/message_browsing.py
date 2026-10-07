@@ -7,6 +7,7 @@ from zoneinfo import ZoneInfo
 
 from .archive import Archive
 from .search import _snippet
+from .sender_identity import sender_fields
 
 
 def _date_value(value: str | None) -> date | None:
@@ -59,7 +60,7 @@ def browse_messages(
     total = connection.execute("SELECT COUNT(*)" + source + where, params).fetchone()[0]
     rows = connection.execute(
         "SELECT m.msg_id, m.group_id, m.sender_qq, m.timestamp, m.message_type, "
-        "m.text, g.name AS group_name" + source + where
+        "m.text, m.content_json, g.name AS group_name" + source + where
         + " ORDER BY m.timestamp DESC, m.group_id ASC, m.msg_id ASC LIMIT ? OFFSET ?",
         [*params, page_size, offset],
     ).fetchall()
@@ -70,9 +71,10 @@ def browse_messages(
             "kind": "message", "id": row["msg_id"], "group_id": row["group_id"],
             "group_name": row["group_name"], "date": local_time.date().isoformat(),
             "sort_at": row["timestamp"],
-            "title": f"{row['group_name']} · {row['sender_qq'] or '未知发送者'}",
+            "title": f"{row['group_name']} · {sender_fields(row).get('sender_label') or row['sender_qq'] or '未知发送者'}",
             "snippet": _snippet(row["text"], ""), "text": row["text"], "url": "",
             "timestamp": row["timestamp"], "sender_qq": row["sender_qq"],
             "message_type": row["message_type"],
+            **sender_fields(row),
         })
     return {"results": results, "total": total, "page": page, "page_size": page_size}

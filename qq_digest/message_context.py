@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from .archive import Archive
+from .sender_identity import sender_fields
 
 
 def message_context(archive: Archive, group_id: int, anchor_id: str, *,
@@ -17,7 +18,7 @@ def message_context(archive: Archive, group_id: int, anchor_id: str, *,
 
     def lookup(msg_id):
         row = connection.execute(
-            'SELECT msg_id,sender_qq,timestamp,text FROM messages WHERE group_id=? AND msg_id=?',
+            'SELECT msg_id,sender_qq,content_json,timestamp,text FROM messages WHERE group_id=? AND msg_id=?',
             (group_id, msg_id),
         ).fetchone()
         if row is None:
@@ -27,7 +28,7 @@ def message_context(archive: Archive, group_id: int, anchor_id: str, *,
     def adjacent(row, side, limit):
         operator, order = ('<', 'DESC') if side == 'before' else ('>', 'ASC')
         rows = connection.execute(
-            'SELECT msg_id,sender_qq,timestamp,text FROM messages WHERE group_id=? '
+            'SELECT msg_id,sender_qq,content_json,timestamp,text FROM messages WHERE group_id=? '
             f'AND (timestamp {operator} ? OR (timestamp=? AND msg_id {operator} ?)) '
             f'ORDER BY timestamp {order},msg_id {order} LIMIT ?',
             (group_id, row['timestamp'], row['timestamp'], row['msg_id'], limit),
@@ -42,6 +43,6 @@ def message_context(archive: Archive, group_id: int, anchor_id: str, *,
         edge = lookup(cursor)
         rows = adjacent(edge, direction, 20)
     first, last = (rows[0], rows[-1]) if rows else (edge, edge)
-    return {'messages': [dict(row) for row in rows], 'first_id': first['msg_id'],
+    return {'messages': [{**{key:row[key] for key in row.keys() if key!='content_json'},**sender_fields(row)} for row in rows], 'first_id': first['msg_id'],
             'last_id': last['msg_id'], 'has_before': bool(adjacent(first, 'before', 1)),
             'has_after': bool(adjacent(last, 'after', 1)), 'anchor_id': anchor_id}

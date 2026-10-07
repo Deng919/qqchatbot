@@ -10,6 +10,7 @@ from pathlib import Path
 
 from .models import GroupConfig, NormalizedMessage
 from .message_search import install_message_index
+from .sender_identity import refresh_message_sender
 
 
 @dataclass(frozen=True)
@@ -702,6 +703,7 @@ class Archive:
                     )
                 else:
                     skipped += 1
+                    refresh_message_sender(self.connection,message)
         return IngestResult(inserted=inserted, skipped=skipped)
 
     def _row_to_message(self, row: sqlite3.Row) -> NormalizedMessage:

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from .archive import Archive
 from .models import SummaryCandidate
+from .sender_identity import sender_fields
 
 
 def candidate_source_context(archive: Archive, candidate: SummaryCandidate) -> dict:
@@ -47,6 +48,7 @@ def candidate_source_context(archive: Archive, candidate: SummaryCandidate) -> d
                 "msg_id": row["msg_id"],
                 "timestamp": row["timestamp"],
                 "sender_qq": row["sender_qq"],
+                **sender_fields(row),
                 "text": row["text"][:2000],
                 "is_cited": row["msg_id"] in cited_rows,
                 "text_truncated": len(row["text"]) > 2000,

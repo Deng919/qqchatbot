@@ -12,6 +12,7 @@ import time
 from .message_search import search_tokens
 from .report_qa import _terms
 from .search import _like_pattern, _message_bounds, _snippet
+from .sender_identity import sender_fields
 from zoneinfo import ZoneInfo
 
 UNCERTAIN = '无法确认：本次找到的原始消息不足以支持答案。请调整关键词或查询范围。'
@@ -20,6 +21,7 @@ STOP_TERMS = {'什么','怎么','为什','大家','我们','这个','那个','�
 
 def _fingerprint(row):
     fields={key:row[key] for key in ('group_id','msg_id','timestamp','sender_qq','text')}
+    fields.update(sender_fields(row))
     return hashlib.sha256(json.dumps(fields,ensure_ascii=False,sort_keys=True).encode()).hexdigest()
 
 
@@ -68,7 +70,7 @@ class ArchiveQAService:
                 params.append(' OR '.join('('+search_tokens(term)+')' for term in terms))
             source=' FROM messages m JOIN groups g ON g.group_id=m.group_id WHERE '+' AND '.join(clauses)
             total=self.archive.connection.execute('SELECT COUNT(*)'+source,params).fetchone()[0]
-            rows=self.archive.connection.execute('SELECT m.msg_id,m.group_id,m.sender_qq,m.timestamp,m.text,g.name AS group_name'+source+
+            rows=self.archive.connection.execute('SELECT m.msg_id,m.group_id,m.sender_qq,m.content_json,m.timestamp,m.text,g.name AS group_name'+source+
                 ' ORDER BY m.timestamp DESC,m.group_id,m.msg_id DESC LIMIT 200',params).fetchall()
             rows=sorted(rows,key=lambda row:-sum(term.lower() in row['text'].lower() for term in terms))
             used=0
@@ -77,7 +79,7 @@ class ArchiveQAService:
                 best=next((term for term in terms if term.lower() in row['text'].lower()),terms[0])
                 excerpt=_snippet(row['text'],best,length=2000)
                 item=dict(source_id='s'+str(len(messages)+1),msg_id=row['msg_id'],group_id=row['group_id'],
-                    group_name=row['group_name'][:80],timestamp=row['timestamp'],sender_qq=row['sender_qq'],excerpt=excerpt)
+                    group_name=row['group_name'][:80],timestamp=row['timestamp'],sender_qq=row['sender_qq'],excerpt=excerpt,**sender_fields(row))
                 cost=len(json.dumps(item,ensure_ascii=False)) + 2
                 if used+cost>self.max_chars:continue
                 used+=cost;item['fingerprint']=_fingerprint(row);messages.append(item)
@@ -107,7 +109,7 @@ class ArchiveQAService:
 
     def _verify(self, item):
         for source in item.messages:
-            row=self.archive.connection.execute('SELECT group_id,msg_id,timestamp,sender_qq,text FROM messages WHERE group_id=? AND msg_id=?',
+            row=self.archive.connection.execute('SELECT group_id,msg_id,timestamp,sender_qq,content_json,text FROM messages WHERE group_id=? AND msg_id=?',
                 (source['group_id'],source['msg_id'])).fetchone()
             if row is None or _fingerprint(row)!=source['fingerprint']:
                 raise ValueError('原消息发生变化，请重新预览')

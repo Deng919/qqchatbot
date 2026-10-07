@@ -7,10 +7,11 @@ class Node {constructor(){this.children=[];this.scrollTop=0;this.clientHeight=10
   get scrollHeight(){return this.children.length*50;}querySelector(){return this.children.find(n=>n.className.includes('is-cited'));}
 }
 const requests=[],scope={console,URLSearchParams,Date,String,Math,document:{createElement:()=>new Node()},api:(method,url)=>new Promise((resolve,reject)=>requests.push({url,resolve,reject}))};vm.createContext(scope);vm.runInContext(fs.readFileSync(file,'utf8').replace(/<style>[\s\S]*?<\/style>/,'').replace(/<\/?script>/g,''),scope);
-const rows=(start,count)=>Array.from({length:count},(_,i)=>({msg_id:String(start+i),text:'纯文本 <img>',sender_qq:1,timestamp:'2026-10-04T00:00:00Z'}));
+const rows=(start,count)=>Array.from({length:count},(_,i)=>({msg_id:String(start+i),text:'纯文本 <img>',sender_qq:1,sender_label:'<svg onload=alert(1)> · 1',timestamp:'2026-10-04T00:00:00Z'}));
 (async()=>{
   const host=new Node(),controller=scope.mountMessageContext(host,{url:'/context',citedId:'30'});
   requests.shift().resolve({messages:rows(28,5),first_id:'28',last_id:'32',has_before:true,has_after:true});await controller.ready;
+  assert.ok(host.textContent.includes('<svg onload=alert(1)> · 1'),'Names are rendered as literal text');
   const scroll=host.children[0].children.find(n=>n.className==='message-context-scroll'),oldTop=scroll.scrollTop;
   const before=controller.load('before');assert.ok(requests[0].url.includes('cursor=28'));
   requests.shift().resolve({messages:rows(8,20),first_id:'8',last_id:'27',has_before:true,has_after:true});await before;

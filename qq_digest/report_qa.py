@@ -11,6 +11,7 @@ from zoneinfo import ZoneInfo
 
 from .archive import Archive
 from .models import NormalizedMessage
+from .sender_identity import sender_fields
 
 
 class ReportNotFound(LookupError):
@@ -173,6 +174,7 @@ def answer_report_question(
             "timestamp": allowed[msg_id].timestamp.isoformat(),
             "sender_qq": allowed[msg_id].sender_qq,
             "excerpt": allowed[msg_id].text[:240],
+            **sender_fields({"sender_qq":allowed[msg_id].sender_qq,"content_json":allowed[msg_id].content_json}),
         }
         for msg_id in valid_ids
     ]

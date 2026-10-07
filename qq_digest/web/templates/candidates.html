@@ -56,7 +56,7 @@
     rows.forEach(function(item) {
       var row = document.createElement('div'); row.className = 'source-context-row' + (item.is_cited ? ' is-cited' : '');
       var meta = document.createElement('div'); meta.className = 'source-context-meta';
-      meta.textContent = new Date(item.timestamp).toLocaleString('zh-CN') + ' · ' + (item.sender_qq || '未知发送者') + (item.is_cited ? ' · 候选引用' : ' · 相邻消息');
+      meta.textContent = new Date(item.timestamp).toLocaleString('zh-CN') + ' · ' + (item.sender_label || item.sender_qq || '未知发送者') + (item.is_cited ? ' · 候选引用' : ' · 相邻消息');
       var body = document.createElement('div'); body.className = 'source-context-text'; body.textContent = item.text;
       row.appendChild(meta); row.appendChild(body);
       if (item.text_truncated) { var shortNote = document.createElement('small'); shortNote.textContent = '原消息过长，已截断展示'; row.appendChild(shortNote); }

@@ -157,7 +157,7 @@
       var host = document.getElementById('catchup-source-messages'); host.textContent = '';
       (data.messages || []).forEach(function(message) {
         var row = catchupElement('div', 'catchup-source-row' + (message.msg_id === id ? ' is-cited' : ''));
-        row.appendChild(catchupElement('div', 'catchup-source-meta', new Date(message.timestamp).toLocaleString('zh-CN') + ' · ' + (message.sender_qq || '未知发送者')));
+        row.appendChild(catchupElement('div', 'catchup-source-meta', new Date(message.timestamp).toLocaleString('zh-CN') + ' · ' + (message.sender_label || message.sender_qq || '未知发送者')));
         row.appendChild(catchupElement('div', 'catchup-source-text', message.text)); host.appendChild(row);
       });
     }).catch(function(error) { if (token === catchupSourceToken) { document.getElementById('catchup-source-messages').textContent = '原消息读取失败：' + error.message; } });

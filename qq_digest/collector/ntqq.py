@@ -16,6 +16,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from ..models import NormalizedMessage
+from ..sender_identity import SenderIdentityResolver
 from .base import CollectionIncompleteError, Collector
 from .protobuf import extract_message_text
 
@@ -43,6 +44,22 @@ class NTQQCollector(Collector):
         self.qq_number = qq_number
         self.timezone = ZoneInfo(timezone_name)
         self._group_names: dict[int, str] | None = None
+        self._identities = None
+        self._identity_stamp = None
+
+    def _prepare_identities(self):
+        paths=[self.db_dir/name for name in ('group_info.db','profile_info.db','nt_msg.db')]
+        def stamp_for(path):
+            try:
+                info=path.stat();return info.st_mtime_ns,info.st_size
+            except OSError:return None
+        stamp=tuple(stamp_for(path) for path in paths)
+        if self._identities is None or stamp!=self._identity_stamp:
+            self._identities=SenderIdentityResolver(self.db_dir);self._identity_stamp=stamp
+
+    def _resolve_sender(self,message):
+        if self._identities is None:self._prepare_identities()
+        return self._identities.enrich(message)
 
     # ------------------------------------------------------------------
     # Group discovery
@@ -125,6 +142,7 @@ class NTQQCollector(Collector):
         group_msg_fts.db. Older versions are supported through the legacy
         protobuf BLOB path in nt_msg.db.
         """
+        self._prepare_identities()
         if (self.db_dir / "group_msg_fts.db").exists():
             yield from self._collect_searchable(group_id, start, end)
             return
@@ -191,7 +209,7 @@ class NTQQCollector(Collector):
         sender_text = str(sender_uid or "")
         sender_qq = int(sender_text) if sender_text.isdigit() else None
         content_json = {"sender_uid": sender_text} if sender_text else {}
-        return NormalizedMessage(
+        return self._resolve_sender(NormalizedMessage(
             msg_id=str(msg_id),
             group_id=group_id,
             sender_qq=sender_qq,
@@ -201,7 +219,7 @@ class NTQQCollector(Collector):
             content_json=content_json,
             source_id="ntqq_fts",
             collected_at=collected_at,
-        )
+        ))
 
     def _scan_metadata(
         self,
@@ -209,18 +227,22 @@ class NTQQCollector(Collector):
         group_id: int,
         start_ts: int,
         end_ts: int,
-    ) -> list[tuple[int, str, int, int]]:
+    ) -> list[tuple[int, str, int, int, str]]:
         """Scan metadata columns, returning matching (msg_id, peer, sender, ts).
 
         The 40021 column stores the numeric group_id directly.
         Uses a rowid DESC scan for corruption resilience.
         """
-        matching: list[tuple[int, str, int, int]] = []
+        matching: list[tuple[int, str, int, int, str]] = []
         gid_str = str(group_id)
         try:
             cur = msg_db.cursor()
+            cur.execute('PRAGMA table_info(group_msg_table)')
+            columns={row[1] for row in cur}
+            sender_column='40033' if '40033' in columns else '40027'
+            metadata_columns=f'"40001","40020","40021","{sender_column}","40050"'
             cur.execute(
-                f"SELECT rowid, {_META_COLUMNS} FROM group_msg_table ORDER BY rowid DESC"
+                f"SELECT rowid, {metadata_columns} FROM group_msg_table ORDER BY rowid DESC"
             )
             for row in cur:
                 peer = row[3] or ""
@@ -229,7 +251,7 @@ class NTQQCollector(Collector):
                     break
                 if peer == gid_str and start_ts <= ts <= end_ts:
                     sender = row[4] or 0
-                    matching.append((row[1], peer, sender, ts))
+                    matching.append((row[1], peer, sender, ts,str(row[2] or '')))
         except sqlite3.DatabaseError as exc:
             raise CollectionIncompleteError(f"消息元数据扫描不完整: {exc}") from exc
         return matching
@@ -240,7 +262,7 @@ class NTQQCollector(Collector):
 
     def _fetch_blobs(
         self,
-        rows: list[tuple[int, str, int, int]],
+        rows: list[tuple[int, str, int, int, str]],
         group_id: int,
         collected_at: datetime,
     ) -> Iterable[NormalizedMessage]:
@@ -262,7 +284,7 @@ class NTQQCollector(Collector):
                 for row in mcur.fetchall():
                     blob_map[row[0]] = row[1]
 
-                for msg_id, peer, sender, ts in batch:
+                for msg_id, peer, sender, ts, sender_uid in batch:
                     if msg_id not in blob_map:
                         raise CollectionIncompleteError(
                             f"消息正文缺失: group_id={group_id}, msg_id={msg_id}"
@@ -272,15 +294,16 @@ class NTQQCollector(Collector):
                     if not text:
                         continue  # unsupported messages are intentionally omitted
                     kind = self._map_kind(msg_type)
-                    yield NormalizedMessage(
+                    yield self._resolve_sender(NormalizedMessage(
                         msg_id=str(msg_id),
                         group_id=group_id,
                         sender_qq=sender if sender else None,
                         timestamp=datetime.fromtimestamp(ts, tz=self.timezone),
                         message_type=kind,
                         text=text,
+                        content_json={'sender_uid':sender_uid} if sender_uid else {},
                         collected_at=collected_at,
-                    )
+                    ))
         except sqlite3.DatabaseError as exc:
             raise CollectionIncompleteError(f"消息正文读取不完整: {exc}") from exc
         finally:

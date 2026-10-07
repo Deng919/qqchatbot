@@ -395,7 +395,7 @@
     var note = document.createElement('div'); note.textContent = '第 ' + (Math.floor(qaHistory.length / 2) + 1) + ' 次回答：参考 ' + data.context_message_count + ' 条原始消息' + (data.context_truncated ? '（已按问题筛选）' : '') + '。'; block.appendChild(note);
     (data.sources || []).forEach(function(source) {
       var details = document.createElement('details'), summary = document.createElement('summary'), excerpt = document.createElement('div');
-      summary.textContent = source.timestamp + ' · ' + (source.sender_qq || '未知发送者') + ' · ' + source.msg_id;
+      summary.textContent = source.timestamp + ' · ' + (source.sender_label || source.sender_qq || '未知发送者') + ' · ' + source.msg_id;
       excerpt.textContent = source.excerpt; details.appendChild(summary); details.appendChild(excerpt); block.appendChild(details);
     });
     container.appendChild(block); container.scrollTop = container.scrollHeight;
