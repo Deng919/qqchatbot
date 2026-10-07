@@ -70,6 +70,11 @@ class Archive:
                     payload TEXT NOT NULL DEFAULT '{}'
                 );
                 INSERT OR IGNORE INTO feature_settings(singleton) VALUES(1);
+                CREATE TABLE IF NOT EXISTS failure_ignores (
+                    source_id TEXT PRIMARY KEY,
+                    fingerprint TEXT NOT NULL,
+                    ignored_at TEXT NOT NULL
+                );
                 CREATE TABLE IF NOT EXISTS bookmarks (
                     bookmark_id INTEGER PRIMARY KEY AUTOINCREMENT,
                     source_key TEXT NOT NULL UNIQUE,

@@ -734,6 +734,8 @@ def create_app(
     add_summary_reading_routes(app, archive=archive, config=config, require_login=require_login)
     add_message_routes(app, archive=archive, config=config, require_login=require_login)
     add_report_related_routes(app, archive=_archive, config=_config, require_login=require_login)
+    from .failure_ignore_routes import add_failure_ignore_routes
+    add_failure_ignore_routes(app, archive=_archive, require_login=require_login)
     add_search_routes(app, archive=archive, config=config, require_login=require_login)
     add_archive_qa_routes(app, archive=archive, config=config, templates=templates,
         require_login=require_login, operations=operations)

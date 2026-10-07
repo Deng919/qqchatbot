@@ -3,15 +3,18 @@
 from __future__ import annotations
 
 import json
-from datetime import date, timedelta
+import hashlib
+import sqlite3
+from datetime import date, datetime, timedelta, timezone
 from urllib.parse import urlencode
 
 from .archive import Archive
 
 
 class FailureCenterService:
-    def __init__(self, archive: Archive):
+    def __init__(self, archive: Archive, *, connection=None):
         self.archive = archive
+        self.connection = connection if connection is not None else archive.connection
 
     @staticmethod
     def _text(value: object, limit: int | None = 500) -> str:
@@ -32,7 +35,7 @@ class FailureCenterService:
         if failures:
             return failures
         if job["job_type"] == "message_sync":
-            rows = self.archive.connection.execute(
+            rows = self.connection.execute(
                 """SELECT group_id FROM job_group_results
                    WHERE job_id=? AND status='failed' ORDER BY group_id""",
                 (job["job_id"],),
@@ -43,7 +46,7 @@ class FailureCenterService:
         return [{"error": job["error"] or "任务未完成"}]
 
     def _item_recovered(self, job, group_id: int | None) -> bool:
-        connection = self.archive.connection
+        connection = self.connection
         if group_id is not None:
             return connection.execute(
                 """SELECT 1 FROM jobs newer
@@ -77,7 +80,7 @@ class FailureCenterService:
         Unbounded mode also preserves complete reasons for internal fingerprints.
         Callers must not copy those reasons into user-facing reminder text.
         """
-        connection = self.archive.connection
+        connection = self.connection
         limit = "" if unbounded else "LIMIT 100"
         groups = {
             row["group_id"]: row["name"]
@@ -100,6 +103,7 @@ class FailureCenterService:
                 raw_gid = failure.get("group_id")
                 group_id = raw_gid if type(raw_gid) is int else None
                 recovered = self._item_recovered(job, group_id)
+                retrying = bool(retry and retry['status'] == 'running')
                 group_name = self._text(
                     failure.get("group_name") or groups.get(group_id) or "全部已启用群", 100
                 )
@@ -111,17 +115,18 @@ class FailureCenterService:
                     "group_id": group_id,
                     "group_name": group_name,
                     "target_date": job["target_date"] or "",
-                    "stage": self._text(failure.get("stage") or kind, None if unbounded else 50),
-                    "error": self._text(failure.get("error") or job["error"], None if unbounded else 500),
+                    "stage": self._text(failure.get("stage") or kind, None),
+                    "error": self._text(failure.get("error") or job["error"], None),
                     "at": job["finished_at"] or job["started_at"] or "",
-                    "status": "recovered" if recovered else "active",
+                    "status": "recovered" if recovered else "pending" if retrying else "active",
                     "action": "retry_job" if (
                         kind == "message_sync" or
                         (kind == "daily_digest" and bool(job["target_date"]))
-                    ) and not recovered else "",
+                    ) and not recovered and not retrying else "",
                     "next_step": (
                         "该群的后续任务已成功" if recovered and group_id is not None else
                         "较新的同日期任务已成功" if recovered else
+                        "等待重试结果" if retrying else
                         "旧任务缺少报告日期，请在总览重新运行" if kind == "daily_digest" and not job["target_date"] else
                         "检查 AI 设置与采集状态后重试" if kind == "daily_digest" else
                         "检查本地 QQ 数据库后重试导入" if kind == "message_sync" else
@@ -145,7 +150,7 @@ class FailureCenterService:
                 "job_id": None, "group_id": group_id,
                 "group_name": row["name"] or str(group_id),
                 "target_date": "", "stage": "collection",
-                "error": self._text(row["error"], None if unbounded else 500), "at": row["updated_at"],
+                "error": self._text(row["error"], None), "at": row["updated_at"],
                 "status": "active", "action": "collect",
                 "action_url": "/collect?" + urlencode({
                     "group_id": group_id,
@@ -196,8 +201,8 @@ class FailureCenterService:
                 "send_id": row["send_id"], "job_id": None,
                 "group_id": None,
                 "group_name": self._text(payload.get("group_name") or "关联群未知", 100),
-                "target_date": self._text(payload.get("report_date"), None if unbounded else 20),
-                "stage": "qq_bot", "error": self._text(row["error"], None if unbounded else 500),
+                "target_date": self._text(payload.get("report_date"), None),
+                "stage": "qq_bot", "error": self._text(row["error"], None),
                 "at": row["updated_at"] or row["attempted_at"],
                 "status": status,
                 "action": "retry_notification" if status == "active" else "",
@@ -211,13 +216,76 @@ class FailureCenterService:
                 "retry_job_id": None, "retry_status": "",
             })
 
+        ignored = {row['source_id']: row['fingerprint'] for row in
+                   connection.execute('SELECT source_id,fingerprint FROM failure_ignores')}
+        for item in items:
+            # Hash complete reasons before applying presentation limits.
+            raw = json.dumps([item.get(key) for key in (
+                'id', 'kind', 'group_id', 'target_date', 'stage', 'error', 'at'
+            )], ensure_ascii=False, separators=(',', ':'))
+            item['fingerprint'] = hashlib.sha256(raw.encode('utf-8')).hexdigest()
+            if item['status'] == 'active' and ignored.get(item['id']) == item['fingerprint']:
+                item.update(status='ignored', action='', next_step='可恢复待处理')
+            if not unbounded:
+                item['error'] = self._text(item['error'], 500)
+                item['stage'] = self._text(item['stage'], 50)
+                item['target_date'] = self._text(item['target_date'], 20)
         items.sort(key=lambda item: item["at"], reverse=True)
-        items.sort(key=lambda item: {"active": 0, "pending": 1, "recovered": 2}[item["status"]])
+        items.sort(key=lambda item: {"active": 0, "pending": 1, "ignored": 2, "recovered": 3}[item["status"]])
         return {
             "items": items if unbounded else items[:400],
             "counts": {
                 "active": sum(item["status"] == "active" for item in items),
                 "pending": sum(item["status"] == "pending" for item in items),
                 "recovered": sum(item["status"] == "recovered" for item in items),
+                "ignored": sum(item["status"] == "ignored" for item in items),
             },
         }
+
+    def ignore_items(self, selectors: list[dict]) -> dict:
+        return self._set_ignored(selectors, restore=False)
+
+    def restore_items(self, selectors: list[dict]) -> dict:
+        return self._set_ignored(selectors, restore=True)
+
+    def _set_ignored(self, selectors: list[dict], *, restore: bool) -> dict:
+        """Validate a displayed snapshot and mutate it under one SQLite write lock.
+
+        A separate file connection keeps this transaction independent of the
+        shared archive connection used by running jobs. No task results change.
+        """
+        path = next(row['file'] for row in self.connection.execute('PRAGMA database_list') if row['name'] == 'main')
+        connection = sqlite3.connect(path, timeout=30) if path else self.connection
+        connection.row_factory = sqlite3.Row
+        unique = {item['id']: item['fingerprint'] for item in selectors}
+        changed = 0
+        try:
+            connection.execute('BEGIN IMMEDIATE' if path else 'SAVEPOINT failure_ignore')
+            current = {item['id']: item for item in
+                       FailureCenterService(self.archive, connection=connection).list_items(unbounded=True)['items']}
+            for source_id, fingerprint in unique.items():
+                item = current.get(source_id)
+                if not item or item['fingerprint'] != fingerprint or item['status'] != ('ignored' if restore else 'active'):
+                    continue
+                if restore:
+                    connection.execute('DELETE FROM failure_ignores WHERE source_id=? AND fingerprint=?', (source_id, fingerprint))
+                else:
+                    connection.execute('''INSERT INTO failure_ignores(source_id,fingerprint,ignored_at) VALUES(?,?,?)
+                        ON CONFLICT(source_id) DO UPDATE SET fingerprint=excluded.fingerprint,ignored_at=excluded.ignored_at''',
+                        (source_id, fingerprint, datetime.now(timezone.utc).isoformat()))
+                changed += 1
+            if path:
+                connection.commit()
+            else:
+                connection.execute('RELEASE failure_ignore')
+        except Exception:
+            if path:
+                connection.rollback()
+            else:
+                connection.execute('ROLLBACK TO failure_ignore')
+                connection.execute('RELEASE failure_ignore')
+            raise
+        finally:
+            if path:
+                connection.close()
+        return {'changed': changed, 'skipped': len(unique) - changed}
