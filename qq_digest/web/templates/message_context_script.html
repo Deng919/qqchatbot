@@ -1,15 +1,26 @@
 <style>
-.related-message-list{max-height:52vh;overflow-y:auto;border:1px solid var(--border);border-radius:8px}.related-message-context{margin-top:18px}.message-context-browser{font-size:14px}.message-context-controls{display:flex;justify-content:space-between;align-items:center;gap:10px;margin:10px 0}.message-context-controls span,.message-context-status{font-size:12px;color:var(--text-soft);line-height:1.6}.message-context-scroll{height:min(52vh,480px);min-height:150px;overflow-y:auto;overscroll-behavior:contain;position:relative;border:1px solid var(--border);border-radius:8px;scrollbar-gutter:stable}.message-context-scroll:focus-visible{outline:2px solid var(--primary);outline-offset:2px}.message-context-row{padding:13px 12px;border-bottom:1px solid var(--border)}.message-context-row:last-child{border-bottom:0}.message-context-row.is-cited{background:var(--primary-soft);border-left:3px solid var(--primary)}.message-context-meta{font-size:12px;color:var(--text-soft);margin-bottom:8px}.message-context-text{white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.75}.message-context-status{margin:8px 0}.find-context-body{overflow:hidden!important;display:flex;flex-direction:column}.find-context-body>.message-context-browser{flex:1;min-height:0;display:flex;flex-direction:column}.find-context-body .message-context-scroll{flex:1;height:auto;min-height:0}.find-context-body .message-context-status,.find-context-body .message-context-controls{flex-shrink:0}
+.related-message-context{margin-top:18px}.message-context-browser{font-size:14px}.message-context-controls{display:flex;justify-content:space-between;align-items:center;gap:10px;margin:10px 0;flex-wrap:wrap}.message-context-controls span,.message-context-status{font-size:12px;color:var(--text-soft);line-height:1.6}.message-context-scroll{height:min(52vh,480px);min-height:150px;overflow-y:auto;overscroll-behavior:contain;position:relative;border:1px solid var(--border);border-radius:8px;scrollbar-gutter:stable}.message-context-scroll:focus-visible{outline:2px solid var(--primary);outline-offset:2px}.message-context-row{padding:13px 12px;border-bottom:1px solid var(--border)}.message-context-row:last-child{border-bottom:0}.message-context-row.is-cited{background:var(--primary-soft);border-left:3px solid var(--primary)}.message-context-meta{font-size:12px;color:var(--text-soft);margin-bottom:8px}.message-context-text{white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.75}.message-context-status{margin:8px 0}.find-context-body{overflow:hidden!important;display:flex;flex-direction:column}.find-context-body>.message-context-browser{flex:1;min-height:0;display:flex;flex-direction:column}.find-context-body .message-context-scroll{flex:1;height:auto;min-height:0}.find-context-body .message-context-status,.find-context-body .message-context-controls{flex-shrink:0}
 </style>
 <script>
 function destroyMessageContext(host){if(host&&host._messageContext)host._messageContext.destroy();}
 function mountMessageContext(host,options){
-  destroyMessageContext(host);host.textContent='';var active=true,busy=false,loaded=false,armed=false,items=[],first=null,last=null,hasBefore=false,hasAfter=false,relatedIds=new Set((options.relatedIds||[options.citedId]).filter(Boolean).map(String));
+  destroyMessageContext(host);host.textContent='';var active=true,busy=false,loaded=false,armed=false,items=[],first=null,last=null,hasBefore=false,hasAfter=false,relatedIds=new Set((options.relatedIds||[options.citedId]).filter(Boolean).map(String)),relatedMessages=options.relatedMessages||[],previousRelated=null,nextRelated=null,resizeObserver=null;
   function node(tag,cls,text){var n=document.createElement(tag);n.className=cls;if(text!==undefined)n.textContent=text;return n;}
-  var root=node('section','message-context-browser'),top=node('div','message-context-controls'),before=node('button','btn btn-sm','查看更早消息'),count=node('span','',''),scroll=node('div','message-context-scroll'),status=node('p','message-context-status','上下文可能超出摘要日期。'),bottom=node('div','message-context-controls'),after=node('button','btn btn-sm','查看更晚消息');
-  before.type=after.type='button';scroll.tabIndex=0;scroll.setAttribute('aria-label','上下文消息，可向前后滚动查看');status.setAttribute('role','status');top.appendChild(before);top.appendChild(count);bottom.appendChild(after);if(options.title)root.appendChild(node('h3','',options.title));root.appendChild(top);root.appendChild(scroll);root.appendChild(bottom);root.appendChild(status);host.appendChild(root);
+  var root=node('section','message-context-browser'),top=node('div','message-context-controls'),before=node('button','btn btn-sm','查看更早消息'),count=node(relatedMessages.length?'button':'span',relatedMessages.length?'btn btn-sm related-message-counter':'',''),scroll=node('div','message-context-scroll'),status=node('p','message-context-status','上下文可能超出摘要日期。'),bottom=node('div','message-context-controls'),after=node('button','btn btn-sm','查看更晚消息'),laterCount=relatedMessages.length?node('button','btn btn-sm related-message-counter',''):null;
+  before.type=after.type='button';scroll.tabIndex=0;scroll.setAttribute('aria-label','上下文消息，可向前后滚动查看');status.setAttribute('role','status');top.appendChild(before);top.appendChild(count);bottom.appendChild(after);if(laterCount){count.type=laterCount.type='button';bottom.appendChild(laterCount);}if(options.title)root.appendChild(node('h3','',options.title));root.appendChild(top);root.appendChild(scroll);root.appendChild(bottom);root.appendChild(status);host.appendChild(root);
   function current(){return active&&(!options.isCurrent||options.isCurrent());}
-  function controls(){before.disabled=busy||!hasBefore;after.disabled=busy||!hasAfter;before.textContent=loaded&&!hasBefore?'已到最早消息':'查看更早消息';after.textContent=loaded&&!hasAfter?'已到最新消息':'查看更晚消息';count.textContent=busy?'正在加载…':'已加载 '+items.length+' 条';scroll.setAttribute('aria-busy',String(busy));}
+  function controls(){before.disabled=busy||!hasBefore;after.disabled=busy||!hasAfter;before.textContent=loaded&&!hasBefore?'已到最早消息':'查看更早消息';after.textContent=loaded&&!hasAfter?'已到最新消息':'查看更晚消息';if(!relatedMessages.length)count.textContent=busy?'正在加载…':'已加载 '+items.length+' 条';else updateRelatedCounts();scroll.setAttribute('aria-busy',String(busy));}
+  function comparePosition(a,b){return a.timestamp===b.timestamp?(String(a.msg_id)<String(b.msg_id)?-1:String(a.msg_id)>String(b.msg_id)?1:0):(a.timestamp<b.timestamp?-1:1);}
+  function updateRelatedCounts(){
+    if(!relatedMessages.length||!current())return;
+    var visible=[];Array.from(scroll.children).forEach(function(row,index){if(row.offsetTop+row.offsetHeight>scroll.scrollTop&&row.offsetTop<scroll.scrollTop+scroll.clientHeight)visible.push(items[index]);});
+    var earlier=visible.length?relatedMessages.filter(function(item){return comparePosition(item,visible[0])<0;}):[],later=visible.length?relatedMessages.filter(function(item){return comparePosition(item,visible[visible.length-1])>0;}):[];
+    previousRelated=earlier.length?earlier[earlier.length-1]:null;nextRelated=later.length?later[0]:null;
+    count.textContent=loaded?(earlier.length?'上方还有 '+earlier.length+' 条关联消息':'上方没有关联消息'):'正在加载…';
+    laterCount.textContent=loaded?(later.length?'下方还有 '+later.length+' 条关联消息':'下方没有关联消息'):'正在加载…';
+    count.disabled=busy||!previousRelated;laterCount.disabled=busy||!nextRelated;
+  }
+  if(laterCount){count.onclick=function(){if(previousRelated&&!busy&&current())options.onRelatedNavigate(previousRelated.msg_id);};laterCount.onclick=function(){if(nextRelated&&!busy&&current())options.onRelatedNavigate(nextRelated.msg_id);};}
   function render(){scroll.textContent='';items.forEach(function(item){var row=node('article','message-context-row'+(relatedIds.has(String(item.msg_id))?' is-cited':'')+(String(item.msg_id)===String(options.citedId)?' is-anchor':'')),meta=node('div','message-context-meta',new Date(item.timestamp).toLocaleString('zh-CN')+' · '+(item.sender_name||item.sender_qq||'未知发送者')+(relatedIds.has(String(item.msg_id))?' · 关联的消息':'')),body=node('div','message-context-text');if(options.highlight)body.innerHTML=options.highlight(item.text);else body.textContent=item.text;row.appendChild(meta);row.appendChild(body);if(options.groupId&&relatedIds.has(String(item.msg_id))){var save=node('button','btn btn-sm','保存到知识库');save.type='button';save.onclick=function(){openKnowledgeSave(options.groupId,item.msg_id,save);};row.appendChild(save);}if(options.groupId)appendBookmarkAction(row,{kind:'message',group_id:Number(options.groupId),msg_id:item.msg_id});scroll.appendChild(row);});}
   function load(direction){
     direction=direction||'around';if(!current()||busy||(direction==='before'&&!hasBefore)||(direction==='after'&&!hasAfter))return Promise.resolve();busy=true;armed=false;controls();var oldTop=scroll.scrollTop,oldHeight=scroll.scrollHeight,url=options.url;
@@ -22,8 +33,9 @@ function mountMessageContext(host,options){
   }
   before.onclick=function(){load('before');};after.onclick=function(){load('after');};
   scroll.addEventListener('wheel',function(event){armed=true;if(!busy&&((event.deltaY<0&&scroll.scrollTop<=1&&hasBefore)||(event.deltaY>0&&scroll.scrollTop+scroll.clientHeight>=scroll.scrollHeight-1&&hasAfter))){event.preventDefault();load(event.deltaY<0?'before':'after');}},{passive:false});
-  scroll.addEventListener('pointerdown',function(){armed=true;});scroll.addEventListener('touchstart',function(){armed=true;},{passive:true});scroll.addEventListener('keydown',function(){armed=true;});scroll.addEventListener('scroll',function(){if(!armed||busy||!loaded)return;if(scroll.scrollTop<60&&hasBefore)load('before');else if(scroll.scrollTop+scroll.clientHeight>scroll.scrollHeight-60&&hasAfter)load('after');});
-  var controller={load:load,destroy:function(){active=false;},ready:null};host._messageContext=controller;controller.ready=load('around');return controller;
+  scroll.addEventListener('pointerdown',function(){armed=true;});scroll.addEventListener('touchstart',function(){armed=true;},{passive:true});scroll.addEventListener('keydown',function(){armed=true;});scroll.addEventListener('scroll',function(){updateRelatedCounts();if(!armed||busy||!loaded)return;if(scroll.scrollTop<60&&hasBefore)load('before');else if(scroll.scrollTop+scroll.clientHeight>scroll.scrollHeight-60&&hasAfter)load('after');});
+  if(relatedMessages.length&&typeof ResizeObserver==='function'){resizeObserver=new ResizeObserver(updateRelatedCounts);resizeObserver.observe(scroll);}
+  var controller={load:load,destroy:function(){active=false;if(resizeObserver)resizeObserver.disconnect();},ready:null};host._messageContext=controller;controller.ready=load('around');return controller;
 }
 function mountRelatedMessages(host,options){
   destroyMessageContext(host);host.textContent='';var active=true,context=null,version=options.version;
@@ -33,19 +45,16 @@ function mountRelatedMessages(host,options){
   function load(){return api('POST',options.url,{source_ids:options.sourceIds,expected_version:version}).then(function(data){
     if(!current())return;version=data.current_version;host.textContent='';
     host.appendChild(node('h3','','关联的消息 · '+data.messages.length+' 条'));
-    var list=node('div','related-message-list');host.appendChild(list);context=node('div','related-message-context');host.appendChild(context);
-    data.messages.forEach(function(item){
-      var row=node('article','message-context-row is-cited');
-      row.appendChild(node('div','message-context-meta',new Date(item.timestamp).toLocaleString('zh-CN')+' · '+(item.sender_name||item.sender_qq||'未知发送者')+' · 关联的消息'));
-      row.appendChild(node('div','message-context-text',item.text));
-      var open=node('button','btn btn-sm','查看前后讨论');open.type='button';open.onclick=function(){
-        mountMessageContext(context,{groupId:data.group_id,citedId:item.msg_id,relatedIds:data.related_ids,title:'前后讨论',url:options.url,isCurrent:current,
-          load:function(page){return api('POST',options.url,{source_ids:options.sourceIds,expected_version:version,anchor_id:item.msg_id,direction:page.direction,cursor:page.cursor});}});
-        if(context.scrollIntoView)context.scrollIntoView({block:'nearest'});
-      };row.appendChild(open);
-      if(typeof appendBookmarkAction==='function')appendBookmarkAction(row,{kind:'message',group_id:data.group_id,msg_id:item.msg_id});
-      list.appendChild(row);
-    });
+    context=node('div','related-message-context');host.appendChild(context);
+    function showContext(anchorId){
+      if(!current())return Promise.resolve();
+      return mountMessageContext(context,{groupId:data.group_id,citedId:anchorId,relatedIds:data.related_ids,
+        relatedMessages:data.messages.map(function(item){return {msg_id:item.msg_id,timestamp:item.timestamp};}),
+        onRelatedNavigate:showContext,url:options.url,isCurrent:current,
+        load:function(page){return api('POST',options.url,{source_ids:options.sourceIds,expected_version:version,anchor_id:anchorId,direction:page.direction,cursor:page.cursor});}}).ready;
+    }
+    if(!data.messages.length)throw new Error('没有可用的关联消息');
+    return showContext(data.messages[0].msg_id);
   }).catch(function(error){if(!current())return;host.textContent='';status.textContent='关联消息读取失败：'+error.message;host.appendChild(status);
     var retry=node('button','btn btn-sm','重试');retry.type='button';retry.onclick=function(){retry.disabled=true;load();};host.appendChild(retry);
   });}
