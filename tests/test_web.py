@@ -1517,8 +1517,8 @@ def test_report_page_has_per_claim_source_controls(web_client):
 
     assert 'id="report-evidence"' in page
     assert 'id="report-source-context"' in page
-    assert "function openReportSource(" in page
-    assert "/sources/" in page
+    assert "function openReportRelated(" in page
+    assert "/related-messages" in page
 
 
 def test_report_list_shows_messages_actually_used_for_daily_and_range_reports(web_client, tmp_path):

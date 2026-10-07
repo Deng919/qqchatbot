@@ -267,7 +267,7 @@ class Summarizer:
         def valid_source_ids(message_ids: list[str]) -> list[str]:
             return list(dict.fromkeys(
                 message_id for message_id in message_ids if message_id in included_ids
-            ))[:3]
+            ))
 
         response = response.model_copy(update={
             "overview_message_ids": valid_source_ids(response.overview_message_ids),

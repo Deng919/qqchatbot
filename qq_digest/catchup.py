@@ -12,6 +12,7 @@ from zoneinfo import ZoneInfo
 from .archive import Archive
 from .report_selection import selected_report_groups
 from .report_sources import extract_report_sources, load_verified_report_sources
+from .report_revisions import ReportRevisionService
 
 
 _ITEM_KEY = re.compile(r"[0-9a-f]{64}\Z")
@@ -20,7 +21,9 @@ _SECTIONS = {"主要话题", "重要结论", "资源与链接", "任务或承诺
 
 def report_item_key(kind, report_id, section, text, source_ids, occurrence):
     identity_id = report_id if kind == 'daily' else f'range:{report_id}'
-    material = json.dumps([identity_id, section, text, source_ids, occurrence],
+    # Retain the original key format for saved reading state and bookmarks.
+    # The complete references are returned separately; this is not a display limit.
+    material = json.dumps([identity_id, section, text, source_ids[:3], occurrence],
                           ensure_ascii=False, separators=(',', ':'))
     return hashlib.sha256(material.encode('utf-8')).hexdigest()
 
@@ -114,6 +117,7 @@ class CatchupService:
         ).fetchall()
         items: list[dict] = []
         skipped_reports = 0
+        revisions = ReportRevisionService(self.archive)
         for report in rows:
             is_new = cutoff is None
             if cutoff is not None:
@@ -124,12 +128,14 @@ class CatchupService:
             if scope == "since" and cutoff is not None and not is_new:
                 continue
             try:
-                payload = json.loads(Path(report["json_path"]).read_text(encoding="utf-8"))
+                version = revisions.current_version(report['report_kind'], report['report_id'])
+                payload = (revisions.version(report['report_kind'], report['report_id'], version)['payload']
+                           if version else json.loads(Path(report["json_path"]).read_text(encoding="utf-8")))
                 if not isinstance(payload, dict):
                     raise ValueError("report payload must be an object")
                 if payload.get("evidence_version") == 1:
                     evidence = load_verified_report_sources(
-                        self.archive.connection, report["json_path"],
+                        self.archive.connection, payload,
                         group_id=report["group_id"],
                         start_date=report["start_date"],
                         end_date=report["report_date"],
@@ -152,7 +158,7 @@ class CatchupService:
             for item in selected:
                 source_ids = list(item["source_ids"])
                 identity = json.dumps(
-                    [item["section"], item["text"], source_ids],
+                    [item["section"], item["text"], source_ids[:3]],
                     ensure_ascii=False, separators=(",", ":"),
                 )
                 occurrence = duplicates.get(identity, 0)
@@ -170,6 +176,7 @@ class CatchupService:
                     "source_ids": source_ids,
                     "status": item["status"],
                     "report_id": report["report_id"],
+                    "current_version": version,
                     "report_url": f"/reports?kind={report['report_kind']}&id={report['report_id']}",
                     "new": is_new,
                 })

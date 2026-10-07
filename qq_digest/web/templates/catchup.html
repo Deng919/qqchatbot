@@ -25,7 +25,7 @@
 </div>
 <div id="catchup-source-backdrop" class="catchup-source-backdrop" hidden></div>
 <aside id="catchup-source-panel" class="catchup-source-panel" role="dialog" aria-modal="true" aria-labelledby="catchup-source-title" hidden>
-  <div class="catchup-source-header"><div><h2 id="catchup-source-title">原消息与上下文</h2><p id="catchup-source-scope"></p></div><button id="catchup-source-close" class="btn btn-sm" type="button">关闭</button></div>
+  <div class="catchup-source-header"><div><h2 id="catchup-source-title">关联的消息</h2><p id="catchup-source-scope"></p></div><button id="catchup-source-close" class="btn btn-sm" type="button">关闭</button></div>
   <div id="catchup-source-messages" class="catchup-source-messages"></div>
 </aside>
 <style>
@@ -68,6 +68,7 @@
   @media (max-width: 700px) { .catchup-intro { align-items: flex-start; flex-direction: column; padding: 17px; } .catchup-totals { width: 100%; } .catchup-totals span { flex: 1; } .catchup-toolbar { align-items: flex-start; flex-direction: column; } .catchup-range-note { text-align: left; } .catchup-source-panel { inset: 104px 10px 10px; width: auto; } }
   @media (max-width: 430px) { .catchup-tabs { width: 100%; } .catchup-tab { flex: 1; padding: 6px 7px; font-size: 12px; } .catchup-card { padding: 15px; } .catchup-card-footer .read-button { margin-left: 0; } }
 </style>
+{% include "message_context_script.html" %}
 <script>
   var catchupScope = 'since', catchupSince = null, catchupPage = 1, catchupItems = [], catchupToken = 0, catchupSourceToken = 0, catchupSourceOpener = null;
   function catchupElement(tag, className, content) {
@@ -127,10 +128,8 @@
       card.appendChild(catchupElement('div', 'catchup-card-text', item.text));
       var footer = catchupElement('div', 'catchup-card-footer');
       if (item.status === 'cited') {
-        (item.source_ids || []).forEach(function(id, index) {
-          var button = catchupElement('button', 'btn btn-sm', '查看原消息 ' + (index + 1)); button.type = 'button'; button.title = id;
-          button.addEventListener('click', function() { catchupOpenSource(item, id, button); }); footer.appendChild(button);
-        });
+        var button = catchupElement('button', 'btn btn-sm', '关联的消息'); button.type = 'button';
+        button.addEventListener('click', function() { catchupOpenSource(item, button); }); footer.appendChild(button);
       } else {
         footer.appendChild(catchupElement('span', 'badge badge-orange', item.status === 'legacy' ? '旧报告无逐条来源' : '待核实'));
       }
@@ -144,26 +143,22 @@
       card.appendChild(footer); host.appendChild(card);
     });
   }
-  function catchupOpenSource(item, id, opener) {
+  function catchupOpenSource(item, opener) {
     var token = ++catchupSourceToken; catchupSourceOpener = opener;
     var panel = document.getElementById('catchup-source-panel');
     var backdrop = document.getElementById('catchup-source-backdrop');
     panel.hidden = false; backdrop.hidden = false;
     document.getElementById('catchup-source-scope').textContent = item.group_name + ' · ' + item.report_date;
-    document.getElementById('catchup-source-messages').textContent = '正在读取原消息...';
+    mountRelatedMessages(document.getElementById('catchup-source-messages'), {
+      groupId:item.group_id,sourceIds:item.source_ids,version:item.current_version,
+      url:'/api/reports/'+(item.report_kind||'daily')+'/'+item.report_id+'/related-messages',
+      isCurrent:function(){return token===catchupSourceToken&&!panel.hidden;}
+    });
     document.getElementById('catchup-source-close').focus();
-    api('GET', '/api/reports/daily/' + item.report_id + '/sources/' + encodeURIComponent(id)).then(function(data) {
-      if (token !== catchupSourceToken) return;
-      var host = document.getElementById('catchup-source-messages'); host.textContent = '';
-      (data.messages || []).forEach(function(message) {
-        var row = catchupElement('div', 'catchup-source-row' + (message.msg_id === id ? ' is-cited' : ''));
-        row.appendChild(catchupElement('div', 'catchup-source-meta', new Date(message.timestamp).toLocaleString('zh-CN') + ' · ' + (message.sender_name || message.sender_qq || '未知发送者')));
-        row.appendChild(catchupElement('div', 'catchup-source-text', message.text)); host.appendChild(row);
-      });
-    }).catch(function(error) { if (token === catchupSourceToken) { document.getElementById('catchup-source-messages').textContent = '原消息读取失败：' + error.message; } });
   }
   function catchupCloseSource() {
     catchupSourceToken += 1;
+    destroyMessageContext(document.getElementById('catchup-source-messages'));
     document.getElementById('catchup-source-panel').hidden = true;
     document.getElementById('catchup-source-backdrop').hidden = true;
     if (catchupSourceOpener && catchupSourceOpener.isConnected) catchupSourceOpener.focus();

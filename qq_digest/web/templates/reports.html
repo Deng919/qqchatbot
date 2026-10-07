@@ -48,7 +48,7 @@
       </section>
       </details>
       <section id="report-evidence" class="report-evidence" aria-label="逐条来源"></section>
-      <section id="report-source-context" class="report-source-context" aria-label="原消息与上下文" hidden></section>
+      <section id="report-source-context" class="report-source-context" aria-label="关联的消息与上下文" hidden></section>
     </div>
   </section>
 </div>
@@ -343,21 +343,19 @@
       var content = document.createElement('div'); content.className = 'report-evidence-text'; content.textContent = item.text; card.appendChild(content);
       var actions = document.createElement('div'); actions.className = 'report-evidence-actions';
       if (item.status === 'unverified') {
-        var warning = document.createElement('span'); warning.className = 'badge badge-orange'; warning.textContent = '待核实 · 无有效原消息引用'; actions.appendChild(warning);
+        var warning = document.createElement('span'); warning.className = 'badge badge-orange'; warning.textContent = '待核实 · 无有效关联消息'; actions.appendChild(warning);
       } else {
-        (item.source_ids || []).forEach(function(id, index) {
-          var button = document.createElement('button'); button.type = 'button'; button.className = 'btn btn-sm'; button.textContent = '原消息 ' + (index + 1);
-          button.addEventListener('click', function() { openReportSource(id); }); actions.appendChild(button);
-        });
+        var button = document.createElement('button'); button.type = 'button'; button.className = 'btn btn-sm'; button.textContent = '关联的消息';
+        button.addEventListener('click', function() { openReportRelated(item.source_ids); }); actions.appendChild(button);
       }
       card.appendChild(actions); host.appendChild(card);
     });
   }
-  function openReportSource(messageId) {
+  function openReportRelated(sourceIds) {
     if (!qaReport || !revisionIsCurrent()) return;
     var report=qaReport,token=++sourceRequestToken,host=document.getElementById('report-source-context');host.hidden=false;
-    mountMessageContext(host,{groupId:report.group_id,title:'原消息与上下文',citedId:messageId,
-      url:'/api/reports/'+report.kind+'/'+report.id+'/sources/'+encodeURIComponent(messageId)+'?version='+report.current_version,
+    mountRelatedMessages(host,{groupId:report.group_id,sourceIds:sourceIds,version:report.current_version,
+      url:'/api/reports/'+report.kind+'/'+report.id+'/related-messages',
       isCurrent:function(){return token===sourceRequestToken&&qaReport===report&&revisionIsCurrent()&&!host.hidden;}});
     host.scrollIntoView({block:'nearest'});
   }
@@ -395,7 +393,7 @@
     var note = document.createElement('div'); note.textContent = '第 ' + (Math.floor(qaHistory.length / 2) + 1) + ' 次回答：参考 ' + data.context_message_count + ' 条原始消息' + (data.context_truncated ? '（已按问题筛选）' : '') + '。'; block.appendChild(note);
     (data.sources || []).forEach(function(source, index) {
       var details = document.createElement('details'), summary = document.createElement('summary'), excerpt = document.createElement('div');
-      summary.textContent = '原消息 ' + (index + 1) + ' · ' + source.timestamp + ' · ' + (source.sender_name || source.sender_qq || '未知发送者');
+      summary.textContent = '关联的消息 · ' + source.timestamp + ' · ' + (source.sender_name || source.sender_qq || '未知发送者');
       excerpt.textContent = source.excerpt; details.appendChild(summary); details.appendChild(excerpt); block.appendChild(details);
     });
     container.appendChild(block); container.scrollTop = container.scrollHeight;

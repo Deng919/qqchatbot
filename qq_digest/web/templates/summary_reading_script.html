@@ -80,7 +80,7 @@
         card.appendChild(summaryNode('h2','',title));var text=summaryNode('p','summary-item-body',body||cleanText);var long=cleanText.length>160||cleanText.split('\n').length>4;
         if(long&&!summaryExpanded[item.key])text.classList.add('is-collapsed');if(body||!split)card.appendChild(text);
         if(long){var expand=summaryButton(summaryExpanded[item.key]?'收起':'展开全文',function(){var open=!summaryExpanded[item.key];summaryExpanded[item.key]=open;text.classList.toggle('is-collapsed',!open);expand.textContent=open?'收起':'展开全文';summarySave();});expand.setAttribute('aria-expanded',String(!!summaryExpanded[item.key]));expand.addEventListener('click',function(){expand.setAttribute('aria-expanded',String(!!summaryExpanded[item.key]));});card.appendChild(expand);}
-        var footer=summaryNode('div','summary-item-footer');if(item.status==='cited'&&item.source_ids.length)footer.appendChild(summaryButton('查看原消息',function(){summaryOpenSource(item,this);}));else footer.appendChild(summaryNode('span','header-meta',item.status==='legacy'?'旧报告未记录逐条来源':'这条要点未提供有效来源'));
+        var footer=summaryNode('div','summary-item-footer');if(item.status==='cited'&&item.source_ids.length)footer.appendChild(summaryButton('关联的消息',function(){summaryOpenSource(item,this);}));else footer.appendChild(summaryNode('span','header-meta',item.status==='legacy'?'旧报告未记录逐条来源':'这条要点未提供有效来源'));
         footer.appendChild(summaryButton('完整摘要',function(){viewReport(item.report_kind||'daily',Number(item.report_id));}));
         appendBookmarkAction(footer,{kind:'report',report_kind:item.report_kind||'daily',report_id:Number(item.report_id),point_key:item.key});
         var read=summaryButton(item.read?'标为未读':'标为已读',function(){read.disabled=true;api('POST','/api/summary-reading/read',{key:item.key,read:!item.read}).then(function(){summaryLoadPoints(true);}).catch(function(e){read.disabled=false;summaryShowResult('已读状态保存失败：'+e.message,'failed');});},'btn btn-sm summary-read-button');footer.appendChild(read);card.appendChild(footer);host.appendChild(card);
@@ -110,12 +110,12 @@
   function summaryOpenSource(item,opener) {
     summarySourceOpener=opener;document.getElementById('summary-source-panel').hidden=false;document.getElementById('summary-source-backdrop').hidden=false;
     document.getElementById('summary-source-scope').textContent=item.group_name+' · '+(item.date_label||item.report_date);
-    var choices=document.getElementById('summary-source-choices');choices.textContent='';item.source_ids.forEach(function(id,index){choices.appendChild(summaryButton('来源 '+(index+1),function(){summaryLoadSource(item,id);}));});summaryLoadSource(item,item.source_ids[0]);document.getElementById('summary-source-close').focus();
-  }
-  function summaryLoadSource(item,id) {
+    document.getElementById('summary-source-choices').textContent='';
     var token=++summarySourceToken,host=document.getElementById('summary-source-messages');
-    mountMessageContext(host,{groupId:item.group_id,citedId:id,url:'/api/reports/'+(item.report_kind||'daily')+'/'+item.report_id+'/sources/'+encodeURIComponent(id),
+    mountRelatedMessages(host,{groupId:item.group_id,sourceIds:item.source_ids,version:item.current_version,
+      url:'/api/reports/'+(item.report_kind||'daily')+'/'+item.report_id+'/related-messages',
       isCurrent:function(){return token===summarySourceToken&&!document.getElementById('summary-source-panel').hidden;}});
+    document.getElementById('summary-source-close').focus();
   }
   function summaryCloseSource() { summarySourceToken++;destroyMessageContext(document.getElementById('summary-source-messages'));document.getElementById('summary-source-panel').hidden=true;document.getElementById('summary-source-backdrop').hidden=true;if(summarySourceOpener&&summarySourceOpener.isConnected)summarySourceOpener.focus(); }
   function summaryShowResult(message,status,action) { var result=document.getElementById('summary-run-result');result.hidden=false;result.dataset.status=status||'success';document.getElementById('summary-run-message').textContent=message;var actions=document.getElementById('summary-run-actions');actions.textContent='';if(action)actions.appendChild(summaryButton('阅读新摘要',action,'btn btn-primary')); }

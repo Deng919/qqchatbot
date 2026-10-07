@@ -47,6 +47,7 @@ from .report_revisions import add_report_revision_routes
 from .features import add_feature_routes
 from .summary_reading_routes import add_summary_reading_routes
 from .message_routes import add_message_routes
+from .report_related_routes import add_report_related_routes
 from .search_routes import add_search_routes
 from .archive_qa_routes import add_archive_qa_routes
 from .summary_generation_routes import add_summary_generation_routes
@@ -732,6 +733,7 @@ def create_app(
     feature_service = add_feature_routes(app, archive=archive, cookie=cookie, require_login=require_login, operations=operations)
     add_summary_reading_routes(app, archive=archive, config=config, require_login=require_login)
     add_message_routes(app, archive=archive, config=config, require_login=require_login)
+    add_report_related_routes(app, archive=_archive, config=_config, require_login=require_login)
     add_search_routes(app, archive=archive, config=config, require_login=require_login)
     add_archive_qa_routes(app, archive=archive, config=config, templates=templates,
         require_login=require_login, operations=operations)

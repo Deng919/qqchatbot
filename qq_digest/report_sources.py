@@ -24,7 +24,7 @@ def extract_report_sources(payload: dict[str, Any]) -> list[dict[str, object]] |
         ids = list(dict.fromkeys(
             value for value in message_ids
             if isinstance(value, str) and value.strip()
-        ))[:3] if isinstance(message_ids, list) else []
+        )) if isinstance(message_ids, list) else []
         items.append({
             "section": section,
             "text": text.strip(),
@@ -79,11 +79,14 @@ def load_verified_report_sources(
     ))
     if not ids:
         return items
-    placeholders = ",".join("?" for _ in ids)
-    rows = connection.execute(
-        f"SELECT msg_id, timestamp FROM messages WHERE group_id=? AND msg_id IN ({placeholders})",
-        (group_id, *ids),
-    ).fetchall()
+    rows = []
+    for offset in range(0, len(ids), 500):
+        batch = ids[offset:offset + 500]
+        placeholders = ",".join("?" for _ in batch)
+        rows.extend(connection.execute(
+            f"SELECT msg_id, timestamp FROM messages WHERE group_id=? AND msg_id IN ({placeholders})",
+            (group_id, *batch),
+        ).fetchall())
     local_timezone = ZoneInfo(timezone_name)
     valid_ids: set[str] = set()
     for row in rows:

@@ -9,6 +9,7 @@ from urllib.parse import urlsplit
 from .catchup import report_item_key
 from .message_context import message_context
 from .report_sources import extract_report_sources, load_verified_report_sources
+from .report_revisions import ReportRevisionService
 from .search import _like_pattern
 
 
@@ -68,7 +69,10 @@ class BookmarkService:
         if row is None:
             raise LookupError('摘要不可用')
         try:
-            payload = json.loads(Path(row['json_path']).read_text(encoding='utf-8'))
+            revisions = ReportRevisionService(self.archive)
+            version = revisions.current_version(kind_report, target['report_id'])
+            payload = (revisions.version(kind_report, target['report_id'], version)['payload']
+                       if version else json.loads(Path(row['json_path']).read_text(encoding='utf-8')))
             if not isinstance(payload, dict):
                 raise ValueError('摘要格式无效')
             if payload.get('evidence_version') == 1:
@@ -83,7 +87,7 @@ class BookmarkService:
             raise LookupError('摘要内容不可用') from exc
         duplicates = {}
         for item in items or []:
-            identity = json.dumps([item['section'], item['text'], item['source_ids']], ensure_ascii=False)
+            identity = json.dumps([item['section'], item['text'], item['source_ids'][:3]], ensure_ascii=False)
             occurrence = duplicates.get(identity, 0); duplicates[identity] = occurrence + 1
             key = report_item_key(kind_report, target['report_id'], item['section'], item['text'],
                                   item['source_ids'], occurrence)

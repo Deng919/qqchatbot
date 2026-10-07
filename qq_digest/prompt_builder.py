@@ -30,7 +30,7 @@ FORMAT_ADAPTIVE = """\
 - open_questions: 对象数组，每条含 text、message_ids；只记录有后续价值的未解决问题或争议
 - candidates: 数组，每条含 title、reason、type（resource 或 experience）、content、link、message_ids
 
-每条重要内容的 message_ids 最多 3 个，只能引用下方消息行首方括号中的真实 ID；不得编造消息 ID。没有足够原消息证据时留空数组，并在内容中明确说“待核实”，不得把推测写成事实。
+每条重要内容的 message_ids 应列出直接支撑该内容的全部相关消息 ID，不限制为三条，不加入无关消息；只能引用下方消息行首方括号中的真实 ID；不得编造消息 ID。没有足够原消息证据时留空数组，并在内容中明确说“待核实”，不得把推测写成事实。
 
 main_topics 的 summary 只写理解话题所需的事实、不同观点和当前状态，不设固定字数；一句能说清就只写一句。参与者归属明确时可以注明，不得猜测。"""
 
