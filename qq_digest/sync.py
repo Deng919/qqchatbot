@@ -48,6 +48,7 @@ def run_message_sync(
                 qq_number=config.ntqq.qq_number,
                 output_dir=config.ntqq.db_dir,
                 snapshot_root=config.work_dir / "snapshots",
+                cache_owner=config.data_dir,
             )
             if not refresh_result.success:
                 raise RuntimeError(f"数据库刷新失败: {refresh_result.message}")

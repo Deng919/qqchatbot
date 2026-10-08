@@ -1,0 +1,53 @@
+<section id="storage-management" class="card setting-card" data-settings-panel="storage" aria-labelledby="storage-management-title">
+  <div class="setting-heading storage-heading"><div><h2 id="storage-management-title">存储空间</h2><p>程序文件占用</p></div><button id="storage-refresh" class="btn btn-sm" type="button">刷新占用</button></div>
+  <p id="storage-total" class="storage-total">尚未读取</p>
+  <div id="storage-categories" class="storage-categories"></div>
+  <div id="storage-disks" class="storage-meta"></div>
+  <details class="storage-directories"><summary>使用目录</summary><div id="storage-paths" class="storage-meta"></div></details>
+  <div id="storage-warnings" class="storage-meta" hidden></div>
+  <form id="storage-policy-form" class="storage-policy">
+    <fieldset id="storage-policy-options" disabled>
+      <legend>保留策略</legend>
+      <label class="startup-option"><input id="storage-enabled" type="checkbox" checked><span>自动清理旧备份和缓存</span></label>
+      <div class="storage-policy-fields">
+        <div><label class="setting-label" for="storage-backup-days">自动备份保留天数</label><input id="storage-backup-days" class="input" type="number" min="1" max="3650" step="1" value="30" required></div>
+        <div><label class="setting-label" for="storage-backup-keep">至少保留备份份数</label><input id="storage-backup-keep" class="input" type="number" min="1" max="100" step="1" value="3" required></div>
+        <div><label class="setting-label" for="storage-cache-days">缓存保留天数</label><input id="storage-cache-days" class="input" type="number" min="1" max="3650" step="1" value="7" required></div>
+      </div>
+    </fieldset>
+    <p id="storage-schedule" class="setting-help"></p>
+    <div class="storage-actions"><button id="storage-save" class="btn btn-primary" type="submit" disabled>保存策略</button><button id="storage-policy-reload" class="btn" type="button" hidden>读取最新策略</button></div>
+  </form>
+  <div class="storage-actions"><button id="storage-preview" class="btn" type="button" disabled>清理预览</button><button id="storage-clean" class="btn" type="button" disabled>立即清理</button></div>
+  <div id="storage-preview-details" class="storage-preview-details" hidden>
+    <p id="storage-preview-summary"></p>
+    <details open><summary>待清理项目</summary><ul id="storage-candidates" class="storage-file-list"></ul></details>
+    <details><summary>受保护项目</summary><ul id="storage-protected" class="storage-file-list"></ul></details>
+  </div>
+  <div id="storage-last-result" class="storage-last-result" hidden></div>
+  <p id="storage-result" class="setting-result" role="status" aria-live="polite" hidden></p>
+</section>
+<style>
+  .storage-heading { align-items: flex-start; flex-wrap: wrap; }
+  .storage-total { margin: 0 0 14px; font-size: 21px; font-weight: 650; }
+  .storage-total .storage-incomplete, .storage-category .storage-incomplete { display: inline; color: var(--text-soft); font-size: 12px; font-weight: 500; }
+  .storage-categories { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+  .storage-category { min-width: 0; padding: 12px; border: 1px solid var(--border); border-radius: 8px; }
+  .storage-category strong, .storage-category span { display: block; }
+  .storage-category strong { margin: 4px 0; font-size: 14px; }
+  .storage-category span, .storage-meta, .storage-directories, .storage-preview-details, .storage-last-result { font-size: 12px; line-height: 1.8; color: var(--text-soft); overflow-wrap: anywhere; }
+  .storage-meta, .storage-directories { margin-top: 13px; }
+  .storage-directories summary, .storage-preview-details summary { cursor: pointer; }
+  .storage-policy { margin: 24px 0 19px; padding-top: 20px; border-top: 1px solid var(--border); }
+  .storage-policy fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
+  .storage-policy legend { margin-bottom: 14px; font-size: 14px; font-weight: 650; }
+  .storage-policy-fields { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-top: 18px; }
+  .storage-policy-fields input { width: 100%; min-width: 0; }
+  .storage-actions { display: flex; gap: 9px; flex-wrap: wrap; }
+  .storage-preview-details, .storage-last-result { margin-top: 17px; padding: 13px 15px; background: var(--surface-subtle); border: 1px solid var(--border); border-radius: 9px; }
+  .storage-preview-details p { margin-top: 0; }
+  .storage-file-list { margin: 8px 0; padding-left: 18px; max-height: 230px; overflow-y: auto; overflow-wrap: anywhere; }
+  .storage-file-list li { margin-bottom: 8px; }
+  .storage-last-result p { margin: 0; }
+  @media (max-width: 700px) { .storage-categories { grid-template-columns: repeat(2, minmax(0, 1fr)); } .storage-policy-fields { grid-template-columns: 1fr; } .storage-heading .btn { max-width: 100%; white-space: normal; } .storage-actions .btn { white-space: normal; } }
+</style>

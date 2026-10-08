@@ -21,6 +21,7 @@ from .config import ConfigError, load_config
 
 
 from .runtime_paths import cache_root, download_root
+from .storage_files import managed_temporary, root_lock, safe_path
 
 BACKUP_ROOT = download_root() / 'QQDigestBackups'
 TEMP_ROOT = cache_root()
@@ -159,18 +160,25 @@ def _source_file_versions(files: dict[str, Path]) -> dict[str, tuple]:
 def backup_data(config_path: Path, destination: Path = BACKUP_ROOT,
                 *, temp_root: Path = TEMP_ROOT, kind: str = "manual") -> dict:
     """Write an SQLite snapshot and SHA-256 manifest into one ZIP."""
+    destination = safe_path(destination)
+    destination.mkdir(parents=True, exist_ok=True)
+    with root_lock(destination):
+        return _backup_data_locked(config_path, destination, temp_root=temp_root, kind=kind)
+
+
+def _backup_data_locked(config_path: Path, destination: Path,
+                        *, temp_root: Path, kind: str) -> dict:
     config_path = Path(config_path).resolve()
     config = load_config(config_path)
     if not config.archive_path.is_file():
         raise ValueError("尚无消息数据库，无法生成可恢复的备份")
-    destination = Path(destination).expanduser().resolve()
-    temp_root = Path(temp_root).resolve()
-    destination.mkdir(parents=True, exist_ok=True)
+    destination = safe_path(destination)
+    temp_root = safe_path(temp_root)
     temp_root.mkdir(parents=True, exist_ok=True)
     backup = destination / ("QQDigest-" + kind + "-" + datetime.now().strftime("%Y%m%d-%H%M%S-%f") + ".zip")
     partial = backup.with_suffix(".partial")
     try:
-        with tempfile.TemporaryDirectory(prefix="qqdigest-backup-", dir=temp_root) as temporary, \
+        with managed_temporary(temp_root, "qqdigest-backup-", config.data_dir) as temporary, \
                 closing(sqlite3.connect(f"file:{config.archive_path.as_posix()}?mode=ro", uri=True)) as source:
             source_version = source.execute("PRAGMA data_version").fetchone()[0]
             files = _backup_source_files(config, config_path)
@@ -220,10 +228,15 @@ def backup_data(config_path: Path, destination: Path = BACKUP_ROOT,
 
 def inspect_backup(path: Path, *, temp_root: Path = TEMP_ROOT) -> dict:
     """Verify ZIP paths, CRC, file hashes and SQLite integrity before preview."""
-    path = Path(path).expanduser().resolve()
+    path = safe_path(path)
     if not path.is_file() or path.suffix.lower() != ".zip":
         raise ValueError("请选择存在的 ZIP 备份文件")
-    temp_root = Path(temp_root).resolve()
+    with root_lock(path.parent):
+        return _inspect_backup_locked(path, temp_root=temp_root)
+
+
+def _inspect_backup_locked(path: Path, *, temp_root: Path) -> dict:
+    temp_root = safe_path(temp_root)
     temp_root.mkdir(parents=True, exist_ok=True)
     try:
         with zipfile.ZipFile(path) as archive:
@@ -251,7 +264,11 @@ def inspect_backup(path: Path, *, temp_root: Path = TEMP_ROOT) -> dict:
                 except (KeyError, TypeError, json.JSONDecodeError) as exc:
                     raise ValueError("备份校验清单无效") from exc
             _parse_config(archive.read("config/config.yaml"))
-            with tempfile.TemporaryDirectory(prefix="qqdigest-check-", dir=temp_root) as temporary:
+            owner = manifest.get("source_data_dir") if manifest else None
+            temporary_context = (managed_temporary(temp_root, "qqdigest-check-", owner)
+                                 if isinstance(owner, str) and Path(owner).is_absolute()
+                                 else tempfile.TemporaryDirectory(prefix="qqdigest-check-", dir=temp_root))
+            with temporary_context as temporary:
                 database = Path(temporary) / "archive.sqlite"
                 with archive.open("archive/archive.sqlite") as source, database.open("wb") as target:
                     shutil.copyfileobj(source, target)

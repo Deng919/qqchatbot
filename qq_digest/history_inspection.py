@@ -170,7 +170,7 @@ def run_history_inspection(*, config: Config, refresh: bool = False, now=None, c
             if refresh:
                 from .refresh import refresh_database
                 result = refresh_database(qq_number=config.ntqq.qq_number, output_dir=config.ntqq.db_dir,
-                                          snapshot_root=config.work_dir / "snapshots")
+                                          snapshot_root=config.work_dir / "snapshots", cache_owner=config.data_dir)
                 if not result.success:
                     raise RuntimeError(f"数据库刷新失败：{result.message}")
         active = collector or NTQQCollector(db_dir=config.ntqq.db_dir,

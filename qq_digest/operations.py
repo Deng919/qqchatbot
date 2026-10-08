@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from threading import Lock
 
 
@@ -21,9 +21,10 @@ class OperationBusy(RuntimeError):
 
 
 class OperationCoordinator:
-    def __init__(self):
+    def __init__(self, activity_root=None):
         self._active: set[str] = set()
         self._lock = Lock()
+        self.activity_root = activity_root
 
     @contextmanager
     def claim(self, kind: str):
@@ -35,7 +36,13 @@ class OperationCoordinator:
                 raise OperationBusy(kind, active)
             self._active.add(kind)
         try:
-            yield
+            from .storage_files import StorageBusy, activity_lock
+            root = self.activity_root() if self.activity_root is not None else None
+            try:
+                with activity_lock(root) if root is not None else nullcontext():
+                    yield
+            except StorageBusy as exc:
+                raise OperationBusy(kind, ('external',)) from exc
         finally:
             with self._lock:
                 self._active.discard(kind)

@@ -1,6 +1,7 @@
 """Authenticated, bounded summary input preview; never calls collection or AI."""
 from datetime import date
 import asyncio
+from .worker_threads import guarded_to_thread
 from typing import Annotated
 from uuid import UUID, uuid4
 
@@ -64,7 +65,7 @@ def add_summary_generation_routes(app, *, archive, config, require_login, run_su
 
             async def worker():
                 try:
-                    result = await asyncio.to_thread(
+                    result = await guarded_to_thread(
                         run_summary, config, payload, single_day_as_daily=True,
                         on_progress=lambda **event: progress.update(identifier, **event),
                     )

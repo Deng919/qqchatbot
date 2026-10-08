@@ -119,7 +119,8 @@ def test_backup_rejects_concurrent_source_changes(tmp_path, monkeypatch, mutatio
     monkeypatch.setattr(module.shutil, "copy2", copy_with_change)
     with pytest.raises((ValueError, FileNotFoundError)):
         backup_data(config, tmp_path / "backups", temp_root=tmp_path / "cache")
-    assert list((tmp_path / "backups").iterdir()) == []
+    assert [path for path in (tmp_path / "backups").iterdir()
+            if path.name != ".qqdigest-storage.lock"] == []
 
 
 def test_preview_rejects_tampered_content(tmp_path):

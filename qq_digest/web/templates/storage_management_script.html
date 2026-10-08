@@ -1,0 +1,152 @@
+<script>
+  var StorageUI = (function() {
+    var card = document.getElementById('storage-management');
+    var policy = null, dirty = false, unavailable = false, action = null;
+    var loaded = false, loading = false, generation = 0, draftGeneration = 0, previewData = null, expiryTimer = null;
+    var fields = ['storage-enabled', 'storage-backup-days', 'storage-backup-keep', 'storage-cache-days'];
+    function node(id) { return document.getElementById(id); }
+    function status(message) { node('storage-result').textContent = message; node('storage-result').hidden = false; }
+    function bytes(value) {
+      if (value === null || value === undefined || !Number.isFinite(Number(value))) return '未知';
+      var amount = Number(value), units = ['B', 'KB', 'MB', 'GB', 'TB'], index = 0;
+      while (amount >= 1024 && index < units.length - 1) { amount /= 1024; index++; }
+      return (index ? amount.toFixed(1) : String(amount)) + ' ' + units[index];
+    }
+    function time(value) { var date = new Date(value); return Number.isNaN(date.getTime()) ? '时间未知' : date.toLocaleString('zh-CN'); }
+    function textElement(tag, value, className) { var item = document.createElement(tag); item.textContent = value; if (className) item.className = className; return item; }
+    function renderSize(host, value, complete, prefix) {
+      var size = bytes(value);
+      host.textContent = (prefix || '') + (complete === false && size !== '未知' ? '至少 ' : '') + size;
+      if (complete === false) host.appendChild(textElement('span', '（统计不完整）', 'storage-incomplete'));
+    }
+    function previewValid() { return previewData && Date.parse(previewData.expires_at) > Date.now() && !dirty; }
+    function controls() {
+      var blocked = unavailable || !policy || !!action || loading;
+      node('storage-refresh').disabled = !!action || loading;
+      node('storage-policy-options').disabled = blocked;
+      node('storage-save').disabled = blocked;
+      node('storage-policy-reload').disabled = unavailable || !!action || loading;
+      node('storage-preview').disabled = blocked || dirty;
+      node('storage-clean').disabled = blocked || !previewValid();
+      card.setAttribute('aria-busy', String(loading || !!action));
+    }
+    function invalidatePreview() {
+      previewData = null; clearTimeout(expiryTimer); node('storage-preview-details').hidden = true; controls();
+    }
+    function readDraft() {
+      var values = {enabled: node('storage-enabled').checked};
+      [['backup_days', 'storage-backup-days', 3650], ['backup_keep', 'storage-backup-keep', 100], ['cache_days', 'storage-cache-days', 3650]].forEach(function(field) {
+        var raw = node(field[1]).value.trim(), value = Number(raw);
+        if (!/^\d+$/.test(raw) || !Number.isInteger(value) || value < 1 || value > field[2]) throw new Error('保留天数须为 1–3650 的整数，备份份数须为 1–100 的整数。');
+        values[field[0]] = value;
+      });
+      return values;
+    }
+    function editDraft() {
+      draftGeneration++; invalidatePreview();
+      try { var draft = readDraft(); dirty = !policy || ['enabled', 'backup_days', 'backup_keep', 'cache_days'].some(function(key) { return draft[key] !== policy[key]; }); }
+      catch (error) { dirty = true; }
+      status(dirty ? '策略尚未保存。' : '清理预览已失效，请重新预览。'); controls();
+    }
+    function applyPolicy(value) {
+      policy = value; dirty = false;
+      node('storage-enabled').checked = value.enabled;
+      node('storage-backup-days').value = String(value.backup_days);
+      node('storage-backup-keep').value = String(value.backup_keep);
+      node('storage-cache-days').value = String(value.cache_days);
+      node('storage-policy-reload').hidden = true;
+      node('storage-schedule').textContent = value.enabled ? '自动清理已开启 · 每小时检查，成功后至少间隔 24 小时。' : '自动清理已关闭 · 仍可手动预览和清理。';
+    }
+    function renderResult(result) {
+      var host = node('storage-last-result'); host.textContent = ''; host.hidden = !result;
+      if (!result) return;
+      host.appendChild(textElement('p', (result.automatic ? '最近自动清理' : '最近手动清理') + ' · ' + time(result.recorded_at)));
+      host.appendChild(textElement('p', (result.status === 'partial' ? '部分完成' : '已完成') + ' · 删除 ' + result.deleted_count + ' 个项目 · 释放 ' + bytes(result.deleted_bytes) + (result.unknown_bytes ? ' · 部分释放空间未知' : '')));
+      var details = document.createElement('ul'); details.className = 'storage-file-list';
+      (result.skipped || []).forEach(function(item) { details.appendChild(textElement('li', '跳过：' + item.path + ' · ' + item.reason)); });
+      (result.errors || []).forEach(function(item) { details.appendChild(textElement('li', '失败：' + (typeof item === 'string' ? item : item.path + ' · ' + (item.reason || item.message || item.error)))); });
+      if (details.children.length) host.appendChild(details);
+    }
+    function renderSnapshot(data, replacePolicy) {
+      var inventory = data.inventory, host = node('storage-categories'); host.textContent = '';
+      renderSize(node('storage-total'), inventory.total_bytes, inventory.total_complete, '合计 ');
+      (inventory.categories || []).forEach(function(category) {
+        var item = document.createElement('div'); item.className = 'storage-category';
+        var size = document.createElement('strong'); renderSize(size, category.size_bytes, category.complete);
+        item.append(textElement('span', category.label), size, textElement('span', (category.complete === false ? '至少 ' : '') + category.file_count + ' 个文件')); host.appendChild(item);
+      });
+      host = node('storage-disks'); host.textContent = '';
+      (inventory.disks || []).forEach(function(disk) { host.appendChild(textElement('div', disk.path + ' · 磁盘剩余 ' + bytes(disk.free_bytes))); });
+      host = node('storage-paths'); host.textContent = '';
+      [['storage', '数据'], ['backups', '备份'], ['cache', '缓存']].forEach(function(item) { host.appendChild(textElement('div', item[1] + '：' + ((inventory.paths || {})[item[0]] || '未知'))); });
+      host = node('storage-warnings'); host.textContent = ''; host.hidden = !(inventory.warnings || []).length;
+      (inventory.warnings || []).forEach(function(message) { host.appendChild(textElement('div', '统计不完整：' + message)); });
+      renderResult(data.last_result);
+      if (policy && policy.revision !== data.policy.revision) invalidatePreview();
+      if (!policy || replacePolicy || !dirty) applyPolicy(data.policy);
+    }
+    function failure(error) {
+      invalidatePreview();
+      if (error.status === 503) unavailable = true;
+      if (error.status === 409) node('storage-policy-reload').hidden = false;
+      status((error.message || String(error)) + (error.status === 409 ? '；草稿保留。读取最新策略会替换草稿。' : ''));
+    }
+    function load(replacePolicy) {
+      if (action) return;
+      var request = ++generation, edit = draftGeneration; loading = true; controls();
+      return api('GET', '/api/storage').then(function(data) {
+        if (request !== generation) return;
+        renderSnapshot(data, !!replacePolicy && edit === draftGeneration); loaded = true; unavailable = false;
+        status(dirty ? '占用已刷新；策略草稿尚未保存。' : '占用已刷新。');
+      }).catch(function(error) { if (request === generation) failure(error); })
+        .finally(function() { if (request === generation) { loading = false; controls(); } });
+    }
+    function save(event) {
+      event.preventDefault(); if (action || loading || !policy || unavailable) return;
+      var values; try { values = readDraft(); } catch (error) { status(error.message); return; }
+      values.expected_revision = policy.revision;
+      var edit = draftGeneration; action = 'save'; invalidatePreview(); controls();
+      api('PUT', '/api/storage/policy', values).then(function(data) {
+        renderSnapshot(data, edit === draftGeneration); status('策略已保存。');
+      }).catch(failure).finally(function() { action = null; controls(); });
+    }
+    function preview() {
+      if (action || loading || !policy || unavailable || dirty) return;
+      var edit = draftGeneration; action = 'preview'; invalidatePreview(); controls();
+      api('POST', '/api/storage/preview').then(function(data) {
+        if (edit !== draftGeneration) return;
+        previewData = data;
+        node('storage-preview-summary').textContent = '预计释放 ' + bytes(data.estimated_bytes) + ' · ' + data.candidates.length + ' 个项目 · 预览有效至 ' + time(data.expires_at);
+        var host = node('storage-candidates'); host.textContent = '';
+        data.candidates.forEach(function(item) {
+          var expires = Date.parse(item.created_at) + (item.kind === 'backup' ? policy.backup_days : policy.cache_days) * 86400000;
+          host.appendChild(textElement('li', item.path + ' · ' + (item.kind === 'backup' ? '自动备份' : '缓存') + ' · 到期于 ' + time(expires) + ' · ' + bytes(item.size_bytes)));
+        });
+        if (!data.candidates.length) host.appendChild(textElement('li', '没有到期项目。'));
+        host = node('storage-protected'); host.textContent = '';
+        (data.protected || []).forEach(function(item) { host.appendChild(textElement('li', item.path + ' · ' + item.reason)); });
+        if (!(data.protected || []).length) host.appendChild(textElement('li', '没有受保护项目。'));
+        node('storage-preview-details').hidden = false;
+        expiryTimer = setTimeout(function() { if (previewData === data) { invalidatePreview(); status('预览已过期，请重新预览。'); } }, Math.max(0, Date.parse(data.expires_at) - Date.now()));
+        status(previewValid() ? '已生成清理预览。' : '预览已过期，请重新预览。');
+      }).catch(failure).finally(function() { action = null; controls(); });
+    }
+    function clean() {
+      if (action || loading || unavailable || !policy || !previewValid()) { controls(); return; }
+      var token = previewData.token; action = 'clean'; invalidatePreview(); controls();
+      api('POST', '/api/storage/clean', {token: token}).then(function(result) {
+        renderResult(result); status(result.status === 'partial' ? '部分完成，请查看未清理项目。' : '清理完成。刷新占用可查看最新统计。');
+      }).catch(failure).finally(function() { action = null; controls(); });
+    }
+    function activate() { if (!card.hidden && !loaded && !loading && !action && !unavailable) load(false); }
+    fields.forEach(function(id) { node(id).addEventListener(id === 'storage-enabled' ? 'change' : 'input', editDraft); });
+    node('storage-policy-form').addEventListener('submit', save);
+    node('storage-refresh').addEventListener('click', function() { if (!loading) load(false); });
+    node('storage-policy-reload').addEventListener('click', function() { if (!loading) load(true); });
+    node('storage-preview').addEventListener('click', preview);
+    node('storage-clean').addEventListener('click', clean);
+    new MutationObserver(activate).observe(card, {attributes: true, attributeFilter: ['hidden']});
+    controls(); activate();
+    return {load: load};
+  })();
+</script>

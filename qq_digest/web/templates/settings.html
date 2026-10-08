@@ -25,6 +25,8 @@
   </section>
   <div id="desktop-required" class="card" hidden>这些设置需使用桌面版。</div>
 
+  {% include "storage_management.html" %}
+
   <section class="card setting-card" data-settings-panel="storage" aria-labelledby="storage-title">
     <div class="setting-heading"><div><h2 id="storage-title">存储位置</h2></div><span class="setting-index">01</span></div>
     <div class="setting-current"><span>当前位置</span><strong id="current-storage">加载中…</strong></div>
@@ -56,7 +58,7 @@
     <div class="setting-heading"><div><h2 id="backup-title">数据备份</h2></div><span class="setting-index">04</span></div>
     <div class="setting-current"><span>备份目录</span><strong id="backup-folder">加载中…</strong></div>
     <label class="setting-label" for="backup-schedule">自动备份频率</label>
-    <div class="setting-row"><select id="backup-schedule" class="input" disabled><option value="weekly">每周</option><option value="daily">每天</option><option value="off">关闭</option></select><span class="setting-muted">旧备份保留。</span></div>
+    <div class="setting-row"><select id="backup-schedule" class="input" disabled><option value="weekly">每周</option><option value="daily">每天</option><option value="off">关闭</option></select><a class="setting-muted" href="/settings?section=storage">备份保留策略</a></div>
     <div class="setting-row"><button id="backup-data" class="btn btn-primary" type="button" disabled>立即备份</button><button id="open-backup" class="btn" type="button" disabled>打开备份目录</button></div>
     <p class="setting-help">备份含聊天及目录内的密钥，请妥善保管。</p>
     <p id="backup-result" class="setting-result" role="status" hidden></p>
@@ -324,4 +326,5 @@
   initDesktopSettings();
 </script>
 {% include "settings_categories_script.html" %}
+{% include "storage_management_script.html" %}
 {% endblock %}

@@ -8,7 +8,7 @@ import shutil
 import sqlite3
 import sys
 import winreg
-from contextlib import closing, nullcontext
+from contextlib import closing, contextmanager, nullcontext
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from threading import Lock
@@ -183,6 +183,51 @@ class DesktopBridge:
         self._update_guard = Lock()
         self._owns_service = False
         self._runtime_url = ''
+        self._storage_service = None
+        self._storage_signature = None
+        self._storage_guard = Lock()
+
+    def _storage(self):
+        from .storage_management import StorageManager
+        from .storage_files import safe_path
+        launcher_path = self._install_dir / 'launcher.json'
+        if launcher_path.exists():
+            launcher = json.loads(launcher_path.read_text(encoding='utf-8'))
+            launched = Path(launcher['config_path'])
+            if not launched.is_absolute(): launched = self._install_dir / launched
+            if safe_path(launched) != safe_path(self._config_path):
+                raise ValueError('存储位置已切换，请先重启程序')
+        safe_path(self._config_path)
+        config = load_config(self._config_path, create_dirs=False)
+        signature = (config.model_dump_json(), str(self._backup_root), str(self._temp_root))
+        with self._storage_guard:
+            if self._storage_signature != signature:
+                self._storage_service = StorageManager(config, self._backup_root, self._temp_root)
+                self._storage_signature = signature
+            return self._storage_service
+
+    def get_storage(self):
+        return self._storage().snapshot()
+
+    def update_storage_policy(self, values, revision):
+        with self._claim_operation('storage_mutation'), self._backup_lock:
+            return self._storage().update_policy(values, revision)
+
+    def preview_storage_cleanup(self):
+        with self._claim_operation('storage_mutation'), self._backup_lock:
+            return self._storage().preview()
+
+    def clean_storage(self, token):
+        with self._claim_operation('storage_mutation'), self._backup_lock:
+            return self._storage().clean(token)
+
+    def maybe_scheduled_cleanup(self):
+        from .storage_files import StorageBusy
+        try:
+            with self._claim_operation('storage_mutation'), self._backup_lock:
+                return self._storage().maybe_automatic()
+        except (OperationBusy, StorageBusy):
+            return None
 
     def _updates(self):
         from .desktop_releases import ReleaseRegistry
@@ -307,8 +352,18 @@ class DesktopBridge:
             raise
         return {'status': 'recovering'}
 
+    @contextmanager
     def _claim_operation(self, kind: str):
-        return self._operations.claim(kind) if self._operations is not None else nullcontext()
+        from .storage_files import StorageBusy, activity_lock
+        claim = self._operations.claim(kind) if self._operations is not None else nullcontext()
+        with claim:
+            try:
+                # The lease must also work during version recovery with an older
+                # configuration schema; storage identity comes from its location.
+                path = self._config_path.absolute()
+                root = path.parent.parent if path.parent.name == 'config' else path.parent
+                with activity_lock(root): yield
+            except StorageBusy as exc: raise OperationBusy(kind, ('external',)) from exc
 
     def _preferences(self) -> dict:
         path = self._install_dir / "desktop-preferences.json"
@@ -422,6 +477,16 @@ class DesktopBridge:
             except Exception as exc:
                 self._last_backup_error = str(exc)
                 logging.getLogger("qq_digest.backup").exception("自动备份失败")
+            try:
+                self.maybe_scheduled_cleanup()
+            except Exception as exc:
+                logging.getLogger('qq_digest.storage').exception('自动清理失败')
+                try:
+                    self._storage().policy.record({'status': 'partial', 'deleted_count': 0,
+                        'deleted_bytes': 0, 'unknown_bytes': True, 'skipped': [],
+                        'errors': [{'reason': str(exc)}]}, automatic=True)
+                except Exception:
+                    logging.getLogger('qq_digest.storage').exception('清理记录保存失败')
             stop_event.wait(3600)
 
     def choose_backup_file(self) -> str:

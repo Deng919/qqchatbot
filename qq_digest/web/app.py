@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from .worker_threads import guarded_to_thread
+
 import asyncio
 import json
 import os
@@ -357,6 +359,7 @@ def create_app(
                     qq_number=cfg.ntqq.qq_number,
                     output_dir=cfg.ntqq.db_dir,
                     snapshot_root=cfg.work_dir / "snapshots",
+                    cache_owner=cfg.data_dir,
                 )
                 scheduler_logger.info("定时任务刷新: %s", refresh_result.message)
                 if not refresh_result.success:
@@ -516,7 +519,7 @@ def create_app(
                         scheduler_state["running"] = True
                         scheduler_state["last_attempt_date"] = catchup_date.isoformat()
                         try:
-                            catchup_result = await asyncio.to_thread(
+                            catchup_result = await guarded_to_thread(
                                 _run_daily_task, config,
                                 run_at_for_report_date(
                                     catchup_date, config.summary.window_mode, tz
@@ -562,7 +565,7 @@ def create_app(
                 with operations.claim("daily"):
                     scheduler_state["running"] = True
                     try:
-                        result = await asyncio.to_thread(_run_daily_task, config)
+                        result = await guarded_to_thread(_run_daily_task, config)
                         scheduler_state["last_result"] = result
                         if result.get("success"):
                             scheduler_state["last_run_date"] = today
@@ -614,7 +617,7 @@ def create_app(
                     with operations.claim("sync"):
                         sync_scheduler_state["running"] = True
                         try:
-                            result = await asyncio.to_thread(
+                            result = await guarded_to_thread(
                                 run_message_sync, config=config
                             )
                             sync_scheduler_state["last_result"] = result.to_dict()
@@ -702,6 +705,7 @@ def create_app(
     app.state.cookie = cookie
     app.state.config = config
     app.state.operations = operations
+    operations.activity_root = lambda: app.state.config.data_dir if app.state.config is not None else None
     app.state.desktop_bridge = None
     from .desktop_update_routes import add_desktop_update_routes
     add_desktop_update_routes(app, templates=templates, require_login=require_login,
@@ -721,6 +725,9 @@ def create_app(
     add_attachment_routes(app,archive=_archive,config=_config,require_login=require_login,operations=operations)
     from .ai_usage_routes import add_ai_usage_routes
     add_ai_usage_routes(app,config=_config,require_login=require_login,operations=operations)
+    from .storage_routes import add_storage_routes
+    add_storage_routes(app, require_login=require_login, desktop_bridge=_desktop_bridge,
+                       desktop_mutation=_desktop_mutation)
     add_search_routes(app, archive=archive, config=config, require_login=require_login)
     add_archive_qa_routes(app, archive=archive, config=config, templates=templates,
         require_login=require_login, operations=operations)
@@ -871,7 +878,7 @@ def create_app(
                 if kind == "daily_digest":
                     scheduler_state["running"] = True
                     try:
-                        result = await asyncio.to_thread(
+                        result = await guarded_to_thread(
                             _run_daily_task, cfg, run_at, job_id
                         )
                     finally:
@@ -881,7 +888,7 @@ def create_app(
                     from ..sync import run_message_sync
                     sync_scheduler_state["running"] = True
                     try:
-                        result = await asyncio.to_thread(
+                        result = await guarded_to_thread(
                             run_message_sync, config=cfg, retry_of_job_id=job_id
                         )
                     finally:
@@ -1416,6 +1423,7 @@ def create_app(
                     qq_number=cfg.ntqq.qq_number,
                     output_dir=cfg.ntqq.db_dir,
                     snapshot_root=cfg.work_dir / "snapshots",
+                    cache_owner=cfg.data_dir,
                 )
                 if not refreshed.success:
                     raise RuntimeError(f"数据库刷新失败：{refreshed.message}")
@@ -1458,7 +1466,7 @@ def create_app(
 
         try:
             with operations.claim("collect"):
-                msgs, ingest, missing_days = await asyncio.to_thread(collect_in_worker)
+                msgs, ingest, missing_days = await guarded_to_thread(collect_in_worker)
         except OperationBusy as exc:
             raise HTTPException(
                 status_code=409,
@@ -1539,11 +1547,12 @@ def create_app(
 
         try:
             with operations.claim("refresh"):
-                result = await asyncio.to_thread(
+                result = await guarded_to_thread(
                     lambda: refresh_database(
                         qq_number=cfg.ntqq.qq_number,
                         output_dir=cfg.ntqq.db_dir,
                         snapshot_root=cfg.work_dir / "snapshots",
+                        cache_owner=cfg.data_dir,
                     )
                 )
         except OperationBusy as exc:
@@ -1652,7 +1661,7 @@ def create_app(
         try:
             with operations.claim("manual_summary"):
                 try:
-                    return await asyncio.to_thread(
+                    return await guarded_to_thread(
                         _run_manual_summary_task, cfg, payload
                     )
                 except ValueError as exc:
@@ -1958,7 +1967,7 @@ def create_app(
             with operations.claim("daily"):
                 scheduler_state["running"] = True
                 try:
-                    result = await asyncio.to_thread(_run_daily_task, cfg)
+                    result = await guarded_to_thread(_run_daily_task, cfg)
                     scheduler_state["last_result"] = result
                     scheduler_state["last_attempt_date"] = datetime.now(
                         ZoneInfo(cfg.summary.timezone)

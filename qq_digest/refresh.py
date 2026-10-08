@@ -14,12 +14,15 @@ import sqlite3
 import struct
 import time
 import tempfile
+from contextlib import ExitStack
 from ctypes import windll, byref, sizeof, create_string_buffer
 from ctypes.wintypes import DWORD, HMODULE
 from dataclasses import dataclass, field
 from pathlib import Path
 
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+
+from .storage_files import managed_temporary, safe_path
 
 logger = logging.getLogger(__name__)
 
@@ -512,6 +515,7 @@ def refresh_database(
     qq_number: str | int,
     output_dir: str | Path,
     snapshot_root: str | Path | None = None,
+    cache_owner: str | Path | None = None,
     pid: int = 0,
 ) -> RefreshResult:
     """Main entry: extract keys from QQ memory and decrypt databases."""
@@ -576,13 +580,8 @@ def refresh_database(
 
     # 5. Snapshot and decrypt all databases into one staged refresh set.
     output_dir.mkdir(parents=True, exist_ok=True)
-    snapshot_root = Path(snapshot_root or (output_dir / ".snapshots"))
+    snapshot_root = safe_path(snapshot_root or (output_dir / ".snapshots"))
     snapshot_root.mkdir(parents=True, exist_ok=True)
-    run_dir = Path(tempfile.mkdtemp(prefix="refresh-", dir=snapshot_root))
-    input_dir = run_dir / "encrypted"
-    staged_dir = run_dir / "decrypted"
-    input_dir.mkdir()
-    staged_dir.mkdir()
     ok_count = 0
     fail_count = 0
     refreshed_names: set[str] = set()
@@ -606,7 +605,15 @@ def refresh_database(
     available_files.update(path.name.lower() for path in output_dir.iterdir() if path.is_file())
     required_files = _required_refresh_files(available_files)
     missing_core = sorted(required_files)
-    try:
+    with ExitStack() as stack:
+        temporary_context = (managed_temporary(snapshot_root, "refresh-", cache_owner)
+                             if cache_owner is not None else
+                             tempfile.TemporaryDirectory(prefix="refresh-", dir=snapshot_root))
+        run_dir = Path(stack.enter_context(temporary_context))
+        input_dir = run_dir / "encrypted"
+        staged_dir = run_dir / "decrypted"
+        input_dir.mkdir()
+        staged_dir.mkdir()
         for src_path, enc_key in decrypt_jobs:
             fn = os.path.basename(src_path)
             snapshot_path = input_dir / fn
@@ -643,8 +650,6 @@ def refresh_database(
         )
         if missing_core:
             errors.append("核心数据库未刷新: " + ", ".join(missing_core))
-    finally:
-        shutil.rmtree(run_dir, ignore_errors=True)
 
     elapsed = time.time() - start
     msg = f"刷新完成: {ok_count} 个数据库成功, {fail_count} 个失败, 耗时 {elapsed:.1f}s"

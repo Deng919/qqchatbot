@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import os
 import sys
+from functools import wraps
+from inspect import signature
 from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -23,6 +25,24 @@ from .web.app import create_app
 from .web.auth import PasswordHasher
 
 app = typer.Typer(help="QQ 群消息摘要工具")
+
+
+def _storage_command(function):
+    """Share the desktop activity lease while a mutating CLI command runs."""
+    @wraps(function)
+    def invoke(*args, **kwargs):
+        from .storage_files import StorageBusy, activity_lock
+        bound = signature(function).bind_partial(*args, **kwargs)
+        value = bound.arguments.get('config_path', Path('config/config.yaml'))
+        if not isinstance(value, (str, Path)): value = value.default
+        config = load_config(Path(value))
+        try:
+            root = getattr(config, 'data_dir', config.archive_path.parent)
+            with activity_lock(root): return function(*args, **kwargs)
+        except StorageBusy:
+            typer.echo('有任务正在运行，请稍后重试', err=True)
+            raise typer.Exit(1)
+    return invoke
 
 
 def _console_safe(value: str, *, encoding: str | None = None) -> str:
@@ -230,6 +250,7 @@ def discover_groups(
 
 
 @app.command("sync")
+@_storage_command
 def sync(
     config_path: Path = typer.Option(Path("config/config.yaml")),
     group_id: int = typer.Option(0, help="只同步指定群（0=全部启用群）"),
@@ -266,6 +287,7 @@ def sync(
 
 
 @app.command("backfill")
+@_storage_command
 def backfill(
     config_path: Path = typer.Option(Path("config/config.yaml")),
     days: int = typer.Option(30, help="回填天数"),
@@ -300,6 +322,7 @@ def backfill(
 
 
 @app.command("summarize")
+@_storage_command
 def summarize(
     config_path: Path = typer.Option(Path("config/config.yaml")),
 ) -> None:
@@ -411,6 +434,7 @@ def summarize(
 
 
 @app.command("notify")
+@_storage_command
 def notify(
     config_path: Path = typer.Option(Path("config/config.yaml")),
     report_id: int = typer.Option(0, help="指定报告ID（0=最新）"),
@@ -463,6 +487,7 @@ def notify(
 
 
 @app.command("refresh")
+@_storage_command
 def refresh(
     config_path: Path = typer.Option(Path("config/config.yaml")),
 ) -> None:
@@ -477,6 +502,7 @@ def refresh(
         qq_number=config.ntqq.qq_number,
         output_dir=config.ntqq.db_dir,
         snapshot_root=config.work_dir / "snapshots",
+        cache_owner=config.data_dir,
     )
     typer.echo(result.message)
     if result.errors:
@@ -487,6 +513,7 @@ def refresh(
 
 
 @app.command("run-daily")
+@_storage_command
 def run_daily(
     config_path: Path = typer.Option(Path("config/config.yaml")),
 ) -> None:

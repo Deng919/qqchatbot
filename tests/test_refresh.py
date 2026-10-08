@@ -310,3 +310,36 @@ def test_refresh_rejects_unrefreshable_preferred_fts_source(tmp_path, monkeypatc
     assert any("group_msg_fts.db" in error for error in result.errors)
     assert (output / "nt_msg.db").read_text() == "previous"
     assert (output / "group_info.db").read_text() == "previous"
+
+
+@pytest.mark.parametrize("managed", [True, False])
+def test_refresh_snapshot_cache_has_optional_owner_and_lifetime_lease(tmp_path, monkeypatch, managed):
+    from qq_digest.storage_files import StorageBusy, cache_lock, cache_metadata
+    output = tmp_path / "output"
+    snapshots = tmp_path / "snapshots"
+    owner = tmp_path / "data"
+    encrypted = tmp_path / "source.db"
+    encrypted.write_bytes(b"source")
+    original_isdir = refresh_module.os.path.isdir
+    monkeypatch.setattr(refresh_module.os.path, "isdir",
+                        lambda path: True if "Tencent Files" in str(path) else original_isdir(path))
+    monkeypatch.setattr(refresh_module, "_collect_db_info", lambda _: ([("global", str(encrypted), b"s" * 16)], {}))
+    monkeypatch.setattr(refresh_module, "_derive_enc_key", lambda *_: b"k" * 32)
+    monkeypatch.setattr(refresh_module, "_verify_key_hmac", lambda *_: True)
+    seen = []
+    def decrypt(source, destination, key, **kwargs):
+        run = source.parent.parent
+        if managed:
+            assert cache_metadata(run, owner)["prefix"] == "refresh-"
+            with pytest.raises(StorageBusy):
+                with cache_lock(run):
+                    pass
+        else:
+            assert not (run / ".qqdigest-cache.json").exists()
+        seen.append(run)
+        destination.write_bytes(b"decrypted")
+        return True
+    monkeypatch.setattr(refresh_module, "_decrypt_db", decrypt)
+    kwargs = {"cache_owner": owner} if managed else {}
+    refresh_module.refresh_database(qq_number=123, output_dir=output, snapshot_root=snapshots, pid=42, **kwargs)
+    assert seen and not seen[0].exists()
