@@ -89,4 +89,3 @@ def add_task_routes(app, *, archive, config, templates, require_login):
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         return {"task": task}
-
