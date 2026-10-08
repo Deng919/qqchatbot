@@ -8,8 +8,11 @@ for(const file of ['bookmark_actions.html','bookmarks_script.html'])vm.runInCont
 const empty={items:[],total:0,page:1,page_size:20,counts:{}};
 const item=id=>({bookmark_id:id,kind:'message',status:'pending',revision:0,snapshot:{title:'收藏 '+id,text:'<img src=x onerror=bad()>完整正文',group_name:'研发',date:'2026-10-05'},origin_available:false});
 (async()=>{
-  requests.shift().resolve(empty);await tick();
+  const initial=requests.shift();assert.ok(initial.url.includes('status=all'),'Default view must include already read bookmarks');
+  initial.resolve({...empty,items:[item(1),{...item(2),status:'completed'}],total:2});await tick();
+  assert.equal(get('bookmarks-list').children.length,2,'Read bookmarks stay visible by default');
   scope.bookmarksChange(item(1),false,node());const mutation=requests.shift();
+  assert.equal(mutation.body.status,'completed','Reading action preserves the stored status contract');
   get('bookmarks-status').value='completed';scope.bookmarksLoad();requests.shift().resolve(empty);await tick();
   mutation.resolve({status:'completed'});await tick();
   assert.equal(requests.length,1,'Successful mutation refreshes the current filter even if filter changed while saving');

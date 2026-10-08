@@ -4,7 +4,7 @@
 {% block content %}
 <form class="bookmark-filters" onsubmit="bookmarksFilter(event)" aria-label="收藏筛选">
   <div class="field"><label for="bookmarks-q">关键词</label><input class="input" id="bookmarks-q" type="search" maxlength="100" placeholder="标题、内容或链接"></div>
-  <div class="field"><label for="bookmarks-status">状态</label><select class="input" id="bookmarks-status"><option value="pending">待处理</option><option value="completed">已完成</option><option value="all">全部</option></select></div>
+  <div class="field"><label for="bookmarks-status">阅读状态</label><select class="input" id="bookmarks-status"><option value="all">全部</option><option value="pending">未读</option><option value="completed">已读</option></select></div>
   <div class="field"><label for="bookmarks-kind">类型</label><select class="input" id="bookmarks-kind"><option value="">全部类型</option><option value="message">原消息</option><option value="report">摘要要点</option><option value="resource">资源</option><option value="knowledge">知识</option></select></div>
   <button class="btn btn-primary" type="submit">筛选</button>
 </form>

@@ -18,11 +18,15 @@ class FeatureUpdate(BaseModel):
 
 
 def path_feature(path):
+    # The legacy page is a core-reader alias; only its compatibility APIs keep
+    # the old switch. New summary-reading endpoints are always available.
+    if path == '/api/catchup' or path.startswith('/api/catchup/'):
+        return 'catchup'
     for key, prefix in (('topics', 'topics'), ('topics', 'topic-discussions'),
                         ('archive_qa', 'archive-qa'),
                         ('bookmarks', 'bookmarks'),
                         ('reminders', 'reminders'), ('reminders', 'reminder-rules'),
-                        ('catchup', 'catchup'), ('tasks', 'tasks'), ('failures', 'failures'),
+                        ('tasks', 'tasks'), ('failures', 'failures'),
                         ('review', 'candidates'), ('history_inspection', 'history-inspection')):
         if any(path == root or path.startswith(root + '/') for root in ('/' + prefix, '/api/' + prefix)):
             return key

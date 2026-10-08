@@ -21,10 +21,8 @@ from ..sender_identity import sender_fields
 from ..ai.client import AIClient, AIError
 from ..ai.key_store import save_ui_api_key, ui_api_key_exists
 from ..candidates import CandidateService
-from ..catchup import CatchupService
 from ..failure_center import FailureCenterService
 from ..report_completeness import ReportCompletenessService
-from ..task_inbox import TaskInboxService
 from ..candidate_context import candidate_source_context
 from ..collector.ntqq import NTQQCollector
 from ..config import Config, ConfigError
@@ -45,6 +43,7 @@ from .history_inspection import add_history_inspection_routes, history_inspectio
 from .report_revisions import add_report_revision_routes
 from .features import add_feature_routes
 from .summary_reading_routes import add_summary_reading_routes
+from .task_routes import add_task_routes
 from .message_routes import add_message_routes
 from .report_related_routes import add_report_related_routes
 from .search_routes import add_search_routes
@@ -139,31 +138,6 @@ class RestorePayload(RestorePreviewPayload):
 
 class OpenFolderPayload(BaseModel):
     kind: Literal["storage", "export", "backup"]
-
-
-class CatchupReadPayload(BaseModel):
-    key: str = Field(pattern=r"^[0-9a-f]{64}$")
-    read: bool
-
-
-class TaskFieldsPayload(BaseModel):
-    title: str = Field(min_length=1, max_length=300)
-    owner: str = Field(default="", max_length=100)
-    due_date: str | None = None
-
-
-class TaskDecisionPayload(TaskFieldsPayload):
-    title: str = Field(default="", max_length=300)
-    action: Literal["confirm", "ignore"]
-
-
-class MessageTaskPayload(TaskFieldsPayload):
-    group_id: int
-    msg_id: str = Field(min_length=1, max_length=500)
-
-
-class TaskUpdatePayload(TaskFieldsPayload):
-    status: Literal["open", "completed", "canceled"]
 
 
 def require_login(request: Request):
@@ -733,6 +707,7 @@ def create_app(
                          templates=templates, require_login=require_login, operations=operations)
     feature_service = add_feature_routes(app, archive=archive, cookie=cookie, require_login=require_login, operations=operations)
     add_summary_reading_routes(app, archive=archive, config=config, require_login=require_login)
+    add_task_routes(app, archive=archive, config=config, templates=templates, require_login=require_login)
     add_message_routes(app, archive=archive, config=config, require_login=require_login)
     add_report_related_routes(app, archive=_archive, config=_config, require_login=require_login)
     from .failure_ignore_routes import add_failure_ignore_routes
@@ -829,42 +804,7 @@ def create_app(
     async def catchup_page(request: Request):
         if not cookie.verify(request.cookies.get("qq_digest_session")):
             return RedirectResponse("/login", status_code=303)
-        return templates.TemplateResponse(request, "catchup.html", {})
-
-    def catchup_service() -> CatchupService:
-        return CatchupService(archive, timezone_name=(
-            config.summary.timezone if config is not None else "Asia/Shanghai"
-        ))
-
-    @app.post("/api/catchup/visit")
-    async def api_catchup_visit(request: Request):
-        require_login(request)
-        return catchup_service().visit()
-
-    @app.get("/api/catchup")
-    async def api_catchup(
-        request: Request, scope: Literal["since", "today", "week"] = "since",
-        since: str | None = None, page: int = Query(1, ge=1),
-    ):
-        require_login(request)
-        try:
-            return await asyncio.to_thread(
-                catchup_service().list_items, scope, since=since, page=page
-            )
-        except ValueError as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
-
-    @app.post("/api/catchup/read")
-    async def api_catchup_read(request: Request, payload: CatchupReadPayload):
-        require_login(request)
-        catchup_service().set_read(payload.key, payload.read)
-        return {"key": payload.key, "read": payload.read}
-
-    @app.get("/tasks")
-    async def task_inbox_page(request: Request):
-        if not cookie.verify(request.cookies.get("qq_digest_session")):
-            return RedirectResponse("/login", status_code=303)
-        return templates.TemplateResponse(request, "tasks.html", {})
+        return RedirectResponse("/reports?view=points", status_code=303)
 
     @app.get("/failures")
     async def failure_center_page(request: Request):
@@ -971,58 +911,6 @@ def create_app(
             raise HTTPException(status_code=409, detail="通知状态已改变，请刷新页面")
         return {"status": "pending_send", "send_id": send_id}
 
-    def task_inbox_service() -> TaskInboxService:
-        return TaskInboxService(archive, timezone_name=(
-            config.summary.timezone if config is not None else "Asia/Shanghai"
-        ))
-
-    @app.get("/api/tasks/suggestions")
-    async def api_task_suggestions(request: Request):
-        require_login(request)
-        return {"items": await asyncio.to_thread(task_inbox_service().suggestions)}
-
-    @app.get("/api/tasks")
-    async def api_tasks(request: Request,
-                        status: Literal["open", "completed", "canceled", "all"] = "open"):
-        require_login(request)
-        return task_inbox_service().list_tasks(status=status)
-
-    @app.post("/api/tasks/suggestions/{key}/decision")
-    async def api_task_decision(request: Request, key: str, payload: TaskDecisionPayload):
-        require_login(request)
-        try:
-            task = await asyncio.to_thread(
-                task_inbox_service().decide, key, action=payload.action,
-                title=payload.title, owner=payload.owner, due_date=payload.due_date,
-            )
-        except ValueError as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
-        return {"task": task, "decision": payload.action}
-
-    @app.post("/api/tasks/from-message")
-    async def api_task_from_message(request: Request, payload: MessageTaskPayload):
-        require_login(request)
-        try:
-            task = task_inbox_service().create_from_message(
-                group_id=payload.group_id, msg_id=payload.msg_id,
-                title=payload.title, owner=payload.owner, due_date=payload.due_date,
-            )
-        except ValueError as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
-        return {"task": task}
-
-    @app.patch("/api/tasks/{task_id}")
-    async def api_task_update(request: Request, task_id: int, payload: TaskUpdatePayload):
-        require_login(request)
-        try:
-            task = task_inbox_service().update_task(
-                task_id, title=payload.title, owner=payload.owner,
-                due_date=payload.due_date, status=payload.status,
-            )
-        except ValueError as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
-        return {"task": task}
-
     @app.get("/search")
     async def search_page(request: Request):
         if not cookie.verify(request.cookies.get("qq_digest_session")):
@@ -1043,7 +931,7 @@ def create_app(
     async def ai_settings_page(request: Request):
         if not cookie.verify(request.cookies.get("qq_digest_session")):
             return RedirectResponse("/login", status_code=303)
-        return templates.TemplateResponse(request, "ai_settings.html", {})
+        return RedirectResponse("/settings?section=ai", status_code=303)
 
     @app.get("/settings")
     async def settings_page(request: Request):

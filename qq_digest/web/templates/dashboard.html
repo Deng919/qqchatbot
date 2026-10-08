@@ -13,7 +13,7 @@
 
 <nav class="overview-links" aria-label="常用操作">
 {% if features.get('tasks',true) %}  <a href="/tasks"><span><strong>待办收件箱</strong><small id="task-reminder">确认任务并跟踪截止日期</small></span><span aria-hidden="true">↗</span></a>{% endif %}
-{% if features.get('failures',true) %}  <a href="/failures"><span><strong>失败处理</strong><small>查看原因、重试并追踪结果</small></span><span aria-hidden="true">↗</span></a>{% endif %}
+{% if features.get('failures',true) %}  <a href="/failures"><span><strong>异常处理</strong><small>查看原因、忽略或重试</small></span><span aria-hidden="true">↗</span></a>{% endif %}
   <a href="/search"><span><strong>搜索归档</strong><small>查找消息、摘要与知识</small></span><span aria-hidden="true">↗</span></a>
   <a href="/reports"><span><strong>阅读摘要</strong><small>直接阅读各群要点，或按群查看完整摘要</small></span><span aria-hidden="true">↗</span></a>
 {% if features.get('review',true) %}  <a href="/candidates"><span><strong>处理审核</strong><small>整理待确认的重点信息</small></span><span aria-hidden="true">↗</span></a>{% endif %}

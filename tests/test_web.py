@@ -76,10 +76,12 @@ def test_feature_switches_auth_validation_routes_and_reopen(web_client):
              'expected_revision': state['revision']}
     result = client.put('/api/features', json=patch)
     assert result.status_code == 200
-    for page in ('catchup', 'tasks', 'failures', 'candidates'):
+    for page in ('tasks', 'failures', 'candidates'):
         response = client.get('/'+page, follow_redirects=False)
         assert response.status_code == 303 and response.headers['location'].startswith('/settings')
         assert client.get('/api/'+page).status_code == 403
+    assert client.get('/catchup', follow_redirects=False).headers['location'] == '/reports?view=points'
+    assert client.get('/api/catchup').status_code == 403
     for path in ('/api/tasks/from-message', '/api/reports/daily/1/ask',
                  '/api/reports/daily/1/regenerate', '/api/history-inspection/run',
                  f'/candidates/{candidate_id}/confirm'):
@@ -424,7 +426,7 @@ def test_catchup_requires_login_and_persists_read_state(web_client, tmp_path):
         timestamp=local_time, collected_at=local_time, text="今天发布",
     )])
     client.post("/login", data={"password": "password123"})
-    assert "跨群补看" in client.get("/catchup").text
+    assert "阅读摘要" in client.get("/catchup").text
     assert client.post("/api/catchup/visit").json()["previous_viewed_at"] is None
     assert client.post("/api/catchup/visit").json()["previous_viewed_at"] is not None
     result = client.get("/api/catchup?scope=today").json()

@@ -27,7 +27,7 @@ from .web.app import create_app
 
 from .distribution import is_public_distribution
 
-DESKTOP_BACKEND_ID = "2026-10-07-summary-nav" + ('-deepseek-only' if is_public_distribution() else '')
+DESKTOP_BACKEND_ID = "2026-10-07-compact" + ('-deepseek-only' if is_public_distribution() else '')
 
 
 def resolve_config_path(install_dir: Path) -> Path:

@@ -5,7 +5,6 @@
 {% block content %}
 {% include "message_context_script.html" %}
 
-{% if features.get('review',true) %}<p><a class="btn btn-sm" href="/candidates">整理待确认内容</a></p>{% else %}<p class="header-meta"><a href="/settings?section=features">开启知识整理</a></p>{% endif %}
 <section id="knowledge-browse">
   <form class="knowledge-filters" onsubmit="knowledgeFilter(event)" aria-label="知识筛选">
     <div class="field"><label for="knowledge-q">关键词</label><input id="knowledge-q" class="input" type="search" maxlength="100" placeholder="标题、正文或说明"></div>

@@ -40,8 +40,9 @@ def test_optional_tools_are_visible_in_header_and_follow_feature_switches(web_cl
     tools = re.search(r'<nav[^>]+id="workspace-tools-area"[^>]*>(.*?)</nav>', header, re.S)
     assert tools is not None, 'tool links must be visible directly in the shared header'
     assert '<details' not in tools.group(1)
-    for path in ('/knowledge', '/tasks', '/candidates', '/failures', '/settings?section=features'):
+    for path in ('/reports?view=points', '/knowledge', '/bookmarks', '/tasks', '/settings?section=features'):
         assert 'href="'+path+'"' in tools.group(1)
+    assert 'href="/candidates"' not in tools.group(1) and 'href="/failures"' not in tools.group(1)
     assert 'href="/topics"' not in tools.group(1) and 'href="/reminders"' not in tools.group(1)
     state = client.get('/api/features').json()
     client.put('/api/features',json={'values':{'topics':True,'reminders':True},'expected_revision':state['revision']})

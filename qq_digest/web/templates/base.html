@@ -316,8 +316,9 @@
   </style>
 </head>
 <body>
+  {% set workspace_links = [('reading','阅读摘要','/reports?view=points',true),('knowledge','知识库','/knowledge',true),('bookmarks','收藏','/bookmarks',true),('tasks','待办','/tasks',true),('topics','话题跟踪','/topics',false),('reminders','提醒','/reminders',false),('features','功能开关','/settings?section=features',true)] %}
   <style>[data-feature-off] { display: none !important; }</style>
-  <script>var featureFlags = {{ features | tojson }};</script>
+  <script>var featureFlags = {{ features | tojson }}, workspaceLinks = {{ workspace_links | tojson }};</script>
   <a class="skip-link" href="#main-content">跳到主要内容</a>
   <header class="global-header">
     <div class="global-header-inner">
@@ -325,9 +326,9 @@
       {% include "primary_navigation.html" %}
     </div>
     <nav id="workspace-tools-area" class="extension-nav" aria-label="扩展功能">
-      {% for key,label,url in [('reading','阅读摘要','/reports?view=points'),('knowledge','知识库','/knowledge'),('bookmarks','收藏','/bookmarks'),('tasks','待办','/tasks'),('topics','话题跟踪','/topics'),('review','知识整理','/candidates'),('reminders','提醒','/reminders'),('failures','异常处理','/failures'),('features','功能开关','/settings?section=features')] %}
-      {% if key in ['reading','knowledge','features'] or features.get(key,key not in ['topics','reminders']) %}
-      {% set selected = (key == 'reading' and request.url.path in ['/','/reports']) or url == request.url.path or (key == 'features' and request.url.path == '/settings' and (request.query_params.get('section') == 'features' or request.query_params.get('feature') or request.query_params.get('saved') == 'features')) %}
+      {% for key,label,url,default in workspace_links %}
+      {% if key in ['reading','knowledge','features'] or features.get(key,default) %}
+      {% set selected = (key == 'reading' and request.url.path in ['/','/reports']) or (key == 'knowledge' and request.url.path == '/candidates') or url == request.url.path or (key == 'features' and request.url.path == '/settings' and (request.query_params.get('section') == 'features' or request.query_params.get('feature') or request.query_params.get('saved') == 'features')) %}
       <a href="{{ url }}" {% if key == 'reading' %}data-summary-home onclick="navigateSummaryReading(event)"{% endif %} {% if selected %}aria-current="page"{% endif %} class="{% if key == 'features' %}extension-manage {% endif %}{% if selected %}active{% endif %}">{{ label }}</a>
       {% endif %}
       {% endfor %}
