@@ -14,6 +14,8 @@ from pathlib import Path
 from PIL import Image
 
 from .attachment_readers import FILE_TYPES,MAX_CHARS,read_document
+from .ai.client import AILimitExceeded
+from .ai_usage import usage_for
 
 VERSION=1
 MAX_BYTES=16*1024*1024
@@ -92,10 +94,14 @@ class AttachmentService:
             if not key and self.config.ai.api_key_file:key=self.config.resolve_api_key()
             if not key:raise ValueError('请配置 DeepSeek API 密钥')
             client=AIClient(base_url=base,api_key=key,model='deepseek-flash',json_mode=True,
-                timeout_seconds=self.config.ai.timeout_seconds,max_retries=2)
+                timeout_seconds=self.config.ai.timeout_seconds,max_retries=2,
+                usage_service=usage_for(self.config),purpose='vision')
             try:output=client.chat([{'role':'user','content':blocks}])
             finally:client.close()
-        if not isinstance(output,dict) or not isinstance(output.get('text'),str) or not output['text'].strip():raise ValueError('图片没有可用读取结果')
+        if not isinstance(output,dict) or not isinstance(output.get('text'),str) or not output['text'].strip():
+            from .ai.client import reject_response
+            reject_response(output)
+            raise ValueError('图片没有可用读取结果')
         return output['text'][:MAX_CHARS],output.get('truncated') is True or len(output['text'])>MAX_CHARS
 
     def _read(self,ref):
@@ -153,11 +159,12 @@ class AttachmentService:
                 existing=self.archive.connection.execute('SELECT * FROM message_attachments WHERE group_id=? AND msg_id=? AND attachment_key=?',
                     (message.group_id,message.msg_id,key)).fetchone()
                 current=existing and existing['source_md5']==md5 and existing['version']==VERSION
-                if current and (existing['status'] in ('success','partial','unsupported') or not retry):continue
+                if current and (existing['status'] in ('success','partial','unsupported') or (not retry and existing['status']!='budget_paused')):continue
                 (retries if current else pending).append((message,ref,key,name,md5,existing['updated_at'] if current else ''))
         for message,ref,key,name,md5,_ in (pending+sorted(retries,key=lambda entry:entry[-1]))[:20]:
                 text='';error='';status='success'
                 try:text,partial=self._read({**ref,'name':name});status='partial' if partial else 'success'
+                except AILimitExceeded as exc:status='budget_paused';error=str(exc)
                 except FileNotFoundError:status='missing';error='请先在 QQ 下载附件，再重读'
                 except NotImplementedError:status='unsupported';error='暂不支持此格式'
                 except ValueError as exc:status='error';error=str(exc) if str(exc) in ('附件与原消息不匹配','无法核实附件来源','附件超过 16 MB','图片尺寸超限','文件需要密码') else '附件不可读，请检查来源或 DeepSeek 设置后重读'

@@ -18,7 +18,8 @@ from typing import Literal
 
 from ..archive import Archive, IngestResult
 from ..sender_identity import sender_fields
-from ..ai.client import AIClient, AIError
+from ..ai.client import AIClient, AIError, AILimitExceeded
+from ..ai_usage import usage_for
 from ..ai.key_store import save_ui_api_key, ui_api_key_exists
 from ..candidates import CandidateService
 from ..failure_center import FailureCenterService
@@ -219,6 +220,8 @@ def _test_deepseek_connection(config: Config) -> None:
         json_mode=True,
         timeout_seconds=min(config.ai.timeout_seconds, 30),
         max_retries=1,
+        usage_service=usage_for(config),
+        purpose='connection_test',
     )
     try:
         response = client.chat(
@@ -228,6 +231,8 @@ def _test_deepseek_connection(config: Config) -> None:
             ]
         )
         if not isinstance(response, dict) or response.get("ok") is not True:
+            from ..ai.client import reject_response
+            reject_response(response)
             raise AIError("DeepSeek 连接测试未得到预期响应")
     finally:
         client.close()
@@ -714,6 +719,8 @@ def create_app(
     add_failure_ignore_routes(app, archive=_archive, require_login=require_login)
     from .attachment_routes import add_attachment_routes
     add_attachment_routes(app,archive=_archive,config=_config,require_login=require_login,operations=operations)
+    from .ai_usage_routes import add_ai_usage_routes
+    add_ai_usage_routes(app,config=_config,require_login=require_login,operations=operations)
     add_search_routes(app, archive=archive, config=config, require_login=require_login)
     add_archive_qa_routes(app, archive=archive, config=config, templates=templates,
         require_login=require_login, operations=operations)
@@ -1054,6 +1061,8 @@ def create_app(
         cfg = _config(request)
         try:
             await asyncio.to_thread(_test_deepseek_connection, cfg)
+        except AILimitExceeded as exc:
+            raise HTTPException(429, detail=str(exc)) from exc
         except (AIError, ConfigError, OSError, ValueError) as exc:
             raise HTTPException(
                 status_code=503,
@@ -1805,6 +1814,8 @@ def create_app(
                     json_mode=True,
                     timeout_seconds=cfg.ai.timeout_seconds,
                     max_retries=2,
+                    usage_service=usage_for(cfg),
+                    purpose='report_qa',
                 )
                 try:
                     return answer_report_question(
@@ -1822,6 +1833,8 @@ def create_app(
             raise HTTPException(409, detail=str(exc)) from exc
         except NoReportEvidence as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
+        except AILimitExceeded as exc:
+            raise HTTPException(429, detail=str(exc)) from exc
         except (AIError, ConfigError, OSError, ValueError) as exc:
             raise HTTPException(
                 status_code=503,

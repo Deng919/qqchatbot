@@ -6,7 +6,7 @@ import tempfile
 from pathlib import Path
 from typing import Any, Callable
 
-from .client import AIError
+from .client import AIError, AILimitExceeded
 
 
 from .protocol import ChatProvider
@@ -160,10 +160,14 @@ class FallbackAIClient:
     def chat(self, messages: list[dict[str, str]]) -> dict[str, Any]:
         try:
             result = self.primary.chat(messages)
+        except AILimitExceeded:
+            raise
         except AIError as primary_error:
             self.last_fallback_reason = str(primary_error)
             try:
                 result = self.fallback.chat(messages)
+            except AILimitExceeded:
+                raise
             except AIError as fallback_error:
                 raise AIError(
                     f"GPT 失败: {primary_error}; 兼容接口失败: {fallback_error}"

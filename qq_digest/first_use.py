@@ -281,15 +281,19 @@ class FirstUseService:
     def test_ai(self, revision):
         self.store.check(revision)
         from .ai.factory import build_ai_client
+        from .ai.client import AILimitExceeded, reject_response
         client = None
         try:
             cfg = self.config.model_copy(deep=True)
             cfg.ai.max_retries = 1
             cfg.ai.timeout_seconds = min(cfg.ai.timeout_seconds, 30)
-            client = build_ai_client(cfg)
+            client = build_ai_client(cfg, purpose='connection_test')
             response = client.chat([{'role': 'user', 'content': 'Connection test. Return JSON {"ok": true}.'}])
             if response.get('ok') is not True:
+                reject_response(response)
                 raise ValueError('unexpected response')
+        except AILimitExceeded as exc:
+            raise ValueError(str(exc)) from exc
         except Exception as exc:
             raise ValueError('连接失败，请检查所选渠道、模型、密钥和网络后重试') from exc
         finally:

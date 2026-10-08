@@ -34,7 +34,7 @@ def add_attachment_routes(app,*,archive,config,require_login,operations):
                 status=old['status'] if current else 'pending' if allowed(group,ref['kind']) else 'disabled'
                 items.append({'msg_id':row['msg_id'],'key':ref.get('key',''),'kind':ref['kind'],'name':str(ref.get('name','附件'))[:200],
                     'at':row['timestamp'],'status':status,'text':old['text'] if current else '', 'error':old['error'] if current else ''})
-        return {'items':items[:100],'counts':{state:sum(item['status']==state for item in items) for state in ('success','partial','pending','missing','unsupported','error','disabled')},
+        return {'items':items[:100],'counts':{state:sum(item['status']==state for item in items) for state in ('success','partial','pending','missing','unsupported','error','disabled','budget_paused')},
             'limited':len(items)>100,'read_images':bool(group['read_images']),'read_files':bool(group['read_files'])}
 
     @app.get('/api/groups/{gid}/attachments',dependencies=[Depends(require_login)])

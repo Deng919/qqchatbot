@@ -1,0 +1,51 @@
+<script>
+var usageRevision=null,usageBusy=false,usageEpoch=0,usageRates=[];
+function usageNode(tag,text,cls){var node=document.createElement(tag);if(text!==undefined)node.textContent=text;if(cls)node.className=cls;return node;}
+function usageResult(text){var node=document.getElementById('ai-usage-result');node.textContent=text;node.hidden=!text;}
+function usageDisabled(value){document.getElementById('ai-usage-options').disabled=value;document.getElementById('ai-usage-save').disabled=value;document.getElementById('ai-usage-refresh').disabled=usageBusy;}
+function renderAIUsage(data){
+  usageRevision=data.settings.revision;document.getElementById('ai-usage-limit').value=String(data.settings.monthly_limit);
+  var host=document.getElementById('ai-usage-summary');host.textContent='';
+  host.appendChild(usageNode('strong',data.month+' · '+data.calls+' 次调用'));
+  host.appendChild(usageNode('div','成功 '+data.successful+' · 失败 '+data.failed+'（'+(data.calls?100*data.failed/data.calls:0).toFixed(1)+'%） · 结果未知 '+data.unknown+' · 处理中 '+data.pending));
+  host.appendChild(usageNode('div','已知输入 '+data.input_tokens+' token · 输出 '+data.output_tokens+' token'+(data.usage_unknown?' · '+data.usage_unknown+' 次用量未知':'')));
+  host.appendChild(usageNode('div',data.estimated_cost===null?'费用未知':'已知费用估算 ¥'+data.estimated_cost+(data.cost_unknown?' · '+data.cost_unknown+' 次费用未知':'')));
+  host.appendChild(usageNode('div','按 '+data.settings.timezone+' 的自然月统计。'));
+  if(data.settings.monthly_limit&&data.calls>=data.settings.monthly_limit)host.appendChild(usageNode('div','本月 AI 调用已达上限，可调整上限或下月继续','usage-alert'));
+  var models=new Map();data.settings.rates.forEach(function(rate){models.set(JSON.stringify([rate.provider,rate.model]),rate);});
+  var sources=(data.models||[]).concat(data.current_model&&data.current_model.provider?[data.current_model]:[]);
+  sources.forEach(function(model){var key=JSON.stringify([model.provider,model.model]);if(!models.has(key))models.set(key,{provider:model.provider,model:model.model,input_hit:null,input_miss:null,output:null});});
+  usageRates=[];var ratesHost=document.getElementById('ai-usage-rates');ratesHost.textContent='';
+  if(!models.size)ratesHost.appendChild(usageNode('p','首次 API 调用后可为该模型填写单价。','settings-note'));
+  models.forEach(function(rate,index){
+    var section=usageNode('div',undefined,'usage-rate');section.appendChild(usageNode('h3',rate.model+' · '+rate.provider));
+    var fields=usageNode('div',undefined,'usage-rate-fields'),inputs={};
+    [['input_hit','输入缓存命中'],['input_miss','输入未命中'],['output','输出']].forEach(function(pair){
+      var wrap=usageNode('div',undefined,'field'),input=usageNode('input'),label=usageNode('label',pair[1]);
+      input.type='number';input.min='0';input.max='1000000';input.step='0.000001';input.className='input';input.value=rate[pair[0]]===null?'':rate[pair[0]];input.placeholder='未知';input.id='usage-price-'+usageRates.length+'-'+pair[0];label.htmlFor=input.id;
+      inputs[pair[0]]=input;wrap.appendChild(label);wrap.appendChild(input);fields.appendChild(wrap);
+    });
+    section.appendChild(fields);ratesHost.appendChild(section);usageRates.push({provider:rate.provider,model:rate.model,inputs:inputs});
+  });
+}
+function loadAIUsage(){
+  if(usageBusy)return Promise.resolve();var epoch=++usageEpoch;usageDisabled(true);usageResult('');
+  return api('GET','/api/ai-usage').then(function(data){if(epoch===usageEpoch)renderAIUsage(data);})
+    .catch(function(error){if(epoch===usageEpoch)usageResult('加载失败：'+error.message);})
+    .finally(function(){if(epoch===usageEpoch)usageDisabled(usageRevision===null);});
+}
+function saveAIUsage(event){
+  event.preventDefault();if(usageBusy||usageRevision===null)return Promise.resolve();
+  var text=document.getElementById('ai-usage-limit').value;
+  if(!/^\d+$/.test(text)||Number(text)>1000000000){usageResult('月度上限需为非负整数');return Promise.resolve();}
+  var rates=usageRates.map(function(rate){var result={provider:rate.provider,model:rate.model};['input_hit','input_miss','output'].forEach(function(key){result[key]=rate.inputs[key].value===''?null:rate.inputs[key].value;});return result;});
+  var epoch=++usageEpoch;usageBusy=true;usageDisabled(true);usageResult('正在保存…');
+  return api('PUT','/api/ai-usage/settings',{monthly_limit:Number(text),rates:rates,expected_revision:usageRevision})
+    .then(function(data){if(epoch===usageEpoch){renderAIUsage(data);usageResult('用量设置已保存');}})
+    .catch(function(error){if(epoch===usageEpoch)usageResult('保存失败：'+error.message);})
+    .finally(function(){if(epoch===usageEpoch){usageBusy=false;usageDisabled(false);}});
+}
+document.getElementById('ai-usage-form').addEventListener('submit',saveAIUsage);
+document.getElementById('ai-usage-refresh').addEventListener('click',loadAIUsage);
+loadAIUsage();
+</script>

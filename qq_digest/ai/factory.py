@@ -6,9 +6,10 @@ from ..config import Config
 from .protocol import ChatProvider
 from ..distribution import is_public_distribution, validate_public_ai
 from .client import AIClient
+from ..ai_usage import usage_for
 
 
-def _build_provider(config: Config, name: str) -> ChatProvider:
+def _build_provider(config: Config, name: str, purpose='summary') -> ChatProvider:
     if name == "chatgpt_bridge":
         from .bridge import BridgeAIClient
         return BridgeAIClient(
@@ -28,22 +29,24 @@ def _build_provider(config: Config, name: str) -> ChatProvider:
             timeout_seconds=config.ai.timeout_seconds,
             max_retries=config.ai.max_retries,
             retry_base_seconds=config.ai.retry_base_seconds,
+            usage_service=usage_for(config),
+            purpose=purpose,
         )
     raise ValueError(f"Unsupported AI provider: {name}")
 
 
-def build_ai_client(config: Config) -> ChatProvider:
+def build_ai_client(config: Config, *, purpose='summary') -> ChatProvider:
     names = config.ai.provider_priority
     if is_public_distribution():
         validate_public_ai(names, config.ai.base_url)
-    primary = _build_provider(config, names[0])
+    primary = _build_provider(config, names[0], purpose)
     if len(names) == 1:
         return primary
     from .bridge import FallbackAIClient
 
     return FallbackAIClient(
         primary=primary,
-        fallback_factory=lambda: _build_provider(config, names[1]),
+        fallback_factory=lambda: _build_provider(config, names[1], purpose),
         primary_name=names[0],
         fallback_name=names[1],
     )

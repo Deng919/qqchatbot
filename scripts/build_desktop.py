@@ -22,6 +22,7 @@ TEMPLATES = (
     "summary_progress_script.html",
     "primary_navigation.html", "section_navigation.html", "group_details.html",
     "ai_connection_settings.html", "settings_categories_script.html",
+    "ai_usage_settings.html", "ai_usage_script.html",
     "find_style.html", "find_helpers.html", "find_script.html",
     "message_context_script.html", "attachment_controls.html",
     "knowledge.html", "knowledge_script.html", "knowledge_save.html",

@@ -1,0 +1,18 @@
+<section class="card ai-settings-card" aria-labelledby="ai-usage-title">
+  <div class="card-header"><span id="ai-usage-title">API 用量</span><button class="btn btn-sm" id="ai-usage-refresh" type="button">刷新用量</button></div>
+  <div id="ai-usage-summary" class="usage-summary" role="status">正在读取用量…</div>
+  <form id="ai-usage-form">
+    <fieldset id="ai-usage-options" disabled style="padding:0;border:0;margin:0">
+      <div class="field"><label for="ai-usage-limit">每月最多调用次数</label><input class="input" id="ai-usage-limit" type="number" min="0" max="1000000000" step="1" value="0" required></div>
+      <p class="settings-note">0 表示不限。重试、图片识别和连接测试也计次数；达到上限后采集仍继续。</p>
+      <details><summary>费用单价</summary><p class="settings-note usage-rate-note">元／百万 token，按实际接口和模型填写，留空表示未知。费用为估算。</p><div id="ai-usage-rates"></div></details>
+    </fieldset>
+    <div class="settings-actions"><button class="btn btn-primary" id="ai-usage-save" type="submit" disabled>保存用量设置</button></div>
+    <p id="ai-usage-result" class="settings-note" role="status" hidden></p>
+  </form>
+</section>
+<style>
+.usage-summary{display:grid;gap:8px;margin-bottom:22px;line-height:1.6;overflow-wrap:anywhere}.usage-summary strong{font-size:20px}.usage-rate{padding:16px 0;border-top:1px solid var(--border);overflow-wrap:anywhere}.usage-rate h3{font-size:14px;margin:0 0 12px}.usage-rate-fields{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}.usage-rate-fields .field{min-width:0}.usage-rate-fields label{font-size:12px}.usage-rate-note{margin-top:12px}.usage-summary .usage-alert{color:var(--warning,#975b24)}
+@media(max-width:600px){.usage-rate-fields{grid-template-columns:1fr}}
+</style>
+{% include "ai_usage_script.html" %}

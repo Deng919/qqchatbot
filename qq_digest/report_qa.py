@@ -161,6 +161,9 @@ def answer_report_question(
         },
     ]
     response = client.chat(prompt)
+    if not isinstance(response,dict) or not isinstance(response.get('answer'),str) or not response['answer'].strip() or not isinstance(response.get('source_ids'),list):
+        from .ai.client import reject_response
+        reject_response(response)
     if not isinstance(response, dict):
         response = {}
     allowed = {item.msg_id: item for item in context.messages}

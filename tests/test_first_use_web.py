@@ -74,13 +74,24 @@ def test_ai_test_is_explicit_synthetic_and_key_not_in_responses(setup_client, mo
     class FakeAI:
         def chat(self, messages): captured.extend(messages); return {'ok': True}
         def close(self): pass
-    monkeypatch.setattr('qq_digest.ai.factory.build_ai_client', lambda _: FakeAI())
+    monkeypatch.setattr('qq_digest.ai.factory.build_ai_client', lambda _,**kwargs: FakeAI())
     state = post(client, 'ai', provider='compatible', base_url='https://example.com/v1', model='sample', api_key='test-secret-key')
     assert state.status_code == 200 and state.json()['ai']['key_configured']
     assert not captured and 'test-secret-key' not in state.text
     assert post(client, 'ai-test').json()['ai_ready']
     assert captured == [{'role': 'user', 'content': 'Connection test. Return JSON {"ok": true}.'}]
     assert post(client, 'ai', provider='compatible', base_url='https://user:secret@example.com/v1', model='sample').status_code == 422
+
+
+def test_first_use_connection_limit_stops_before_http(setup_client,monkeypatch,respx_mock):
+    from qq_digest.ai_usage import usage_for
+    client,_=setup_client;login(client)
+    cfg=client.app.state.config;cfg.ai.base_url='https://api.deepseek.com';cfg.ai.provider_priority=['compatible']
+    monkeypatch.setenv(cfg.ai.api_key_env,'synthetic')
+    service=usage_for(cfg);service.update(1,[],0);service.reserve(cfg.ai.base_url,cfg.ai.model,'summary',30)
+    route=respx_mock.post(cfg.ai.base_url+'/chat/completions').mock(side_effect=AssertionError('limit must block HTTP'))
+    result=post(client,'ai-test')
+    assert result.status_code==422 and '调用已达上限' in result.text and route.call_count==0
 
 
 def test_read_only_source_is_not_refreshed_on_detection(setup_client, monkeypatch):

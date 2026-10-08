@@ -8,7 +8,8 @@ from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, Field
 
 from ..archive_qa import ArchiveQAService
-from ..ai.client import AIClient, AIError
+from ..ai.client import AIClient, AIError, AILimitExceeded
+from ..ai_usage import usage_for
 from ..config import ConfigError
 from ..distribution import is_public_distribution, validate_public_ai
 from ..operations import OperationBusy
@@ -42,6 +43,7 @@ def add_archive_qa_routes(app, *, archive, config, templates, require_login, ope
         try:return await asyncio.to_thread(worker)
         except LookupError as exc:raise HTTPException(410,str(exc)) from exc
         except OperationBusy as exc:raise HTTPException(409,str(exc)) from exc
+        except AILimitExceeded as exc:raise HTTPException(429,str(exc)) from exc
         except (AIError,ConfigError,OSError) as exc:
             raise HTTPException(503,'问答暂不可用，请检查 DeepSeek API Key 和网络后重试') from exc
         except ValueError as exc:raise HTTPException(409,str(exc)) from exc
@@ -71,7 +73,8 @@ def add_archive_qa_routes(app, *, archive, config, templates, require_login, ope
                 base=cfg.resolve_base_url()
                 if is_public_distribution():validate_public_ai(['compatible'],base)
                 self.client=AIClient(base_url=base,api_key=cfg.resolve_api_key(),model=cfg.ai.model,
-                    json_mode=True,timeout_seconds=cfg.ai.timeout_seconds,max_retries=2)
+                    json_mode=True,timeout_seconds=cfg.ai.timeout_seconds,max_retries=2,
+                    usage_service=usage_for(cfg),purpose='archive_qa')
                 return self.client.chat(messages)
             def close(self):
                 if self.client:self.client.close()

@@ -76,7 +76,7 @@ from types import SimpleNamespace
 import qq_digest.distribution as policy
 policy.MARKER_PATH = __import__('pathlib').Path(sys.argv[1])
 from qq_digest.ai.factory import build_ai_client
-cfg = SimpleNamespace(ai=SimpleNamespace(provider_priority=['compatible'],base_url='https://api.deepseek.com',model='deepseek-chat',json_mode=True,timeout_seconds=1,max_retries=1,retry_base_seconds=0),resolve_base_url=lambda:'https://api.deepseek.com',resolve_api_key=lambda:'synthetic-key')
+cfg = SimpleNamespace(archive_path=policy.MARKER_PATH.parent/'archive.sqlite',summary=SimpleNamespace(timezone='Asia/Shanghai'),ai=SimpleNamespace(provider_priority=['compatible'],base_url='https://api.deepseek.com',model='deepseek-chat',json_mode=True,timeout_seconds=1,max_retries=1,retry_base_seconds=0),resolve_base_url=lambda:'https://api.deepseek.com',resolve_api_key=lambda:'synthetic-key')
 client=build_ai_client(cfg)
 assert 'qq_digest.ai.bridge' not in sys.modules
 client.close()

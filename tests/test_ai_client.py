@@ -56,8 +56,10 @@ def test_chat_requests_json_output_when_enabled(respx_mock):
     assert payload["response_format"] == {"type": "json_object"}
 
 
-def test_factory_passes_json_mode_to_compatible_client():
+def test_factory_passes_json_mode_to_compatible_client(tmp_path):
     config = SimpleNamespace(
+        archive_path=tmp_path/'archive.sqlite',
+        summary=SimpleNamespace(timezone='Asia/Shanghai'),
         ai=SimpleNamespace(
             provider_priority=["compatible"],
             model="deepseek-flash",

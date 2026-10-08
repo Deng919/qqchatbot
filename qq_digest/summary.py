@@ -9,6 +9,7 @@ from pydantic import AliasChoices, BaseModel, Field, ValidationError, Validation
 from .models import NormalizedMessage
 from .preprocessing import Preprocessor
 from .prompt_builder import build_system_prompt, build_user_prompt, CANDIDATE_LIMITS
+from .ai.client import reject_response
 
 
 def _normalize_message_ids(value):
@@ -259,8 +260,10 @@ class Summarizer:
         try:
             response = SummaryResponse.model_validate(raw)
         except ValidationError as exc:
+            reject_response(raw)
             raise ValueError(f"AI响应结构无效: {exc}") from exc
         if response.group_id != group_id:
+            reject_response(raw)
             raise ValueError("AI响应 group_id 不匹配")
         limit = CANDIDATE_LIMITS.get(category, 1)
         included_ids = set(context_window.included_message_ids)

@@ -1,4 +1,5 @@
 import hashlib
+import io
 import json
 from datetime import datetime, timezone
 from pathlib import Path
@@ -100,6 +101,22 @@ def test_image_uses_vision_once_with_base64_and_source_scope(tmp_path):
     assert 'path' not in calls[0][0]['text']
 
 
+def test_budget_paused_image_resumes_without_losing_local_files(tmp_path):
+    from qq_digest.ai.client import AILimitExceeded
+    path=tmp_path/'合成.png';Image.new('RGB',(40,40),'white').save(path)
+    ar,msg,_=setup_message(tmp_path,kind='image',name='图.png',content=path.read_bytes())
+    def blocked(_):raise AILimitExceeded('本月 AI 调用已达上限，可调整上限或下月继续')
+    service=AttachmentService(ar,vision=blocked);service.prepare([msg])
+    row=ar.connection.execute('SELECT status,error FROM message_attachments').fetchone()
+    assert row['status']=='budget_paused' and '上限' in row['error']
+    local=tmp_path/'local.txt';local.write_text('local useful content')
+    ref={'key':'local','kind':'file','name':'local.txt','path':str(local),'md5':hashlib.md5(local.read_bytes()).hexdigest()}
+    msg=msg.model_copy(update={'content_json':{'attachments':msg.content_json['attachments']+[ref]}});ar.ingest([msg])
+    assert 'local useful content' in service.prepare([msg])[0].text
+    service.vision=lambda _: {'text':'恢复识别','truncated':False}
+    assert '恢复识别' in service.prepare([msg])[0].text
+
+
 def test_missing_file_retry_and_truncation(tmp_path):
     ar,msg,path=setup_message(tmp_path,content=('正文'*7000).encode())
     original=path.read_bytes();path.unlink();service=AttachmentService(ar)
@@ -170,6 +187,7 @@ def test_vision_client_is_deepseek_flash_and_is_closed(tmp_path,monkeypatch):
         def close(self):calls.append('closed')
     monkeypatch.setattr('qq_digest.ai.client.AIClient',Client)
     cfg=SimpleNamespace(ai=SimpleNamespace(api_key_env='SYNTHETIC_UNUSED',api_key_file='synthetic-configured-key',timeout_seconds=120),resolve_base_url=lambda:'https://api.deepseek.com',resolve_api_key=lambda:'synthetic-test-only')
+    cfg.archive_path=tmp_path/'a.sqlite';cfg.summary=SimpleNamespace(timezone='Asia/Shanghai')
     ar,_,_=setup_message(tmp_path)
     assert AttachmentService(ar,cfg)._vision([output.getvalue()],'合成.png')==('合成识别内容',False)
     assert calls[0]['model']=='deepseek-flash' and calls[1][0]['content'][1]['type']=='image_url' and calls[-1]=='closed'
@@ -192,6 +210,7 @@ def test_vision_uses_ui_saved_key_and_never_discovers_an_account(tmp_path,monkey
     monkeypatch.setattr('qq_digest.ai.client.AIClient',Client)
     monkeypatch.delenv('SYNTHETIC_DEEPSEEK_KEY',raising=False)
     cfg=SimpleNamespace(ai=SimpleNamespace(api_key_env='SYNTHETIC_DEEPSEEK_KEY',api_key_file='',ui_api_key_file=str(path),timeout_seconds=120),resolve_base_url=lambda:'https://api.deepseek.com',resolve_api_key=forbidden)
+    cfg.archive_path=tmp_path/'a.sqlite';cfg.summary=SimpleNamespace(timezone='Asia/Shanghai')
     ar,_,_=setup_message(tmp_path)
     if exists:
         assert AttachmentService(ar,cfg)._vision([],'合成')==('合成读取结果',False)
@@ -199,3 +218,22 @@ def test_vision_uses_ui_saved_key_and_never_discovers_an_account(tmp_path,monkey
     else:
         with pytest.raises(ValueError,match='DeepSeek API'):AttachmentService(ar,cfg)._vision([],'合成')
         assert received==[]
+
+
+@pytest.mark.parametrize('scan',[False,True])
+def test_image_and_scanned_file_limit_pause_before_http(tmp_path,monkeypatch,respx_mock,scan):
+    from qq_digest.config import Config,AIConfig,SecurityConfig
+    from qq_digest.ai_usage import usage_for
+    data=io.BytesIO();Image.new('RGB',(8,8)).save(data,format='PNG')
+    ar,msg,path=setup_message(tmp_path,kind='file' if scan else 'image',name='合成.pdf' if scan else '合成.png',
+        content=b'synthetic PDF' if scan else data.getvalue())
+    if scan:
+        monkeypatch.setattr('qq_digest.attachments.read_document',lambda *args:('',False,[data.getvalue()]))
+    cfg=Config(data_dir=tmp_path,archive_path=tmp_path/'a.sqlite',report_dir=tmp_path/'reports',knowledge_dir=tmp_path/'knowledge',
+        work_dir=tmp_path/'work',log_dir=tmp_path/'logs',security=SecurityConfig(web_password_hash='fake'),
+        ai=AIConfig(base_url='https://api.deepseek.com',model='synthetic',api_key_env='SYNTHETIC_KEY',provider_priority=['compatible']))
+    monkeypatch.setenv('SYNTHETIC_KEY','synthetic')
+    service=usage_for(cfg);service.update(1,[],0);service.reserve(cfg.ai.base_url,cfg.ai.model,'summary',30)
+    route=respx_mock.post(cfg.ai.base_url+'/chat/completions').mock(side_effect=AssertionError('limit must block HTTP'))
+    AttachmentService(ar,cfg).prepare([msg])
+    assert route.call_count==0 and ar.connection.execute('SELECT status FROM message_attachments').fetchone()[0]=='budget_paused'
