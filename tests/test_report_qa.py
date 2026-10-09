@@ -1,4 +1,5 @@
 from datetime import datetime
+import json
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -146,7 +147,7 @@ def test_answer_uses_report_and_only_checked_source_ids(tmp_path):
     messages = [message("m1", 1, 2, 10, 0, "接口报错 503")]
     evidence = type("Evidence", (), {
         "group_id": 1, "start_date": "2026-09-02", "end_date": "2026-09-02",
-        "markdown_path": report, "messages": messages,
+        "markdown_path": report, "markdown_text": "接口异常摘要", "messages": messages,
     })()
 
     class FakeAI:
@@ -167,7 +168,7 @@ def test_answer_without_valid_source_states_uncertainty(tmp_path):
     report.write_text("摘要", encoding="utf-8")
     evidence = type("Evidence", (), {
         "group_id": 1, "start_date": "2026-09-02", "end_date": "2026-09-02",
-        "markdown_path": report, "messages": [message("m1", 1, 2, 10, 0, "没提到原因")],
+        "markdown_path": report, "markdown_text": "摘要", "messages": [message("m1", 1, 2, 10, 0, "没提到原因")],
     })()
 
     class FakeAI:
@@ -178,3 +179,117 @@ def test_answer_without_valid_source_states_uncertainty(tmp_path):
 
     assert result["sources"] == []
     assert "无法" in result["answer"] or "不能" in result["answer"]
+
+
+def make_snapshot_report(archive, tmp_path, kind, payload, markdown='当前版本正文'):
+    from qq_digest.report_revisions import ReportRevisionService
+    paths = dict(markdown_path=tmp_path / 'report.md', json_path=tmp_path / 'report.json')
+    paths['markdown_path'].write_text('可变文件的旧正文', encoding='utf-8')
+    paths['json_path'].write_text(json.dumps({'window_start': '2026-09-02T00:00:00+08:00',
+        'window_end': '2026-09-03T00:00:00+08:00'}), encoding='utf-8')
+    if kind == 'daily':
+        report_id = archive.record_report(group_id=1, report_date='2026-09-02', candidate_ids=[], **paths)
+    else:
+        report_id = archive.record_manual_report(group_id=1, start_date='2026-09-02', end_date='2026-09-02',
+            candidate_ids=[], detail_mode='group', effective_template='adaptive', input_fingerprint='synthetic',
+            source_message_count=1, **paths)
+    with archive.transaction():
+        ReportRevisionService(archive).record_generated_in_transaction(kind, report_id, markdown, payload, '合成版本')
+    return report_id, paths
+
+
+@pytest.mark.parametrize('kind,inclusive,expected_cutoff', [
+    ('daily', None, True), ('range', None, False), ('daily', False, False),
+    ('range', True, True), ('daily', True, True), ('range', False, False),
+])
+def test_revision_window_preserves_start_timezone_and_cutoff_semantics(archive, tmp_path, kind, inclusive, expected_cutoff):
+    archive.ingest([
+        message('too-early', 1, 2, 9, 29, '开始之前'),
+        message('at-start', 1, 2, 9, 30, '准确起始'),
+        message('inside', 1, 2, 10, 15, '范围内'),
+        message('at-cutoff', 1, 2, 11, 0, '准确截止'),
+        message('too-late', 1, 2, 11, 1, '截止之后'),
+        message('other', 2, 2, 10, 15, '其他群'),
+    ])
+    # UTC payload expresses the same local timestamps, without widening to midnight.
+    payload = {'window_start': '2026-09-02T01:30:00+00:00', 'window_end': '2026-09-02T03:00:00+00:00'}
+    if inclusive is not None:
+        payload['window_end_inclusive'] = inclusive
+    report_id, _ = make_snapshot_report(archive, tmp_path, kind, payload)
+
+    evidence = load_report_evidence(archive, kind, report_id, TZ)
+
+    expected = ['at-start', 'inside'] + (['at-cutoff'] if expected_cutoff else [])
+    assert [row.msg_id for row in evidence.messages] == expected
+
+
+def test_qa_prompt_uses_current_revision_snapshot_even_if_file_and_revision_change(archive, tmp_path):
+    from qq_digest.report_revisions import ReportRevisionService
+    archive.ingest([message('included', 1, 2, 10, 0, '绑定证据')])
+    payload = {'window_start': '2026-09-02T09:30:00+08:00', 'window_end': '2026-09-02T11:00:00+08:00'}
+    report_id, paths = make_snapshot_report(archive, tmp_path, 'daily', {}, '先前版本正文')
+    with archive.transaction():
+        ReportRevisionService(archive).record_generated_in_transaction('daily', report_id, '当前不可变正文', payload, '当前合成版本')
+    evidence = load_report_evidence(archive, 'daily', report_id, TZ)
+    assert evidence.version == 2
+    paths['markdown_path'].write_text('读取后被覆盖的文件', encoding='utf-8')
+    with archive.transaction():
+        ReportRevisionService(archive).record_generated_in_transaction('daily', report_id, '加载后新版本正文', {}, '另一个合成版本')
+    class FakeAI:
+        def chat(self, prompts):
+            prompt = prompts[1]['content']
+            assert '当前不可变正文' in prompt
+            assert '被覆盖' not in prompt and '新版本正文' not in prompt and '旧正文' not in prompt and '先前版本正文' not in prompt
+            assert '09:30:00+08:00' in prompt and '11:00:00+08:00' in prompt
+            return {'answer': '绑定证据', 'source_ids': ['included']}
+
+    result = answer_report_question(evidence, '证据是什么？', [], FakeAI())
+
+    assert result['sources'][0]['msg_id'] == 'included'
+
+
+def test_legacy_without_precise_window_uses_local_dates_and_captures_body(archive, tmp_path):
+    archive.ingest([message('first', 1, 2, 0, 0, '起始'), message('after', 1, 3, 0, 0, '次日')])
+    path = tmp_path / 'legacy.md'
+    path.write_text('加载时的旧报告正文', encoding='utf-8')
+    report_id = archive.record_report(group_id=1, report_date='2026-09-02', markdown_path=path,
+        json_path=tmp_path / 'missing.json', candidate_ids=[])
+
+    evidence = load_report_evidence(archive, 'daily', report_id, TZ)
+    path.unlink()
+    class FakeAI:
+        def chat(self, prompts):
+            assert '加载时的旧报告正文' in prompts[1]['content']
+            return {'answer': '起始', 'source_ids': ['first']}
+
+    assert [row.msg_id for row in evidence.messages] == ['first']
+    assert answer_report_question(evidence, '起始？', [], FakeAI())['sources'][0]['msg_id'] == 'first'
+
+
+@pytest.mark.parametrize('payload', [
+    {'window_start': '2026-09-02T09:00:00+08:00'},
+    {'window_end': '2026-09-02T11:00:00+08:00'},
+    {'window_start': 'bad', 'window_end': '2026-09-02T11:00:00+08:00'},
+    {'window_start': '2026-09-02T09:00:00', 'window_end': '2026-09-02T11:00:00'},
+    {'window_start': '2026-09-02T11:00:00+08:00', 'window_end': '2026-09-02T09:00:00+08:00'},
+    {'window_start': '2026-09-01T23:00:00+08:00', 'window_end': '2026-09-02T11:00:00+08:00'},
+    {'window_start': '2026-09-02T09:00:00+08:00', 'window_end': '2026-09-03T01:00:00+08:00'},
+])
+def test_corrupt_current_revision_window_is_rejected_instead_of_widened(archive, tmp_path, payload):
+    archive.ingest([message('some-message', 1, 2, 10, 0, '不允许用整日替代')])
+    report_id, _ = make_snapshot_report(archive, tmp_path, 'daily', payload)
+
+    with pytest.raises(NoReportEvidence, match='时间窗'):
+        load_report_evidence(archive, 'daily', report_id, TZ)
+
+
+@pytest.mark.parametrize('boundary', ['true', 'false', 1, 0, None])
+def test_corrupt_precise_window_boundary_is_rejected(archive, tmp_path, boundary):
+    archive.ingest([message('inside', 1, 2, 10, 0, '范围内'), message('cutoff', 1, 2, 11, 0, '截止')])
+    report_id, _ = make_snapshot_report(archive, tmp_path, 'daily', {
+        'window_start': '2026-09-02T09:00:00+08:00',
+        'window_end': '2026-09-02T11:00:00+08:00',
+        'window_end_inclusive': boundary,
+    })
+    with pytest.raises(NoReportEvidence, match='时间窗'):
+        load_report_evidence(archive, 'daily', report_id, TZ)

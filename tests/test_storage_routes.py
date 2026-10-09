@@ -23,8 +23,12 @@ def test_bridge_reuses_manager_and_invalidates_after_storage_switch(tmp_path):
     assert bridge.get_storage()['policy']['backup_days'] == 30
     assert bridge._storage() is bridge._storage()
     (bridge._install_dir / 'launcher.json').write_text(json.dumps({'config_path': str(tmp_path / 'other.yaml')}))
-    for action in (bridge.get_storage, bridge.preview_storage_cleanup, bridge.maybe_scheduled_cleanup):
-        with pytest.raises(ValueError, match='重启'): action()
+    # The old runtime remains readable after a handoff; cleanup is paused.
+    assert bridge.get_storage()['policy']['backup_days'] == 30
+    from qq_digest.operations import OperationBusy
+    with pytest.raises(OperationBusy, match='重启'):
+        bridge.preview_storage_cleanup()
+    assert bridge.maybe_scheduled_cleanup() is None
 
 
 def test_bridge_mutations_obey_operation_and_backup_disabled_cleanup_independent(tmp_path):

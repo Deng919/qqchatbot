@@ -15,6 +15,8 @@ from .summary import Summarizer
 
 
 def report_window(row, kind, payload, tz):
+    if payload and 'window_end_inclusive' in payload and type(payload['window_end_inclusive']) is not bool:
+        raise ValueError('报告时间窗边界损坏，无法安全读取')
     first = date.fromisoformat(row['report_date'] if kind=='daily' else row['start_date'])
     last = date.fromisoformat(row['report_date'] if kind=='daily' else row['end_date'])
     lower = datetime.combine(first,time.min,tz)

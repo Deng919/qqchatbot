@@ -95,7 +95,7 @@ def test_topic_inputs_and_running_task_conflicts(web_client, tmp_path):
     seed_report(client, tmp_path)
     with client.app.state.operations.claim('daily'):
         assert client.post('/api/topics/refresh').status_code == 409
-        assert client.get('/api/topics').status_code == 409
+        assert client.get('/api/topics').status_code == 200
     assert client.get('/api/topics?date_from=bad').status_code == 422
     assert client.get('/api/topics?date_from=2026-10-05&date_to=2026-10-04').status_code == 422
     assert client.get('/api/topics?page=0').status_code == 422

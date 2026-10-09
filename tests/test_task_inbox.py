@@ -1,5 +1,6 @@
 import json
 import sqlite3
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
@@ -110,16 +111,77 @@ def test_update_preserves_source_and_classifies_overdue(tmp_path):
                                      owner="", due_date="2026-09-28", now=NOW)
     assert inbox.list_tasks(now=NOW)["counts"]["overdue"] == 1
     edited = inbox.update_task(task["task_id"], title="完成文档", owner="小王",
-                               due_date="2026-09-30", status="open", now=NOW)
+                               due_date="2026-09-30", status="open", expected_revision=0, now=NOW)
     assert edited["source_ids"] == ["m1"]
     assert edited["due_bucket"] == "upcoming"
     done = inbox.update_task(task["task_id"], title="完成文档", owner="小王",
-                             due_date="2026-09-30", status="completed", now=NOW)
+                             due_date="2026-09-30", status="completed", expected_revision=1, now=NOW)
     assert done["status"] == "completed"
     assert inbox.list_tasks(now=NOW)["counts"]["open"] == 0
     with pytest.raises(ValueError, match="状态"):
         inbox.update_task(task["task_id"], title="完成文档", owner="小王",
-                          due_date=None, status="unknown", now=NOW)
+                          due_date=None, status="unknown", expected_revision=2, now=NOW)
+
+
+def test_status_action_from_stale_window_preserves_latest_task_fields(tmp_path):
+    _, inbox = setup_inbox(tmp_path)
+    stale = inbox.create_from_message(group_id=123, msg_id="m1", title="旧标题", now=NOW)
+    edited = inbox.update_task(stale["task_id"], title="新标题", owner="新负责人",
+                               due_date="2026-10-01", status="open", expected_revision=0, now=NOW)
+    completed = inbox.set_task_status(stale["task_id"], status="completed", now=NOW)
+    assert (completed["title"], completed["owner"], completed["due_date"]) == (
+        edited["title"], edited["owner"], edited["due_date"])
+    assert completed["status"] == "completed"
+    assert completed["revision"] == 2
+
+
+def test_stale_full_edit_after_status_change_cannot_reopen_task(tmp_path):
+    _, inbox = setup_inbox(tmp_path)
+    stale = inbox.create_from_message(group_id=123, msg_id="m1", title="已确认", now=NOW)
+    current = inbox.set_task_status(stale["task_id"], status="completed", now=NOW)
+    with pytest.raises(ValueError, match="已被修改"):
+        inbox.update_task(stale["task_id"], title="旧窗口草稿", status="open",
+                          expected_revision=0, now=NOW)
+    assert inbox.list_tasks(status="all", now=NOW)["items"] == [current]
+
+
+def test_two_connections_only_one_full_edit_wins_same_revision(tmp_path):
+    archive, inbox = setup_inbox(tmp_path)
+    task = inbox.create_from_message(group_id=123, msg_id="m1", title="原内容", now=NOW)
+    other_archive = Archive.open(tmp_path / "archive.sqlite")
+    other = TaskInboxService(other_archive, timezone_name="Asia/Shanghai")
+
+    def edit(service, title):
+        try:
+            return service.update_task(task["task_id"], title=title, status="open",
+                                       expected_revision=0, now=NOW)
+        except ValueError as exc:
+            assert "已被修改" in str(exc)
+            return None
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = list(pool.map(lambda args: edit(*args), [(inbox, "窗口 A"), (other, "窗口 B")]))
+    winners = [result for result in results if result is not None]
+    assert len(winners) == 1
+    assert winners[0]["revision"] == 1
+    assert inbox.list_tasks(status="all", now=NOW)["items"] == winners
+    other_archive.connection.close()
+    archive.connection.close()
+
+
+def test_legacy_task_schema_adds_revision_zero_without_changing_existing_task(tmp_path):
+    archive, inbox = setup_inbox(tmp_path)
+    task = inbox.create_from_message(group_id=123, msg_id="m1", title="旧库任务", now=NOW)
+    if "revision" in {row["name"] for row in archive.connection.execute("PRAGMA table_info(tasks)")}:
+        archive.connection.execute("ALTER TABLE tasks DROP COLUMN revision")
+        archive.connection.commit()
+    archive.connection.close()
+    reopened = Archive.open(tmp_path / "archive.sqlite")
+    migrated = TaskInboxService(reopened, timezone_name="Asia/Shanghai").list_tasks(now=NOW)["items"][0]
+    assert migrated["revision"] == 0
+    assert {key: value for key, value in migrated.items() if key != "revision"} == {
+        key: value for key, value in task.items() if key != "revision"}
+    reopened.connection.close()
 
 
 def test_ignore_suggestion_hides_it_without_creating_task(tmp_path):

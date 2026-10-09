@@ -5,7 +5,7 @@
 from __future__ import annotations
 
 import asyncio
-from contextlib import suppress
+from contextlib import suppress, nullcontext
 import json
 import logging
 
@@ -14,6 +14,8 @@ import websockets
 
 from .notifier import QQBotNotifier
 from .commands import BotCommandHandler
+from ..operations import OperationBusy
+from ..web.worker_threads import guarded_to_thread
 
 logger = logging.getLogger(__name__)
 
@@ -27,10 +29,12 @@ class WebSocketListener:
         notifier: QQBotNotifier,
         handler: BotCommandHandler,
         reconnect_delay: float = 5.0,
+        operations=None,
     ):
         self.notifier = notifier
         self.handler = handler
         self.reconnect_delay = reconnect_delay
+        self.operations = operations
         self._running = False
         self._sequence: int | None = None
         self._heartbeat_task: asyncio.Task | None = None
@@ -120,7 +124,12 @@ class WebSocketListener:
                 openid = author.get("user_openid", "")
                 content = d.get("content", "").strip()
                 if openid and content:
-                    result = self.handler.handle_message(openid, content)
-                    await asyncio.to_thread(
-                        self.notifier.send_private_message, openid, result.message
-                    )
+                    try:
+                        with self.operations.claim('knowledge_mutation') if self.operations is not None else nullcontext():
+                            result = self.handler.handle_message(openid, content)
+                            await guarded_to_thread(
+                                self.notifier.send_private_message, openid, result.message
+                            )
+                    except OperationBusy:
+                        # A handoff pauses both commands and outgoing replies.
+                        return

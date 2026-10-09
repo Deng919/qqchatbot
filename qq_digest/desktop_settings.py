@@ -18,7 +18,7 @@ import yaml
 from .config import load_config
 from .backup_restore import (BACKUP_ROOT, CONFIG_PATH_FIELDS, DATA_FOLDERS,
                              TEMP_ROOT, backup_data, inspect_backup, restore_backup)
-from .operations import OperationBusy
+from .operations import OperationBusy, OperationBlocked
 
 
 from .runtime_paths import download_root, release_root
@@ -186,12 +186,47 @@ class DesktopBridge:
         self._storage_service = None
         self._storage_signature = None
         self._storage_guard = Lock()
+        self._packaged_runtime = (self._install_dir / 'launcher.json').is_file() or getattr(sys, 'frozen', False)
 
-    def _storage(self):
+    def storage_handoff_state(self):
+        """Inspect launcher identity without creating folders or exposing paths."""
+        from .storage_files import safe_path
+        from .web.storage_handoff import HANDOFF_MESSAGE
+        try:
+            launcher = safe_path(self._install_dir / 'launcher.json')
+            if not launcher.exists():
+                if self._packaged_runtime:
+                    raise ValueError('启动配置缺失')
+                pending = False
+            else:
+                self._packaged_runtime = True
+                payload = json.loads(launcher.read_text(encoding='utf-8'))
+                value = payload.get('config_path') if isinstance(payload, dict) else None
+                if not isinstance(value, str) or not value.strip():
+                    raise ValueError('启动配置无效')
+                target = Path(value)
+                if not target.is_absolute():
+                    target = self._install_dir / target
+                target = safe_path(target)
+                if not target.is_file():
+                    raise ValueError('启动配置不可读取')
+                pending = target != safe_path(self._config_path)
+            message = HANDOFF_MESSAGE if pending else ''
+        except (OSError, ValueError):
+            pending = True
+            message = '启动配置无法确认，已暂停写入，请重启程序后检查存储设置'
+        return {'read_only': pending, 'restart_required': pending, 'message': message}
+
+    def _ensure_writable(self, kind='storage_mutation'):
+        state = self.storage_handoff_state()
+        if state['read_only']:
+            raise OperationBlocked(kind, state['message'])
+
+    def _storage(self, *, read_only=False):
         from .storage_management import StorageManager
         from .storage_files import safe_path
         launcher_path = self._install_dir / 'launcher.json'
-        if launcher_path.exists():
+        if launcher_path.exists() and not read_only:
             launcher = json.loads(launcher_path.read_text(encoding='utf-8'))
             launched = Path(launcher['config_path'])
             if not launched.is_absolute(): launched = self._install_dir / launched
@@ -207,7 +242,7 @@ class DesktopBridge:
             return self._storage_service
 
     def get_storage(self):
-        return self._storage().snapshot()
+        return self._storage(read_only=True).snapshot(read_only=True)
 
     def update_storage_policy(self, values, revision):
         with self._claim_operation('storage_mutation'), self._backup_lock:
@@ -355,6 +390,7 @@ class DesktopBridge:
     @contextmanager
     def _claim_operation(self, kind: str):
         from .storage_files import StorageBusy, activity_lock
+        self._ensure_writable(kind)
         claim = self._operations.claim(kind) if self._operations is not None else nullcontext()
         with claim:
             try:
@@ -389,7 +425,7 @@ class DesktopBridge:
                 for path in paths[:10] if path.is_file()]
 
     def get_settings(self) -> dict:
-        config = load_config(self._config_path)
+        config = load_config(self._config_path, create_dirs=False)
         return {
             "storage_path": str(config.data_dir),
             "export_path": self._preferences().get("export_path", str(EXPORT_ROOT)),
@@ -399,6 +435,7 @@ class DesktopBridge:
             "backup_error": self._last_backup_error,
             "auto_start": auto_start_enabled(self._executable),
             "packaged": (self._install_dir / "launcher.json").is_file(),
+            **self.storage_handoff_state(),
         }
 
     def choose_folder(self, kind: str = "storage") -> str:
@@ -431,21 +468,23 @@ class DesktopBridge:
             return migrate_storage(self._config_path, self._install_dir, Path(destination))
 
     def export_reports(self, destination: str, format: str) -> dict:
-        config = load_config(self._config_path)
-        selected = Path(destination or EXPORT_ROOT).expanduser().resolve()
-        result = export_reports(config.archive_path, selected, format)
-        self._save_preferences({"export_path": str(selected)})
-        return result
+        with self._claim_operation('group_mutation'):
+            config = load_config(self._config_path)
+            selected = Path(destination or EXPORT_ROOT).expanduser().resolve()
+            result = export_reports(config.archive_path, selected, format)
+            self._save_preferences({"export_path": str(selected)})
+            return result
 
     def backup_data(self) -> dict:
         with self._claim_operation("backup"), self._backup_lock:
             return backup_data(self._config_path, self._backup_root, temp_root=self._temp_root)
 
     def set_backup_schedule(self, schedule: str) -> dict:
-        if schedule not in {"off", "daily", "weekly"}:
-            raise ValueError("备份频率只支持关闭、每天或每周")
-        self._save_preferences({"backup_schedule": schedule})
-        return {"backup_schedule": schedule}
+        with self._claim_operation('group_mutation'):
+            if schedule not in {"off", "daily", "weekly"}:
+                raise ValueError("备份频率只支持关闭、每天或每周")
+            self._save_preferences({"backup_schedule": schedule})
+            return {"backup_schedule": schedule}
 
     def maybe_scheduled_backup(self, now: datetime | None = None) -> dict | None:
         schedule = self._preferences().get("backup_schedule", "weekly")
@@ -482,9 +521,10 @@ class DesktopBridge:
             except Exception as exc:
                 logging.getLogger('qq_digest.storage').exception('自动清理失败')
                 try:
-                    self._storage().policy.record({'status': 'partial', 'deleted_count': 0,
-                        'deleted_bytes': 0, 'unknown_bytes': True, 'skipped': [],
-                        'errors': [{'reason': str(exc)}]}, automatic=True)
+                    with self._claim_operation('storage_mutation'):
+                        self._storage().policy.record({'status': 'partial', 'deleted_count': 0,
+                            'deleted_bytes': 0, 'unknown_bytes': True, 'skipped': [],
+                            'errors': [{'reason': str(exc)}]}, automatic=True)
                 except Exception:
                     logging.getLogger('qq_digest.storage').exception('清理记录保存失败')
             stop_event.wait(3600)
@@ -510,6 +550,7 @@ class DesktopBridge:
         return chosen[0]
 
     def preview_restore(self, path: str) -> dict:
+        self._ensure_writable()
         return inspect_backup(Path(path), temp_root=self._temp_root)
 
     def restore_backup(self, path: str, destination: str, expected_sha256: str) -> dict:
@@ -519,6 +560,7 @@ class DesktopBridge:
                                   temp_root=self._temp_root, expected_sha256=expected_sha256)
 
     def open_folder(self, kind: str) -> dict:
+        self._ensure_writable()
         if kind == "storage":
             path = load_config(self._config_path).data_dir
         elif kind == "export":
@@ -532,4 +574,5 @@ class DesktopBridge:
         return {"path": str(path)}
 
     def set_auto_start(self, enabled: bool) -> dict:
-        return {"auto_start": set_auto_start(self._executable, enabled)}
+        with self._claim_operation('group_mutation'):
+            return {"auto_start": set_auto_start(self._executable, enabled)}

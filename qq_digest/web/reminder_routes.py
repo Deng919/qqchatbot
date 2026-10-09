@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import asyncio
+import sqlite3
+from types import SimpleNamespace
 from contextlib import nullcontext
 from pathlib import Path as FilePath
 from threading import Lock
@@ -48,15 +50,20 @@ def add_reminder_routes(app, *, archive, config, templates, require_login, opera
         def invoke():
             # Concurrent list loads share one feature lock without rejecting
             # each other; writes still report active operation conflicts.
-            with read_lock if read else nullcontext(), operations.claim('reminder_mutation'):
-                worker = Archive.open(FilePath(database_path)) if database_path else archive
+            with read_lock if read else nullcontext(), operations.claim('reminder_mutation') if not read else nullcontext():
+                if read and database_path:
+                    connection = sqlite3.connect(f'{FilePath(database_path).as_uri()}?mode=ro', uri=True)
+                    connection.row_factory = sqlite3.Row
+                    worker = SimpleNamespace(connection=connection)
+                else:
+                    worker = Archive.open(FilePath(database_path)) if database_path else archive
                 try:
                     if not FeatureService(worker).enabled('reminders'):
                         raise HTTPException(403, '提醒规则已关闭，请先在功能开关中开启')
                     return action(ReminderService(worker, timezone_name=timezone_name))
                 finally:
                     if worker is not archive:
-                        worker.close()
+                        worker.connection.close()
         try:
             return await asyncio.to_thread(invoke) if database_path else invoke()
         except (ReminderConflict, OperationBusy) as exc:

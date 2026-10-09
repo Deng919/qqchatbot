@@ -60,7 +60,8 @@ from ..reminder_scheduler import reminder_loop
 from ..report_selection import selected_report_groups
 
 templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"),
-                           context_processors=[lambda request: {'features': getattr(request.state, 'features', {})}])
+                           context_processors=[lambda request: {'features': getattr(request.state, 'features', {}),
+                               'storage_handoff': getattr(request.state, 'storage_handoff', {})}])
 templates.env.globals["public_distribution"] = is_public_distribution
 
 
@@ -181,9 +182,9 @@ async def _desktop_mutation(request: Request, bridge, kind: str, method: str, *a
             return getattr(bridge, method)(*args)
 
     try:
-        return await asyncio.to_thread(invoke)
+        return await guarded_to_thread(invoke)
     except OperationBusy as exc:
-        raise HTTPException(409, detail='已有任务在运行，请完成后重试') from exc
+        raise HTTPException(409, detail=str(exc)) from exc
 
 
 def _utc(iso_str: str | None) -> str:
@@ -576,27 +577,15 @@ def create_app(
 
     async def _notification_queue_loop(notifier):
         import logging
-        from ..notify import NotificationQueueProcessor
+        from .storage_handoff import run_notification_queue
 
         while True:
-            queue_archive = None
             try:
-                queue_archive = Archive.open(config.archive_path)
-                await asyncio.to_thread(
-                    NotificationQueueProcessor(
-                        archive=queue_archive,
-                        notifier=notifier,
-                        max_attempts=config.qq_bot.max_retries,
-                        retry_base_seconds=config.qq_bot.retry_base_seconds,
-                    ).process_due
-                )
+                await run_notification_queue(config, operations, notifier)
             except Exception:
                 logging.getLogger("qq_digest.notify").exception(
                     "通知队列处理失败，将在下一周期重试"
                 )
-            finally:
-                if queue_archive is not None:
-                    queue_archive.close()
             await asyncio.sleep(60)
 
     async def _message_sync_loop():
@@ -653,7 +642,7 @@ def create_app(
                 knowledge=knowledge,
                 group_names={g.group_id: g.name for g in archive.enabled_groups()},
             )
-            ws_state["listener"] = WebSocketListener(notifier=notifier, handler=handler)
+            ws_state["listener"] = WebSocketListener(notifier=notifier, handler=handler, operations=operations)
             ws_state["task"] = asyncio.get_event_loop().create_task(ws_state["listener"].start())
             notification_state["notifier"] = notifier
             notification_state["task"] = asyncio.get_event_loop().create_task(
@@ -694,7 +683,7 @@ def create_app(
             task.cancel()
         if background_tasks:
             await asyncio.gather(*background_tasks, return_exceptions=True)
-        await asyncio.to_thread(app.state.close_topic_tracking)
+        await guarded_to_thread(app.state.close_topic_tracking)
 
     app = FastAPI(title="QQ Digest", lifespan=lifespan)
     cookie = SessionCookie(session_secret, session_hours * 3600)
@@ -956,13 +945,13 @@ def create_app(
     @app.get("/api/desktop-settings")
     async def desktop_settings_state(request: Request):
         bridge = _desktop_bridge(request)
-        return await asyncio.to_thread(bridge.get_settings)
+        return await guarded_to_thread(bridge.get_settings)
 
     @app.post("/api/desktop-settings/choose-folder")
     async def desktop_choose_folder(request: Request, payload: FolderSelectionPayload):
         bridge = _desktop_bridge(request)
         try:
-            return {"path": await asyncio.to_thread(bridge.choose_folder, payload.kind)}
+            return {"path": await guarded_to_thread(bridge.choose_folder, payload.kind)}
         except Exception as exc:
             raise HTTPException(status_code=500, detail=f"文件夹窗口打开失败：{exc}") from exc
 
@@ -978,12 +967,12 @@ def create_app(
     @app.post("/api/desktop-settings/export")
     async def desktop_export(request: Request, payload: ReportExportPayload):
         bridge = _desktop_bridge(request)
-        return await asyncio.to_thread(bridge.export_reports, payload.destination, payload.format)
+        return await guarded_to_thread(bridge.export_reports, payload.destination, payload.format)
 
     @app.post("/api/desktop-settings/auto-start")
     async def desktop_auto_start(request: Request, payload: AutoStartPayload):
         bridge = _desktop_bridge(request)
-        return await asyncio.to_thread(bridge.set_auto_start, payload.enabled)
+        return await guarded_to_thread(bridge.set_auto_start, payload.enabled)
 
     @app.post("/api/desktop-settings/backup")
     async def desktop_backup(request: Request):
@@ -996,13 +985,13 @@ def create_app(
     @app.post("/api/desktop-settings/backup-schedule")
     async def desktop_backup_schedule(request: Request, payload: BackupSchedulePayload):
         bridge = _desktop_bridge(request)
-        return await asyncio.to_thread(bridge.set_backup_schedule, payload.schedule)
+        return await guarded_to_thread(bridge.set_backup_schedule, payload.schedule)
 
     @app.post("/api/desktop-settings/choose-backup")
     async def desktop_choose_backup(request: Request):
         bridge = _desktop_bridge(request)
         try:
-            return {"path": await asyncio.to_thread(bridge.choose_backup_file)}
+            return {"path": await guarded_to_thread(bridge.choose_backup_file)}
         except Exception as exc:
             raise HTTPException(status_code=500, detail=f"备份文件窗口打开失败：{exc}") from exc
 
@@ -1010,7 +999,7 @@ def create_app(
     async def desktop_restore_preview(request: Request, payload: RestorePreviewPayload):
         bridge = _desktop_bridge(request)
         try:
-            return await asyncio.to_thread(bridge.preview_restore, payload.path)
+            return await guarded_to_thread(bridge.preview_restore, payload.path)
         except (ValueError, OSError) as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -1026,7 +1015,7 @@ def create_app(
     @app.post("/api/desktop-settings/open-folder")
     async def desktop_open_folder(request: Request, payload: OpenFolderPayload):
         bridge = _desktop_bridge(request)
-        return await asyncio.to_thread(bridge.open_folder, payload.kind)
+        return await guarded_to_thread(bridge.open_folder, payload.kind)
 
     # ------------------------------------------------------------------
     # API: DeepSeek settings
@@ -1053,7 +1042,7 @@ def create_app(
         if not cfg.ai.ui_api_key_file:
             raise HTTPException(status_code=503, detail="本地 API Key 保存路径未配置")
         try:
-            await asyncio.to_thread(
+            await guarded_to_thread(
                 save_ui_api_key, Path(cfg.ai.ui_api_key_file), payload.api_key
             )
         except ValueError as exc:
@@ -1067,7 +1056,7 @@ def create_app(
         require_login(request)
         cfg = _config(request)
         try:
-            await asyncio.to_thread(_test_deepseek_connection, cfg)
+            await guarded_to_thread(_test_deepseek_connection, cfg)
         except AILimitExceeded as exc:
             raise HTTPException(429, detail=str(exc)) from exc
         except (AIError, ConfigError, OSError, ValueError) as exc:
@@ -1200,6 +1189,8 @@ def create_app(
                 "keywords": g.keywords,
                 "collection_window_days": g.collection_window_days,
                 "important_candidates": g.important_candidates,
+                "read_images": bool(g.read_images),
+                "read_files": bool(g.read_files),
                 "message_count": stats["message_count"],
                 "latest_message_at": _utc(latest) if latest else None,
                 "last_sync": _utc(sync["last_timestamp"]) if sync and sync["last_timestamp"] else "未同步",
@@ -1239,7 +1230,7 @@ def create_app(
             timezone_name=cfg.ntqq.timezone,
         )
         try:
-            groups = await asyncio.to_thread(collector.discover_groups)
+            groups = await guarded_to_thread(collector.discover_groups)
         except Exception as exc:
             raise HTTPException(status_code=503, detail=f"群聊扫描失败: {exc}") from exc
         result = []
@@ -1837,7 +1828,7 @@ def create_app(
                 finally:
                     client.close()
         try:
-            return await asyncio.to_thread(ask_in_worker)
+            return await guarded_to_thread(ask_in_worker)
         except OperationBusy as exc:
             raise HTTPException(409, detail=str(exc)) from exc
         except NoReportEvidence as exc:
@@ -2029,4 +2020,6 @@ def create_app(
         candidates.update_status(candidate_id, "pending")
         return RedirectResponse("/candidates", status_code=303)
 
+    from .storage_handoff import add_storage_handoff
+    add_storage_handoff(app, require_login=require_login)
     return app

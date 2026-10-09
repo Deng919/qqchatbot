@@ -171,7 +171,7 @@ def test_safe_path_rejects_windows_junction_ancestor(tmp_path):
     target.mkdir()
     link = tmp_path / "junction"
     result = subprocess.run(["cmd", "/c", "mklink", "/J", str(link), str(target)],
-                            capture_output=True, text=True)
+                            capture_output=True)
     assert result.returncode == 0, result.stderr
     try:
         with pytest.raises(ValueError):

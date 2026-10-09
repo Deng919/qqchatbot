@@ -4,9 +4,10 @@ from typing import Literal
 
 from fastapi import HTTPException, Request
 from fastapi.responses import RedirectResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field, StrictInt
 
-from ..task_inbox import TaskInboxService
+from ..task_inbox import TaskConflictError, TaskInboxService
+from .worker_threads import guarded_to_thread
 
 
 class TaskFieldsPayload(BaseModel):
@@ -26,6 +27,13 @@ class MessageTaskPayload(TaskFieldsPayload):
 
 
 class TaskUpdatePayload(TaskFieldsPayload):
+    model_config = ConfigDict(extra="forbid")
+    status: Literal["open", "completed", "canceled"]
+    expected_revision: StrictInt = Field(ge=0)
+
+
+class TaskStatusPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     status: Literal["open", "completed", "canceled"]
 
 
@@ -58,7 +66,7 @@ def add_task_routes(app, *, archive, config, templates, require_login):
     async def api_task_decision(request: Request, key: str, payload: TaskDecisionPayload):
         require_login(request)
         try:
-            task = await asyncio.to_thread(
+            task = await guarded_to_thread(
                 task_inbox_service().decide, key, action=payload.action,
                 title=payload.title, owner=payload.owner, due_date=payload.due_date,
             )
@@ -79,13 +87,19 @@ def add_task_routes(app, *, archive, config, templates, require_login):
         return {"task": task}
 
     @app.patch("/api/tasks/{task_id}")
-    async def api_task_update(request: Request, task_id: int, payload: TaskUpdatePayload):
+    async def api_task_update(request: Request, task_id: int, payload: TaskUpdatePayload | TaskStatusPayload):
         require_login(request)
         try:
-            task = task_inbox_service().update_task(
-                task_id, title=payload.title, owner=payload.owner,
-                due_date=payload.due_date, status=payload.status,
-            )
+            if isinstance(payload, TaskStatusPayload):
+                task = task_inbox_service().set_task_status(task_id, status=payload.status)
+            else:
+                task = task_inbox_service().update_task(
+                    task_id, title=payload.title, owner=payload.owner,
+                    due_date=payload.due_date, status=payload.status,
+                    expected_revision=payload.expected_revision,
+                )
+        except TaskConflictError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         return {"task": task}

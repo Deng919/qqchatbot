@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+from contextlib import nullcontext
 from threading import Lock
 from pathlib import Path as FilePath
 from typing import Annotated, Literal
@@ -70,7 +71,7 @@ def add_topic_routes(app, *, archive, config, templates, require_login, operatio
     async def execute(action, *, mutate=False):
         def invoke():
             # Coordinate report/file publication as well as topic corrections.
-            with request_lock, operations.claim('topic_mutation'):
+            with request_lock, operations.claim('topic_mutation') if mutate else nullcontext():
                 return action()
         try:
             # A private in-memory database cannot be reopened. Run these small

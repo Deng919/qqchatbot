@@ -1,5 +1,6 @@
 """Authenticated local desktop version controls."""
 import asyncio
+from .worker_threads import guarded_to_thread
 
 from fastapi import HTTPException, Request
 from pydantic import BaseModel, Field
@@ -23,7 +24,7 @@ def add_desktop_update_routes(app, *, templates, require_login, desktop_bridge, 
     async def versions(request: Request):
         bridge = desktop_bridge(request)
         try:
-            return await asyncio.to_thread(bridge.get_updates)
+            return await guarded_to_thread(bridge.get_updates)
         except (ValueError, OSError) as exc:
             raise HTTPException(400, detail=str(exc)) from exc
 

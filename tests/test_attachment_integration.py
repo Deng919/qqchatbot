@@ -42,9 +42,13 @@ def test_archive_questions_find_attachment_contents_and_invalidate_closed_policy
     with pytest.raises(ValueError):service.ask(preview['ticket'],'test',SummaryAI())
 
 
-def test_archive_questions_prepare_mixed_text_attachment_messages(tmp_path):
+def test_archive_questions_find_cached_mixed_text_attachment_messages(tmp_path, monkeypatch):
     ar,msg,_=setup_message(tmp_path)
     ar.connection.execute("UPDATE messages SET message_type='text' WHERE msg_id=?",(msg.msg_id,));ar.connection.commit()
+    AttachmentService(ar).prepare([msg])
+    def forbidden(*args, **kwargs):
+        raise AssertionError('Archive preview must not prepare attachments')
+    monkeypatch.setattr(AttachmentService, 'prepare', forbidden)
     service=ArchiveQAService(ar,timezone_name='UTC',attachment_config=SimpleNamespace(ntqq=SimpleNamespace(enabled=False)))
     preview=service.preview(owner='test',question='hello attachment',query='hello',group_id=11,date_from=msg.timestamp.date().isoformat(),date_to=msg.timestamp.date().isoformat())
     assert preview['messages'] and 'hello attachment' in preview['messages'][0]['excerpt']

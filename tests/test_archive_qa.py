@@ -80,6 +80,40 @@ def test_all_groups_duplicate_ids_have_independent_sources(service):
     assert {m['group_id'] for m in answer['sources']}=={11,22}
 
 
+def test_preview_uses_cached_attachment_text_without_preparing_unrelated_attachments(service, monkeypatch):
+    ar = service.archive
+    ar.upsert_groups([GroupConfig(group_id=11, name='研发', read_files=True, read_images=True)])
+    stamp = datetime.fromisoformat('2026-10-05T16:01:00+00:00')
+    ar.ingest([
+        NormalizedMessage(msg_id='cached', group_id=11, text='附件通知', timestamp=stamp,
+            collected_at=stamp, message_type='file',
+            content_json={'attachments': [{'key': 'cached-file', 'kind': 'file', 'name': '方案.txt'}]}),
+        NormalizedMessage(msg_id='unrelated', group_id=11, text='无关图片', timestamp=stamp,
+            collected_at=stamp, content_json={'attachments': [{'key': 'uncached', 'kind': 'image', 'name': '未读.png'}]}),
+    ])
+    with ar.transaction():
+        ar.connection.execute('''INSERT INTO message_attachments
+            (group_id,msg_id,attachment_key,kind,name,source_md5,version,status,text,error,updated_at)
+            VALUES (11,'cached','cached-file','file','方案.txt','',1,'success','接口配置采用已缓存方案D','','now')''')
+    service.attachment_config = SimpleNamespace()
+    def forbidden(*args, **kwargs):
+        raise AssertionError('Preview must only read cached evidence')
+    for method in ('prepare', '_hydrate', '_read', '_vision', '_image_cache'):
+        monkeypatch.setattr('qq_digest.attachments.AttachmentService.' + method, forbidden)
+    monkeypatch.setattr('qq_digest.collector.ntqq.NTQQCollector.collect', forbidden)
+    monkeypatch.setattr('qq_digest.ai.client.AIClient.chat', forbidden)
+    before = ar.connection.total_changes
+
+    data = preview(service)
+
+    assert {row['msg_id'] for row in data['messages']} == {'same', 'cached'}
+    assert ar.connection.total_changes == before
+    ai = FakeAI({'answer': '沿用预览缓存方案', 'source_ids': ['s1', 's2']})
+    answer = service.ask(data['ticket'], 'session', ai)
+    assert {row['msg_id'] for row in answer['sources']} == {'same', 'cached'}
+    assert '已缓存方案D' in str(ai.calls) and '无关图片' not in str(ai.calls)
+
+
 @pytest.mark.parametrize('patch', [dict(group_id=99),dict(date_from='2026-10-07'),dict(question=' '),dict(query='x')])
 def test_invalid_scope_and_input_rejected(service,patch):
     params=dict(owner='session',question='配置？',query='配置',group_id=11,date_from='2026-10-06',date_to='2026-10-06');params.update(patch)

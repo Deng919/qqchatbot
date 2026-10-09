@@ -337,6 +337,7 @@ class Archive:
                     owner TEXT NOT NULL DEFAULT '',
                     due_date TEXT,
                     status TEXT NOT NULL DEFAULT 'open' CHECK(status IN ('open','completed','canceled')),
+                    revision INTEGER NOT NULL DEFAULT 0,
                     source_ids TEXT NOT NULL,
                     primary_source_id TEXT NOT NULL,
                     source_report_id INTEGER,
@@ -397,6 +398,9 @@ class Archive:
                 );
                 """
             )
+            task_columns = {row["name"] for row in self.connection.execute("PRAGMA table_info(tasks)")}
+            if "revision" not in task_columns:
+                self.connection.execute("ALTER TABLE tasks ADD COLUMN revision INTEGER NOT NULL DEFAULT 0")
             # Migration: add category column for existing databases
             try:
                 self.connection.execute(

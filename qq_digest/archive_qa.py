@@ -68,12 +68,6 @@ class ArchiveQAService:
         terms=[query] if query else sorted(_terms(question)-STOP_TERMS,key=lambda term:(-len(term),term))[:12]
         start,end=_message_bounds(first,last,self.zone)
         text_sql=self.evidence_text()
-        if self.attachment_config:
-            from .attachments import AttachmentService
-            scope_clause=' AND group_id=?' if group_id is not None else ''
-            raw=self.archive.connection.execute('SELECT * FROM messages WHERE timestamp>=? AND timestamp<?'+scope_clause+' AND (message_type=\'file\' OR json_type(content_json,\'$.attachments\')=\'array\') ORDER BY timestamp DESC LIMIT 200',
-                (start,end,*([group_id] if group_id is not None else []))).fetchall()
-            AttachmentService(self.archive,self.attachment_config).prepare([self.archive._row_to_message(row) for row in raw])
         messages=[];total=0
         if terms:
             clauses=['m.timestamp>=?','m.timestamp<?'];params=[start,end]

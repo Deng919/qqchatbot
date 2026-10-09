@@ -316,6 +316,7 @@
   </style>
 </head>
 <body>
+  {% set storage_handoff = storage_handoff | default({}) %}
   {% set workspace_links = [('reading','阅读摘要','/reports?view=points',true),('knowledge','知识库','/knowledge',true),('bookmarks','收藏','/bookmarks',true),('tasks','待办','/tasks',true),('topics','话题跟踪','/topics',false),('reminders','提醒','/reminders',false),('features','功能开关','/settings?section=features',true)] %}
   <style>[data-feature-off] { display: none !important; }</style>
   <script>var featureFlags = {{ features | tojson }}, workspaceLinks = {{ workspace_links | tojson }};</script>
@@ -335,6 +336,8 @@
     </nav>
   </header>
   <main id="main-content">
+    <div id="storage-handoff-banner" role="status" aria-live="polite" {% if not storage_handoff.get('read_only') %}hidden{% endif %}
+         style="margin:16px 28px;padding:12px 16px;border:1px solid var(--orange);border-radius:var(--radius);background:var(--orange-soft);color:var(--text)">{{ storage_handoff.get('message', '') }}。当前内容可以继续查看，变更和自动任务已暂停。</div>
     <header class="page-toolbar">
       <div class="page-toolbar-inner">
         <div class="page-heading"><h1>{% block page_title %}{% endblock %}</h1>{% block page_description %}{% endblock %}</div>
@@ -381,6 +384,7 @@
               throw new Error('登录已失效');
             }
             return response.json().catch(function() { return {}; }).then(function(data) {
+              if (data.restart_required) showStorageHandoff(data.detail || data.message);
               if (!response.ok) {
                 var detail = data.detail;
                 if (detail && typeof detail === 'object') {
@@ -392,6 +396,21 @@
             });
           });
         }
+        function showStorageHandoff(message) {
+          var banner = document.getElementById('storage-handoff-banner');
+          banner.hidden = false;
+          banner.textContent = (message || '存储位置已切换，请重启程序后继续') + '。当前内容可以继续查看，变更和自动任务已暂停。';
+        }
+        function checkStorageHandoff() {
+          fetch('/api/runtime-state').then(function(response) {
+            if (!response.ok) return null;
+            return response.json();
+          }).then(function(state) {
+            if (state && state.read_only) showStorageHandoff(state.message);
+          }).catch(function() {});
+        }
+        checkStorageHandoff();
+        setInterval(checkStorageHandoff, 15000);
       </script>
       {% include "section_navigation.html" %}
       {% include "bookmark_actions.html" %}

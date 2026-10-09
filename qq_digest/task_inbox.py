@@ -13,6 +13,10 @@ from .archive import Archive
 from .report_sources import load_verified_report_sources
 
 
+class TaskConflictError(ValueError):
+    """The submitted task draft no longer matches the stored revision."""
+
+
 class TaskInboxService:
     def __init__(self, archive: Archive, *, timezone_name: str):
         self.archive = archive
@@ -164,19 +168,43 @@ class TaskInboxService:
 
     def update_task(self, task_id: int, *, title: str, owner: str = "",
                     due_date: str | None = None, status: str = "open",
+                    expected_revision: int,
                     now: datetime | None = None) -> dict:
         if status not in {"open", "completed", "canceled"}:
             raise ValueError("状态无效")
+        if type(expected_revision) is not int or expected_revision < 0:
+            raise ValueError("待办版本必须是非负整数")
         title, owner, due_date = self._fields(title, owner, due_date)
         timestamp = self._now(now).isoformat()
         with self.archive.transaction():
             cursor = self.archive.connection.execute(
-                "UPDATE tasks SET title=?,owner=?,due_date=?,status=?,updated_at=? WHERE task_id=?",
-                (title, owner, due_date, status, timestamp, task_id),
+                "UPDATE tasks SET title=?,owner=?,due_date=?,status=?,updated_at=?,revision=revision+1 "
+                "WHERE task_id=? AND revision=?",
+                (title, owner, due_date, status, timestamp, task_id, expected_revision),
+            )
+            if cursor.rowcount != 1:
+                if self.archive.connection.execute(
+                    "SELECT 1 FROM tasks WHERE task_id=?", (task_id,)
+                ).fetchone():
+                    raise TaskConflictError("待办已被修改，请重新读取最新内容后核对草稿")
+                raise ValueError("待办不存在")
+            task = self._get_task(task_id, now=now)
+        return task
+
+    def set_task_status(self, task_id: int, *, status: str,
+                        now: datetime | None = None) -> dict:
+        if status not in {"open", "completed", "canceled"}:
+            raise ValueError("状态无效")
+        timestamp = self._now(now).isoformat()
+        with self.archive.transaction():
+            cursor = self.archive.connection.execute(
+                "UPDATE tasks SET status=?,updated_at=?,revision=revision+1 WHERE task_id=?",
+                (status, timestamp, task_id),
             )
             if cursor.rowcount != 1:
                 raise ValueError("待办不存在")
-        return self._get_task(task_id, now=now)
+            task = self._get_task(task_id, now=now)
+        return task
 
     def _get_task(self, task_id: int, *, now: datetime | None = None) -> dict:
         row = self.archive.connection.execute(
@@ -196,6 +224,7 @@ class TaskInboxService:
         return {
             "task_id": row["task_id"], "title": row["title"], "owner": row["owner"],
             "due_date": due_date, "status": row["status"], "due_bucket": bucket,
+            "revision": row["revision"],
             "group_id": row["group_id"], "group_name": row["group_name"] or str(row["group_id"]),
             "source_ids": json.loads(row["source_ids"]),
             "source_report_id": row["source_report_id"],

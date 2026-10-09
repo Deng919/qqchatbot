@@ -65,6 +65,19 @@ def test_candidates_requires_login(web_client):
     assert response.headers["location"] == "/login"
 
 
+def test_group_attachment_flags_survive_reload_and_unrelated_edit(web_client):
+    client, _, _ = web_client
+    client.post('/login', data={'password': 'password123'})
+    assert client.patch('/api/groups/123', json={'read_images': True, 'read_files': True}).status_code == 200
+    group = client.get('/api/groups').json()['groups'][0]
+    assert group['read_images'] is True
+    assert group['read_files'] is True
+    assert client.patch('/api/groups/123', json={'category': 'study'}).status_code == 200
+    reloaded = client.get('/api/groups').json()['groups'][0]
+    assert reloaded['category'] == 'study'
+    assert reloaded['read_images'] is True and reloaded['read_files'] is True
+
+
 def test_feature_switches_auth_validation_routes_and_reopen(web_client):
     client, candidate_id, _ = web_client
     assert client.get('/api/features').status_code == 401
@@ -454,7 +467,7 @@ def test_task_inbox_requires_login_and_supports_confirmation_and_edit(web_client
         "group_id": 123, "msg_id": "m1", "title": "任务", "owner": "",
     }).status_code == 401
     assert client.patch("/api/tasks/1", json={
-        "title": "任务", "owner": "", "status": "open",
+        "title": "任务", "owner": "", "status": "open", "expected_revision": 0,
     }).status_code == 401
 
     today = datetime.now(ZoneInfo("Asia/Shanghai")).date().isoformat()
@@ -494,6 +507,7 @@ def test_task_inbox_requires_login_and_supports_confirmation_and_edit(web_client
     assert client.get("/api/tasks").json()["counts"]["today"] == 1
     edited = client.patch(f"/api/tasks/{task['task_id']}", json={
         "title": "已提交", "owner": "小王", "due_date": today, "status": "completed",
+        "expected_revision": task['revision'],
     })
     assert edited.status_code == 200
     assert edited.json()["task"]["status"] == "completed"

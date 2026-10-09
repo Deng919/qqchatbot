@@ -100,14 +100,18 @@ class UsageService:
         self.now=now or (lambda:datetime.now(timezone.utc))
 
     @contextmanager
-    def _db(self):
-        self.path.parent.mkdir(parents=True,exist_ok=True)
-        db=sqlite3.connect(self.path,timeout=30)
+    def _db(self, *, read_only=False):
+        if not read_only:self.path.parent.mkdir(parents=True,exist_ok=True)
+        db=sqlite3.connect(f'{self.path.resolve().as_uri()}?mode=ro',uri=True) if read_only and self.path.is_file() else sqlite3.connect(':memory:' if read_only else self.path,timeout=30)
         db.row_factory=sqlite3.Row
         try:
-            db.executescript(SCHEMA)
-            db.execute('INSERT OR IGNORE INTO ai_usage_settings(singleton,timezone) VALUES(1,?)',(self.timezone_name,))
-            db.commit()
+            initialized=db.execute("SELECT 1 FROM sqlite_master WHERE name='ai_usage_settings'").fetchone()
+            if read_only and not initialized:
+                db.close();db=sqlite3.connect(':memory:');db.row_factory=sqlite3.Row
+            if not read_only or not initialized:
+                db.executescript(SCHEMA)
+                db.execute('INSERT OR IGNORE INTO ai_usage_settings(singleton,timezone) VALUES(1,?)',(self.timezone_name,))
+                db.commit()
             yield db
         finally:db.close()
 
@@ -166,15 +170,15 @@ class UsageService:
             db.execute("UPDATE ai_usage_attempts SET status='failed' WHERE attempt_id=? AND status='success'",(attempt_id,))
             db.commit()
 
-    def snapshot(self):
-        with self._db() as db:
-            db.execute('BEGIN IMMEDIATE')
+    def snapshot(self, *, read_only=False):
+        with self._db(read_only=True) if read_only else self._db() as db:
+            if not read_only:db.execute('BEGIN IMMEDIATE')
             now=self._time()
-            db.execute("UPDATE ai_usage_attempts SET status='unknown' WHERE status='pending' AND deadline<?",(now.isoformat(),))
+            if not read_only:db.execute("UPDATE ai_usage_attempts SET status='unknown' WHERE status='pending' AND deadline<?",(now.isoformat(),))
             settings=self._settings(db)
             month=now.astimezone(ZoneInfo(settings['timezone'])).strftime('%Y-%m')
-            rows=db.execute('SELECT provider,model,status,usage,rates FROM ai_usage_attempts WHERE month=?',(month,)).fetchall()
-            db.commit()
+            rows=db.execute("SELECT provider,model,CASE WHEN status='pending' AND deadline<? THEN 'unknown' ELSE status END AS status,usage,rates FROM ai_usage_attempts WHERE month=?",(now.isoformat(),month)).fetchall()
+            if not read_only:db.commit()
         def empty():
             return dict(calls=0,successful=0,failed=0,unknown=0,pending=0,input_tokens=0,output_tokens=0,
                 usage_unknown=0,cost_unknown=0,estimated_cost=None)

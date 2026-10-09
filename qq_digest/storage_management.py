@@ -40,9 +40,10 @@ class StorageManager:
     @property
     def owner(self): return self.config.data_dir.resolve()
 
-    def snapshot(self):
+    def snapshot(self, *, read_only=False):
         return {'inventory': inventory(self.config, self.backup_root, self.temp_root),
-                'policy': self.policy.settings(), 'last_result': self.policy.last_result()}
+                'policy': self.policy.settings(read_only=read_only),
+                'last_result': self.policy.last_result(read_only=read_only)}
 
     def update_policy(self, values, revision):
         with activity_lock(self.owner), root_lock(self.config.archive_path.parent):

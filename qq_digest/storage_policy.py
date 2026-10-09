@@ -59,14 +59,21 @@ class StoragePolicy:
         self.now = now or (lambda: datetime.now(timezone.utc))
 
     @contextmanager
-    def _db(self):
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        db = sqlite3.connect(self.path, timeout=30)
+    def _db(self, *, read_only=False):
+        if not read_only:
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+        db = sqlite3.connect(f'{self.path.resolve().as_uri()}?mode=ro', uri=True) if read_only and self.path.is_file() else sqlite3.connect(':memory:' if read_only else self.path, timeout=30)
         db.row_factory = sqlite3.Row
         try:
-            db.executescript(SCHEMA)
-            db.execute('INSERT OR IGNORE INTO storage_retention_settings(singleton) VALUES(1)')
-            db.commit()
+            initialized = db.execute("SELECT 1 FROM sqlite_master WHERE name='storage_retention_settings'").fetchone()
+            if read_only and not initialized:
+                db.close()
+                db = sqlite3.connect(':memory:')
+                db.row_factory = sqlite3.Row
+            if not read_only or not initialized:
+                db.executescript(SCHEMA)
+                db.execute('INSERT OR IGNORE INTO storage_retention_settings(singleton) VALUES(1)')
+                db.commit()
             yield db
         finally:
             db.close()
@@ -84,8 +91,8 @@ class StoragePolicy:
         row['enabled'] = bool(row['enabled'])
         return row
 
-    def settings(self):
-        with self._db() as db:
+    def settings(self, *, read_only=False):
+        with self._db(read_only=read_only) as db:
             return self._settings(db)
 
     def update(self, values, expected_revision):
@@ -133,8 +140,8 @@ class StoragePolicy:
             db.commit()
         return dict(clean, recorded_at=timestamp, automatic=automatic)
 
-    def last_result(self):
-        with self._db() as db:
+    def last_result(self, *, read_only=False):
+        with self._db(read_only=read_only) as db:
             row = db.execute('SELECT recorded_at,automatic,result_json FROM storage_cleanup_records '
                              'ORDER BY record_id DESC LIMIT 1').fetchone()
             if row is None:

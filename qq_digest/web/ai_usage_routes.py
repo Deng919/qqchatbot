@@ -29,7 +29,7 @@ def add_ai_usage_routes(app,*,config,require_login,operations):
     def snapshot(request):
         cfg=config(request)
         if cfg is None:raise HTTPException(503,'AI 配置不可用')
-        result=usage_for(cfg).snapshot()
+        result=usage_for(cfg).snapshot(read_only=True)
         try:origin=provider_key(cfg.ai.base_url)
         except ValueError:origin=None
         result['current_model']={'provider':origin,'model':cfg.ai.model}

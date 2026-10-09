@@ -4,13 +4,15 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from datetime import date, datetime, time, timedelta
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
 
 from .archive import Archive
 from .models import NormalizedMessage
+from .report_regeneration import report_window
+from .report_revisions import ReportRevisionService
 from .sender_identity import sender_fields
 
 
@@ -29,6 +31,11 @@ class ReportEvidence:
     end_date: str
     markdown_path: Path
     messages: list[NormalizedMessage]
+    markdown_text: str | None = None
+    version: int = 0
+    window_start: datetime | None = None
+    window_end: datetime | None = None
+    window_end_inclusive: bool = False
 
 
 @dataclass(frozen=True)
@@ -42,23 +49,33 @@ class SelectedContext:
 def load_report_evidence(
     archive: Archive, kind: str, report_id: int, timezone: ZoneInfo
 ) -> ReportEvidence:
+    revisions = ReportRevisionService(archive)
+    try:
+        row = revisions.report(kind, report_id)
+        version = revisions.current_version(kind, report_id)
+        snapshot = revisions.version(kind, report_id, version)
+    except LookupError as exc:
+        raise ReportNotFound(str(exc)) from exc
+    except (ValueError, TypeError) as exc:
+        raise NoReportEvidence("报告版本时间窗损坏，无法安全问答") from exc
     if kind == "daily":
-        row = archive.connection.execute(
-            "SELECT * FROM reports WHERE report_id=?", (report_id,)
-        ).fetchone()
-        if row is None:
-            raise ReportNotFound("报告不存在")
         start_date = end_date = row["report_date"]
-    elif kind == "range":
-        row = archive.manual_report_by_id(report_id)
-        if row is None:
-            raise ReportNotFound("报告不存在")
-        start_date, end_date = row["start_date"], row["end_date"]
     else:
-        raise ReportNotFound("报告类型不存在")
-    start = datetime.combine(date.fromisoformat(start_date), time.min, timezone)
-    end = datetime.combine(date.fromisoformat(end_date) + timedelta(days=1), time.min, timezone)
-    messages = archive.messages_in_window(int(row["group_id"]), start, end)
+        start_date, end_date = row["start_date"], row["end_date"]
+    payload = snapshot['payload']
+    try:
+        if payload is not None and not isinstance(payload, dict):
+            raise ValueError('Invalid report payload')
+        start, end = report_window(row, kind, payload, timezone)
+    except (ValueError, TypeError, OverflowError) as exc:
+        raise NoReportEvidence("报告版本时间窗损坏，无法安全问答") from exc
+    # Keep the original generation semantics: precise daily cutoffs were
+    # inclusive; date-only legacy reports and range reports used [start,end).
+    inclusive = kind == 'daily' and payload is not None and 'window_end' in payload
+    if payload and 'window_end_inclusive' in payload:
+        inclusive = payload['window_end_inclusive'] is True
+    messages = (archive.messages_between(int(row['group_id']), start, end) if inclusive
+                else archive.messages_in_window(int(row['group_id']), start, end))
     from .attachments import cached_messages
     messages=cached_messages(archive,messages)
     if not messages:
@@ -69,6 +86,11 @@ def load_report_evidence(
         end_date=end_date,
         markdown_path=Path(row["markdown_path"]),
         messages=messages,
+        markdown_text=snapshot['markdown'],
+        version=version,
+        window_start=start,
+        window_end=end,
+        window_end_inclusive=inclusive,
     )
 
 
@@ -134,10 +156,13 @@ def answer_report_question(
     )
     if not context.messages:
         raise NoReportEvidence("消息过长，无法在上下文限制内提供原始证据")
-    try:
-        report_text = evidence.markdown_path.read_text(encoding="utf-8")[:8000]
-    except (OSError, UnicodeError):
-        report_text = "报告文件不可读；仅根据原始消息回答。"
+    report_text = (evidence.markdown_text[:8000] if evidence.markdown_text is not None
+                   else "报告正文不可读；仅根据原始消息回答。")
+    window = ''
+    if getattr(evidence, 'window_start', None) is not None:
+        boundary = '包含截止时刻' if evidence.window_end_inclusive else '不包含截止时刻'
+        window = (f"报告版本：{evidence.version}；精确时间窗："
+                  f"{evidence.window_start.isoformat()} 至 {evidence.window_end.isoformat()}（{boundary}）\n")
     prompt = [
         {
             "role": "system",
@@ -154,6 +179,7 @@ def answer_report_question(
             "role": "user",
             "content": (
                 f"报告范围：群 {evidence.group_id}，{evidence.start_date} 至 {evidence.end_date}\n"
+                f"{window}"
                 f"报告摘要（非证据）：\n{report_text}\n\n"
                 f"原始消息（事实证据）：\n{context.text}\n\n"
                 f"最近对话：\n{history[-6:]}\n\n本次问题：{question}"

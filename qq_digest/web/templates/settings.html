@@ -157,7 +157,7 @@
   if(savedCategory==='automatic')setResult('automatic-result','自动运行设置已保存');
   function refreshAutomaticSchedule(){return api('GET','/api/scheduler').then(function(data){document.getElementById('automatic-schedule').textContent='每日摘要时间 '+data.schedule+'（'+data.timezone+'） · 消息更新间隔 '+data.collection.interval_minutes+' 分钟。'+(data.setup_paused?'首次设置尚未完成，自动任务暂停。':!data.collection.enabled?'自动更新未运行，请检查群聊和数据源设置。':'');}).catch(function(){document.getElementById('automatic-schedule').textContent='运行状态读取失败。';});}
   refreshAutomaticSchedule();
-  var restorePreview = null;
+  var restorePreview = null, restorePreviewEpoch = 0, restoreInputPath = '', restoreBusy = false;
   function settingsError(error) { toast(error && error.message ? error.message : String(error), 'error'); }
   function setResult(id, message) { var node = document.getElementById(id); node.textContent = message; node.hidden = false; }
   function addRecentBackup(item) {
@@ -171,6 +171,8 @@
     while (recent.options.length > 11) recent.remove(recent.options.length - 1);
   }
   function resetRestorePreview() {
+    restorePreviewEpoch += 1;
+    restoreInputPath = '';
     restorePreview = null;
     document.getElementById('restore-preview').hidden = true;
     document.getElementById('restore-steps').hidden = true;
@@ -178,7 +180,12 @@
     document.getElementById('restore-data').disabled = true;
   }
   function updateRestoreReady() {
-    document.getElementById('restore-data').disabled = !restorePreview || !document.getElementById('restore-destination').value.trim() || !document.getElementById('confirm-restore').checked;
+    document.getElementById('restore-data').disabled = restoreBusy || !restorePreview || document.getElementById('restore-file').value.trim() !== restoreInputPath || !document.getElementById('restore-destination').value.trim() || !document.getElementById('confirm-restore').checked;
+  }
+  function setRestoreBusy(busy) {
+    restoreBusy = busy;
+    ['restore-file','recent-backups','choose-backup','preview-backup','restore-destination','choose-restore-folder','confirm-restore'].forEach(function(id) { document.getElementById(id).disabled = busy; });
+    updateRestoreReady();
   }
   function initDesktopSettings() {
     api('GET', '/api/desktop-settings').then(function(data) {
@@ -261,8 +268,7 @@
     api('POST', '/api/desktop-settings/backup', {}).then(function(data) {
       setResult('backup-result', '备份已保存：' + data.path);
       addRecentBackup(data);
-      document.getElementById('restore-file').value = data.path;
-      resetRestorePreview();
+      if (!restoreBusy) { document.getElementById('restore-file').value = data.path; resetRestorePreview(); }
       document.getElementById('open-backup').disabled = false;
       toast('数据备份完成', 'success');
     }).catch(settingsError).finally(function() { button.disabled = false; });
@@ -283,41 +289,48 @@
   });
   document.getElementById('restore-file').addEventListener('input', resetRestorePreview);
   document.getElementById('choose-backup').addEventListener('click', function() {
+    if (restoreBusy) return;
     var button = this; button.disabled = true;
     api('POST', '/api/desktop-settings/choose-backup', {}).then(function(data) {
-      if (data.path) { document.getElementById('restore-file').value = data.path; resetRestorePreview(); }
-    }).catch(settingsError).finally(function() { button.disabled = false; });
+      if (data.path && !restoreBusy) { document.getElementById('restore-file').value = data.path; resetRestorePreview(); }
+    }).catch(settingsError).finally(function() { if (!restoreBusy) button.disabled = false; });
   });
   document.getElementById('preview-backup').addEventListener('click', function() {
+    if (restoreBusy) return;
     var path = document.getElementById('restore-file').value.trim();
     if (!path) { toast('请先选择备份文件'); return; }
     var button = this; button.disabled = true; resetRestorePreview();
+    var epoch = restorePreviewEpoch;
     api('POST', '/api/desktop-settings/restore-preview', {path: path}).then(function(data) {
+      if (epoch !== restorePreviewEpoch || document.getElementById('restore-file').value.trim() !== path) return;
       restorePreview = data;
-      var summary = '校验通过 · ' + (Number(data.size_bytes || 0) / 1048576).toFixed(1) + ' MB · ' + data.messages + ' 条消息 · ' + data.reports + ' 份报告 · ' + data.knowledge_items + ' 条知识 · ' + data.file_count + ' 个文件';
+      restoreInputPath = path;
+      var summary = '已校验备份：' + data.path + '\n校验通过 · ' + (Number(data.size_bytes || 0) / 1048576).toFixed(1) + ' MB · ' + data.messages + ' 条消息 · ' + data.reports + ' 份报告 · ' + data.knowledge_items + ' 条知识 · ' + data.file_count + ' 个文件';
       if (data.legacy) summary += '\n旧版备份没有逐文件哈希；已检查 ZIP 和数据库完整性。';
       document.getElementById('restore-preview').textContent = summary;
       document.getElementById('restore-preview').hidden = false;
       document.getElementById('restore-steps').hidden = false;
       updateRestoreReady();
-    }).catch(settingsError).finally(function() { button.disabled = false; });
+    }).catch(function(error) { if (epoch === restorePreviewEpoch) settingsError(error); }).finally(function() { if (!restoreBusy) button.disabled = false; });
   });
   document.getElementById('choose-restore-folder').addEventListener('click', function() {
+    if (restoreBusy) return;
     var button = this; button.disabled = true;
     api('POST', '/api/desktop-settings/choose-folder', {kind: 'storage'}).then(function(data) {
-      if (data.path) { document.getElementById('restore-destination').value = data.path; updateRestoreReady(); }
-    }).catch(settingsError).finally(function() { button.disabled = false; });
+      if (data.path && !restoreBusy) { document.getElementById('restore-destination').value = data.path; updateRestoreReady(); }
+    }).catch(settingsError).finally(function() { if (!restoreBusy) button.disabled = false; });
   });
   document.getElementById('restore-destination').addEventListener('input', updateRestoreReady);
   document.getElementById('confirm-restore').addEventListener('change', updateRestoreReady);
   document.getElementById('restore-data').addEventListener('click', function() {
-    if (!restorePreview) return;
-    var button = this; button.disabled = true;
+    updateRestoreReady();
+    if (document.getElementById('restore-data').disabled) return;
+    setRestoreBusy(true);
     api('POST', '/api/desktop-settings/restore', {path: restorePreview.path, destination: document.getElementById('restore-destination').value.trim(), sha256: restorePreview.sha256}).then(function(data) {
       setResult('restore-result', '已恢复到 ' + data.path + '；原数据备份：' + data.safety_backup + '。重启后切换。');
       document.getElementById('restore-steps').hidden = true;
       toast('数据已恢复，重启后生效', 'success');
-    }).catch(function(error) { settingsError(error); updateRestoreReady(); });
+    }).catch(function(error) { settingsError(error); setRestoreBusy(false); });
   });
   document.getElementById('export-reports').disabled = true;
   document.getElementById('choose-export').disabled = true;

@@ -93,3 +93,27 @@ def test_page_uses_configured_timezone_and_search_navigation(browsing_client):
     page=client.get('/archive-qa').text
     assert 'Pacific/Kiritimati' in page
     assert 'id="nav-search" aria-current="page"' in page
+
+
+def test_preview_endpoint_is_read_only_with_unread_attachments(browsing_client, monkeypatch):
+    from qq_digest.models import GroupConfig, NormalizedMessage
+    client, ar, _ = browsing_client
+    login(client); enable(client)
+    ar.upsert_groups([GroupConfig(group_id=11, name='研发群', read_images=True)])
+    stamp = datetime(2026, 10, 5, 12, tzinfo=timezone.utc)
+    add_message(ar, 'evidence', stamp, text='接口配置采用方案A')
+    ar.ingest([NormalizedMessage(msg_id='unread', group_id=11, timestamp=stamp,
+        collected_at=stamp, text='无关图片', content_json={'attachments': [{'key': 'image', 'kind': 'image'}]})])
+    def forbidden(*args, **kwargs):
+        raise AssertionError('Preview must not read attachments or invoke AI')
+    monkeypatch.setattr('qq_digest.attachments.AttachmentService.prepare', forbidden)
+    monkeypatch.setattr('qq_digest.collector.ntqq.NTQQCollector.collect', forbidden)
+    monkeypatch.setattr('qq_digest.web.archive_qa_routes.AIClient', forbidden)
+    before = ar.connection.total_changes
+
+    result = client.post('/api/archive-qa/preview', json=payload())
+
+    assert result.status_code == 200
+    assert [row['msg_id'] for row in result.json()['messages']] == ['evidence']
+    assert ar.connection.total_changes == before
+    assert '只查询归档文字和已有附件识别缓存' in client.get('/archive-qa').text

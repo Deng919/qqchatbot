@@ -1,6 +1,7 @@
 """Scoped archive questions with explicit preview and bounded ephemeral tickets."""
 import asyncio
 import hashlib
+from contextlib import nullcontext
 from datetime import date, datetime, timedelta
 
 from fastapi import Depends, HTTPException, Request
@@ -37,9 +38,9 @@ def add_archive_qa_routes(app, *, archive, config, templates, require_login, ope
     def owner(request):
         return hashlib.sha256(request.cookies.get('qq_digest_session','').encode()).hexdigest()
 
-    async def execute(action):
+    async def execute(action, *, read_only=False):
         def worker():
-            with operations.claim('archive_qa'):return action()
+            with operations.claim('archive_qa') if not read_only else nullcontext():return action()
         try:return await asyncio.to_thread(worker)
         except LookupError as exc:raise HTTPException(410,str(exc)) from exc
         except OperationBusy as exc:raise HTTPException(409,str(exc)) from exc
@@ -86,4 +87,4 @@ def add_archive_qa_routes(app, *, archive, config, templates, require_login, ope
 
     @app.get('/api/archive-qa/sources/{ticket}/{source_id}',dependencies=[Depends(require_login)])
     async def source(request:Request,ticket:str,source_id:str):
-        return await execute(lambda:service.source(ticket,owner(request),source_id))
+        return await execute(lambda:service.source(ticket,owner(request),source_id), read_only=True)
