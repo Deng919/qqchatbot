@@ -3,6 +3,7 @@ function node(){return {value:'',checked:false,hidden:false,open:false,disabled:
 const elements={},requests=[],get=id=>elements[id]??=node(),tick=()=>new Promise(r=>setImmediate(r));
 const scope={console,URLSearchParams,Date,Number,Array,Object,Promise,String,Math,location:{search:''},history:{replaceState(){}},document:{getElementById:get,querySelectorAll(){return []},createElement(tag){let n=node();n.tag=tag;return n}},api(method,url,body){return new Promise((resolve,reject)=>requests.push({method,url,body,resolve,reject}))}};
 vm.createContext(scope);
+vm.runInContext(fs.readFileSync('qq_digest/web/templates/group_selector.html','utf8').match(/<script>([\s\S]*?)<\/script>/)[1],scope);
 vm.runInContext(fs.readFileSync('qq_digest/web/templates/reminders_script.html','utf8').match(/<script>([\s\S]*?)<\/script>/)[1],scope);
 const list={items:[],total:0,unread:0,queued:0,page:1,page_size:20};
 (async()=>{

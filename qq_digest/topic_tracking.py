@@ -12,6 +12,7 @@ from functools import wraps
 from pathlib import Path
 
 from .message_context import message_context
+from .group_selection import normalize_group_selection
 from .report_revisions import ReportRevisionService
 from .report_sources import load_verified_report_sources
 
@@ -329,23 +330,25 @@ class TopicTrackingService:
                 if c['section']==label and set(c['source_ids']) & set(source_ids)]
         return result
 
-    def _topic(self, row):
+    def _topic(self, row, *, discussion_filters=(), filter_params=()):
         topic_id = row['topic_id']
+        where = ' AND '.join(('d.topic_id=?', *discussion_filters))
+        params = (topic_id, *filter_params)
         result = {key:row[key] for key in ('topic_id','title','status','revision')}
         stats = self.db.execute('SELECT COUNT(*) AS discussion_count, MIN(start_date) AS first_date, '
-            'MAX(end_date) AS last_date FROM topic_discussions WHERE topic_id=?',(topic_id,)).fetchone()
+            f'MAX(end_date) AS last_date FROM topic_discussions d WHERE {where}',params).fetchone()
         result.update(dict(stats))
         result['groups'] = [dict(g) for g in self.db.execute('SELECT DISTINCT g.group_id,g.name '
-            'FROM groups g JOIN topic_discussions d ON d.group_id=g.group_id WHERE d.topic_id=? '
-            'ORDER BY g.group_id',(topic_id,))]
+            f'FROM groups g JOIN topic_discussions d ON d.group_id=g.group_id WHERE {where} '
+            'ORDER BY g.group_id',params)]
         result.update(latest_progress='',latest_conclusions=[],open_questions=[])
         # Recent available episodes only; older versions remain on the timeline.
         for section,target in [(None,'latest_progress'),('conclusions','latest_conclusions'),
                                ('open_questions','open_questions')]:
             predicate = "d.summary!=''" if section is None else f"json_array_length(d.evidence,'$.{section}')>0"
             latest = self.db.execute('SELECT d.*,g.name AS group_name FROM topic_discussions d '
-                'JOIN groups g ON g.group_id=d.group_id WHERE topic_id=? AND is_current=1 AND available=1 '
-                f'AND {predicate} ORDER BY end_date DESC,discussion_id DESC',(topic_id,))
+                f'JOIN groups g ON g.group_id=d.group_id WHERE {where} AND is_current=1 AND available=1 '
+                f'AND {predicate} ORDER BY end_date DESC,discussion_id DESC',params)
             for episode in latest:
                 d = self._discussion(episode)
                 if d['evidence_status']=='unavailable':
@@ -361,7 +364,7 @@ class TopicTrackingService:
 
     @synchronized
     def list_topics(self, q='', group_id=None, date_from=None, date_to=None,
-                    status='all', page=1, page_size=20):
+                    status='all', page=1, page_size=20, *, group_ids=None):
         if not isinstance(q,str) or len(q)>200:
             raise ValueError('搜索词不能超过 200 字')
         if status not in {'all','tracking','archived'}:
@@ -370,13 +373,16 @@ class TopicTrackingService:
         if start and end and start>end:
             raise ValueError('开始日期不能晚于结束日期')
         clauses,params=['d.topic_id=t.topic_id'],[]
-        if group_id is not None:
-            _integer(group_id,'群号',minimum=-(2**63))
-            clauses.append('d.group_id=?');params.append(group_id)
+        selected = normalize_group_selection(group_id, group_ids)
+        if selected:
+            clauses.append('d.group_id IN (' + ','.join('?' for _ in selected) + ')')
+            params.extend(selected)
         if start:
             clauses.append('d.end_date>=?');params.append(start)
         if end:
             clauses.append('d.start_date<=?');params.append(end)
+        scope_where = ' AND '.join(clauses)
+        scope_params = tuple(params)
         where='EXISTS (SELECT 1 FROM topic_discussions d WHERE '+ ' AND '.join(clauses)+')'
         if q.strip():
             where+=' AND instr(lower(t.title),lower(?))>0';params.append(q.strip())
@@ -385,9 +391,10 @@ class TopicTrackingService:
         total=self.db.execute(f'SELECT COUNT(*) FROM tracked_topics t WHERE {where}',params).fetchone()[0]
         page,page_size=_pagination(page,page_size,total)
         rows=self.db.execute(f'''SELECT t.* FROM tracked_topics t WHERE {where}
-            ORDER BY (SELECT MAX(end_date) FROM topic_discussions d WHERE d.topic_id=t.topic_id) DESC,
-            t.topic_id DESC LIMIT ? OFFSET ?''',(*params,page_size,(page-1)*page_size))
-        return dict(topics=[self._topic(row) for row in rows],total=total,page=page,page_size=page_size)
+            ORDER BY (SELECT MAX(end_date) FROM topic_discussions d WHERE {scope_where}) DESC,
+            t.topic_id DESC LIMIT ? OFFSET ?''',(*params,*scope_params,page_size,(page-1)*page_size))
+        return dict(topics=[self._topic(row, discussion_filters=clauses[1:], filter_params=scope_params)
+            for row in rows],total=total,page=page,page_size=page_size)
 
     @synchronized
     def detail(self, topic_id, page=1, page_size=20):

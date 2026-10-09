@@ -711,6 +711,8 @@ def create_app(
     from .failure_ignore_routes import add_failure_ignore_routes
     add_failure_ignore_routes(app, archive=_archive, require_login=require_login)
     from .attachment_routes import add_attachment_routes
+    from .group_batch_routes import add_group_batch_routes
+    add_group_batch_routes(app,archive=_archive,config=_config,require_login=require_login,operations=operations)
     add_attachment_routes(app,archive=_archive,config=_config,require_login=require_login,operations=operations)
     from .ai_usage_routes import add_ai_usage_routes
     add_ai_usage_routes(app,config=_config,require_login=require_login,operations=operations)
@@ -730,7 +732,7 @@ def create_app(
         config=config, templates=templates, require_login=require_login, operations=operations)
     add_summary_generation_routes(app, archive=archive, config=config, require_login=require_login,
                                   run_summary=_run_manual_summary_task, operations=operations)
-    add_history_inspection_routes(app, archive=archive, config=config,
+    add_history_inspection_routes(app, archive=_archive, config=_config,
                                   operations=operations, require_login=require_login)
     add_report_revision_routes(app, archive=archive, config=config,
                                operations=operations, require_login=require_login)
@@ -1846,6 +1848,7 @@ def create_app(
         request: Request,
         status: str = "pending",
         group_id: int | None = None,
+        group_ids: list[int] | None = Query(None),
         candidate_type: str | None = None,
         date_from: str | None = None,
         date_to: str | None = None,
@@ -1856,13 +1859,14 @@ def create_app(
             items = candidates.query(
                 status=status,
                 group_id=group_id,
+                group_ids=group_ids,
                 candidate_type=candidate_type,
                 date_from=date_from,
                 date_to=date_to,
                 q=q,
             )
         except ValueError as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
         group_names = {
             group.group_id: group.name for group in _archive(request).all_groups()
         }

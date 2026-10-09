@@ -4,6 +4,7 @@ function element(){return {value:'',textContent:'',hidden:true,options:[],childr
 const get=id=>nodes[id]??=element();
 const scope={console,Array,String,Date,Number,encodeURIComponent,document:{getElementById:get,createElement:element},api(method,url,payload){return new Promise((resolve,reject)=>requests.push({method,url,payload,resolve,reject}));}};
 vm.createContext(scope);
+vm.runInContext(fs.readFileSync('qq_digest/web/templates/group_selector.html','utf8').match(/<script>([\s\S]*?)<\/script>/)[1],scope);
 const script=fs.readFileSync('qq_digest/web/templates/archive_qa_script.html','utf8').replace(/<\/?script>/g,'');
 vm.runInContext(script.slice(0,script.indexOf('\n(function(){')),scope);
 scope.archiveQAGroupsReady=true;get('qa-question').value='接口配置？';get('qa-from').value='2026-10-06';get('qa-to').value='2026-10-06';get('qa-group').options=[{value:'',textContent:'全部群'}];
@@ -13,6 +14,7 @@ const data={ticket:'ticket-test',scope:{group_id:null,date_from:'2026-10-06',dat
  assert.equal(scope.archiveQATicket,null,'changed inputs discard delayed preview');
  pending=scope.archiveQAPreview({preventDefault(){}});requests.shift().resolve(data);await pending;
  assert.equal(scope.archiveQATicket,data.ticket);assert.equal(get('qa-send').disabled,false);
+ scope.qaInvalidate();assert.equal(get('qa-send').disabled,true,'scope change disables sending immediately');scope.archiveQATicket=data.ticket;scope.qaControls();
  pending=scope.archiveQAAsk();request=requests.shift();scope.qaInvalidate();request.resolve({answer:'旧答案',sources:[],context_message_count:1});await pending;
  assert.equal(get('qa-result').hidden,true,'changed inputs discard delayed answers');
  scope.archiveQATicket=data.ticket;pending=scope.archiveQASource(data.ticket,'s1');request=requests.shift();scope.qaInvalidate();request.resolve({group_name:'群',timestamp:'2026-10-06',text:'旧来源',scope:data.scope});await pending;

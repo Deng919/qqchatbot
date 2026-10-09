@@ -7,6 +7,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from .archive import Archive
+from .group_selection import normalize_group_selection
 from .message_search import MESSAGE_TYPES, search_tokens
 from .sender_identity import sender_fields
 
@@ -43,6 +44,7 @@ def search_archive(
     date_from: date | None = None, date_to: date | None = None,
     page: int = 1, page_size: int = 20, timezone_name: str = "Asia/Shanghai",
     sender_qq: int | None = None, message_type: str | None = None,
+    group_ids: list[int] | tuple[int, ...] | None = None,
 ) -> dict:
     query = query.strip()
     if len(query) < 2 or len(query) > 100:
@@ -53,8 +55,7 @@ def search_archive(
         raise ValueError("分页超出有效范围")
     if sender_qq is not None and not 1 <= sender_qq < 2**63:
         raise ValueError("发送人 QQ 号超出有效范围")
-    if group_id is not None and not -(2**63) <= group_id < 2**63:
-        raise ValueError("群号超出有效范围")
+    selected = normalize_group_selection(group_id, group_ids)
     if message_type is not None and message_type not in MESSAGE_TYPES:
         raise ValueError("非法消息类型")
     if kind != 'message' and (sender_qq is not None or message_type is not None):
@@ -80,9 +81,9 @@ def search_archive(
         if message_type is not None:
             clauses.append('m.message_type=?')
             params.append(message_type)
-        if group_id is not None:
-            clauses.append("m.group_id=?")
-            params.append(group_id)
+        if selected:
+            clauses.append('m.group_id IN (' + ','.join('?' for _ in selected) + ')')
+            params.extend(selected)
         start, end = _message_bounds(date_from, date_to, zone)
         if start:
             clauses.append("m.timestamp>=?")
@@ -115,9 +116,9 @@ def search_archive(
     if kind in {"all", "knowledge"}:
         clauses = ["c.status='confirmed'", "EXISTS (SELECT 1 FROM knowledge_items k WHERE k.candidate_id=c.candidate_id)", "(c.title LIKE ? ESCAPE '\\' OR c.content LIKE ? ESCAPE '\\' OR c.reason LIKE ? ESCAPE '\\' OR c.excerpt LIKE ? ESCAPE '\\' OR c.link LIKE ? ESCAPE '\\')"]
         params = [pattern] * 5
-        if group_id is not None:
-            clauses.append("c.group_id=?")
-            params.append(group_id)
+        if selected:
+            clauses.append('c.group_id IN (' + ','.join('?' for _ in selected) + ')')
+            params.extend(selected)
         if date_from:
             clauses.append("c.created_date>=?")
             params.append(date_from.isoformat())
@@ -143,21 +144,20 @@ def search_archive(
             })
 
     if kind in {"all", "report"}:
+        report_scope = (' WHERE r.group_id IN (' + ','.join('?' for _ in selected) + ')') if selected else ''
         report_rows = connection.execute(
             """SELECT 'daily' AS kind, r.report_id AS id, r.group_id, g.name AS group_name,
                       r.report_date AS start_date, r.report_date AS end_date,
                       r.markdown_path, r.created_at AS sort_at
-               FROM reports r JOIN groups g ON g.group_id=r.group_id
+               FROM reports r JOIN groups g ON g.group_id=r.group_id""" + report_scope + """
                UNION ALL
                SELECT 'range', r.manual_report_id, r.group_id, g.name,
                       r.start_date, r.end_date, r.markdown_path, r.updated_at
-               FROM manual_reports r JOIN groups g ON g.group_id=r.group_id
-               ORDER BY sort_at DESC"""
+               FROM manual_reports r JOIN groups g ON g.group_id=r.group_id""" + report_scope + """
+               ORDER BY sort_at DESC""", (*selected, *selected)
         ).fetchall()
         matched_reports = []
         for row in report_rows:
-            if group_id is not None and row["group_id"] != group_id:
-                continue
             if date_from and row["end_date"] < date_from.isoformat():
                 continue
             if date_to and row["start_date"] > date_to.isoformat():

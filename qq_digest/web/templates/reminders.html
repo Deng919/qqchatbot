@@ -26,7 +26,7 @@
     <div class="field"><label for="reminder-name">规则名称</label><input class="input" id="reminder-name" maxlength="100" required></div>
     <div class="field"><label for="reminder-kind">提醒类型</label><select id="reminder-kind" onchange="remindersKind()"><option value="keyword">关键词</option><option value="resource">新资源候选</option><option value="task_due">待办到期</option><option value="failure">运行故障</option></select></div>
     <div class="field" id="reminder-keyword-field"><label for="reminder-keywords">关键词（每行一个，最多 20 个）</label><textarea class="input" id="reminder-keywords" rows="3" placeholder="教程&#10;发布"></textarea></div>
-    <div class="field"><label for="reminder-groups">群范围（不选表示全部群）</label><select id="reminder-groups" multiple size="4"></select></div>
+    <div class="field"><label for="reminder-groups">群范围</label><select id="reminder-groups" data-group-selector="filter" data-group-limit="500" multiple size="4"></select></div>
     <fieldset><legend>提醒渠道</legend><label><input id="reminder-in-app" type="checkbox" checked> 程序内提醒</label> <label><input id="reminder-windows" type="checkbox" checked> Windows 通知</label></fieldset>
     <div class="grid grid-2"><div class="field"><label for="reminder-quiet-start">免打扰开始</label><input class="input" id="reminder-quiet-start" type="time" value="22:00" required></div><div class="field"><label for="reminder-quiet-end">免打扰结束</label><input class="input" id="reminder-quiet-end" type="time" value="08:00" required></div></div>
     <p class="header-meta">起止相同表示全天提醒。关闭程序后暂停；Windows 横幅取决于系统设置。</p>

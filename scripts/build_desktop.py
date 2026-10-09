@@ -21,6 +21,7 @@ TEMPLATES = (
     "summary_generation_script.html",
     "summary_progress_script.html",
     "primary_navigation.html", "section_navigation.html", "group_details.html",
+    "group_selector.html", "group_batch_feedback.html", "group_batch_controls.html",
     "ai_connection_settings.html", "settings_categories_script.html",
     "ai_usage_settings.html", "ai_usage_script.html",
     "storage_management.html", "storage_management_script.html",

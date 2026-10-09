@@ -30,7 +30,7 @@
     document.getElementById('range-time-mode').value=from===dates.end&&to===dates.end?'today':from===dates.start&&to===dates.end?'week':'custom';
     refreshDateHints();
     document.getElementById('range-summary-panel').hidden = false; document.getElementById('range-summary-backdrop').hidden = false;
-    if (!rangeGroupsLoaded&&!rangeGroups.length) loadRangeGroups(); updateRangeSelectionSummary(); document.getElementById('range-group-search').focus();
+    if (!rangeGroupsLoaded&&!rangeGroups.length) loadRangeGroups(); updateRangeSelectionSummary(); var firstControl=document.getElementById('range-group-list').querySelector('summary');if(firstControl)firstControl.focus();else document.querySelector('#range-summary-panel button').focus();
   }
   function closeRangeSummary() {
     document.getElementById('range-summary-panel').hidden = true; document.getElementById('range-summary-backdrop').hidden = true;
@@ -41,21 +41,11 @@
     api('GET', '/api/groups').then(function(d) { rangeGroups = d.groups.filter(function(group) { return group.enabled; });rangeGroupsLoaded=true;renderRangeGroups();updateRangeSelectionSummary(); })
       .catch(function(e) { document.getElementById('range-group-list').textContent='群聊加载失败：'+e.message+'。收起后重新打开可重试。'; }).finally(function(){rangeGroupsLoading=false;});
   }
-  function renderRangeGroups() {
-    var list = document.getElementById('range-group-list'); list.textContent = '';
-    if (!rangeGroups.length) { var empty = document.createElement('div'); empty.className = 'empty'; empty.textContent = '没有已启用群组'; list.appendChild(empty); return; }
-    rangeGroups.forEach(function(group) {
-      var label = document.createElement('label'); label.className = 'range-group-option'; label.dataset.search = (group.name + ' ' + group.group_id).toLowerCase();
-      var checkbox = document.createElement('input'); checkbox.type = 'checkbox'; checkbox.className = 'range-group-checkbox'; checkbox.value = String(group.group_id); checkbox.addEventListener('change', updateRangeSelectionSummary);
-      checkbox.checked=rangePreferredGroup.split(',').includes(String(group.group_id));checkbox.setAttribute('aria-label',group.name+'（'+group.group_id+'）');
-      var name = document.createElement('span'); name.className = 'range-group-name'; name.textContent = group.name;
-      var id = document.createElement('span'); id.className = 'range-group-id'; id.textContent = String(group.group_id);
-      label.appendChild(checkbox); label.appendChild(name); label.appendChild(id); list.appendChild(label);
-    });
-  }
-  function filterRangeGroups() { var query = document.getElementById('range-group-search').value.trim().toLowerCase(); document.querySelectorAll('.range-group-option').forEach(function(item) { item.hidden = Boolean(query && item.dataset.search.indexOf(query) === -1); }); }
-  function selectVisibleRangeGroups(selected) { document.querySelectorAll('.range-group-option:not([hidden]) .range-group-checkbox').forEach(function(input) { input.checked = selected; }); updateRangeSelectionSummary(); }
-  function selectedRangeGroupIds() { return Array.from(document.querySelectorAll('.range-group-checkbox:checked')).map(function(input) { return Number(input.value); }); }
+  var rangeGroupSelector=null;
+  function renderRangeGroups(){var host=document.getElementById('range-group-list');if(!rangeGroupSelector){host.textContent='';var ids=rangePreferredGroup&&rangePreferredGroup!=='__empty__'?rangePreferredGroup.split(',').map(Number):[];rangeGroupSelector=GroupSelector.mount(host,{allowAll:false,selected:ids,groups:rangeGroups,open:true,checkboxClass:'range-group-checkbox',onChange:updateRangeSelectionSummary});}else rangeGroupSelector.setGroups(rangeGroups);}
+  function filterRangeGroups(){if(rangeGroupSelector)rangeGroupSelector.setQuery(document.getElementById('range-group-search').value);}
+  function selectVisibleRangeGroups(selected){if(rangeGroupSelector)rangeGroupSelector.chooseVisible(selected);}
+  function selectedRangeGroupIds(){return rangeGroupSelector?rangeGroupSelector.ids():[];}
   function rangeDayCount() {
     var start = document.getElementById('range-start-date').value, end = document.getElementById('range-end-date').value;
     if (!start || !end) return 0;

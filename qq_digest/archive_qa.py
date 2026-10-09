@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from copy import deepcopy
 from datetime import date
 import hashlib
 import json
@@ -10,6 +11,7 @@ from threading import RLock
 import time
 
 from .message_search import search_tokens
+from .group_selection import normalize_group_selection
 from .report_qa import _terms
 from .search import _like_pattern, _message_bounds, _snippet
 from .sender_identity import sender_fields
@@ -55,15 +57,18 @@ class ArchiveQAService:
             WHERE a.group_id=m.group_id AND a.msg_id=m.msg_id AND a.version=1 AND a.status IN ('success','partial') AND ag.enabled=1
               AND ((a.kind='image' AND ag.read_images=1) OR (a.kind='file' AND ag.read_files=1))), '')"""
 
-    def preview(self, *, owner, question, query='', group_id=None, date_from, date_to):
+    def preview(self, *, owner, question, query='', group_id=None, date_from, date_to, group_ids=None):
         question=question.strip();query=query.strip()
         if not 2<=len(question)<=2000:raise ValueError('问题需为 2 到 2000 个字符')
         if query and not 2<=len(query)<=100:raise ValueError('关键词需为 2 到 100 个字符')
         first,last=date.fromisoformat(date_from),date.fromisoformat(date_to)
         if first>last:raise ValueError('开始日期不能晚于结束日期')
-        if group_id is not None:
-            if not -(2**63)<=group_id<2**63:raise ValueError('群号超出有效范围')
-            if not self.archive.connection.execute('SELECT 1 FROM groups WHERE group_id=?',(group_id,)).fetchone():
+        selected = normalize_group_selection(group_id, group_ids)
+        if selected:
+            placeholders = ','.join('?' for _ in selected)
+            existing = {row['group_id'] for row in self.archive.connection.execute(
+                'SELECT group_id FROM groups WHERE group_id IN (' + placeholders + ')', selected)}
+            if existing != set(selected):
                 raise LookupError('群聊不存在')
         terms=[query] if query else sorted(_terms(question)-STOP_TERMS,key=lambda term:(-len(term),term))[:12]
         start,end=_message_bounds(first,last,self.zone)
@@ -71,11 +76,12 @@ class ArchiveQAService:
         messages=[];total=0
         if terms:
             clauses=['m.timestamp>=?','m.timestamp<?'];params=[start,end]
-            if group_id is not None:clauses.append('m.group_id=?');params.append(group_id)
+            if selected:
+                clauses.append('m.group_id IN (' + placeholders + ')');params.extend(selected)
             clauses.append('('+' OR '.join("("+text_sql+") LIKE ? ESCAPE '\\'" for _ in terms)+')')
             params.extend(_like_pattern(term) for term in terms)
-            attachments_enabled=self.archive.connection.execute('SELECT 1 FROM groups WHERE enabled=1 AND (read_images=1 OR read_files=1)'+(' AND group_id=?' if group_id is not None else '')+' LIMIT 1',
-                (group_id,) if group_id is not None else ()).fetchone()
+            attachments_enabled=self.archive.connection.execute('SELECT 1 FROM groups WHERE enabled=1 AND (read_images=1 OR read_files=1)'+(' AND group_id IN (' + placeholders + ')' if selected else '')+' LIMIT 1',
+                selected).fetchone()
             if not attachments_enabled and self.archive.message_search_indexed and all('\x00' not in term for term in terms):
                 clauses.append('m.rowid IN (SELECT rowid FROM message_search_fts WHERE message_search_fts MATCH ?)')
                 params.append(' OR '.join('('+search_tokens(term)+')' for term in terms))
@@ -95,6 +101,8 @@ class ArchiveQAService:
                 if used+cost>self.max_chars:continue
                 used+=cost;item['fingerprint']=_fingerprint(row);messages.append(item)
         scope=dict(group_id=group_id,date_from=first.isoformat(),date_to=last.isoformat(),timezone=str(self.zone),query=query)
+        if group_ids is not None:
+            scope['group_ids'] = list(selected)
         limited=total>len(messages) or any(item['excerpt'].startswith('…') or item['excerpt'].endswith('…') for item in messages)
         ticket=secrets.token_urlsafe(24)
         with self.lock:
@@ -104,7 +112,7 @@ class ArchiveQAService:
                 if not available:raise ValueError('已有问答正在运行，请稍后重试')
                 del self.tickets[available[0]]
             self.tickets[ticket]=EvidenceTicket(owner,self.clock(),question,scope,messages,total,limited)
-        return dict(ticket=ticket,question=question,scope=scope,matched_count=total,context_limited=limited,
+        return dict(ticket=ticket,question=question,scope=deepcopy(scope),matched_count=total,context_limited=limited,
             messages=[{key:value for key,value in item.items() if key!='fingerprint'} for item in messages])
 
     def _prune(self):
@@ -130,7 +138,7 @@ class ArchiveQAService:
             item=self._get(ticket,owner)
             if item.status=='busy':raise ValueError('问答正在生成，请稍后查看')
             self._verify(item)
-            if item.result is not None:return item.result
+            if item.result is not None:return deepcopy(item.result)
             item.status='busy'
         try:
             sources=[];answer=UNCERTAIN
@@ -153,7 +161,7 @@ class ArchiveQAService:
                     elif sources:answer='找到相关消息，请查看下方来源。'
             result=dict(answer=answer,sources=sources,scope=item.scope,context_message_count=len(item.messages),context_limited=item.limited)
             with self.lock:item.result=result;item.status='done'
-            return result
+            return deepcopy(result)
         except Exception:
             with self.lock:item.status='ready'
             raise
@@ -166,4 +174,4 @@ class ArchiveQAService:
             self._verify(item)
             row=self.archive.connection.execute('SELECT ('+self.evidence_text()+') AS text FROM messages m WHERE group_id=? AND msg_id=?',
                 (source['group_id'],source['msg_id'])).fetchone()
-            return {**{key:value for key,value in source.items() if key!='fingerprint'},'text':row['text'],'scope':item.scope}
+            return {**{key:value for key,value in source.items() if key!='fingerprint'},'text':row['text'],'scope':deepcopy(item.scope)}

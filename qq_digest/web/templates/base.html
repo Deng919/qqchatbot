@@ -374,6 +374,10 @@
             + formatNumber(data.messages_inserted) + ' 条消息';
         }
         function api(method, url, body) {
+          if (url.includes('group_ids=__empty__') || (body && Array.isArray(body.group_ids) && !body.group_ids.length && !url.startsWith('/api/reminder-rules'))) {
+            toast('请选择至少一个群聊','error');
+            return Promise.reject(new Error('请选择至少一个群聊'));
+          }
           return fetch(url, {
             method: method,
             headers: {'Content-Type': 'application/json'},
@@ -414,9 +418,11 @@
       </script>
       {% include "section_navigation.html" %}
       {% include "bookmark_actions.html" %}
+      {% include "group_selector.html" %}
       {% block content %}{% endblock %}
       {% include "knowledge_save.html" %}
       <script>
+        GroupSelector.init();
         document.querySelectorAll('input[type="date"]').forEach(function(input) {
           var wrapper = document.createElement('span');
           wrapper.className = 'date-input';

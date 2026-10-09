@@ -8,6 +8,7 @@
 {% endblock %}
 {% block content %}
 <p id="group-result" class="group-result" role="status" hidden></p>
+{% include "group_batch_controls.html" %}
 {% include "group_details.html" %}
 <section class="card" id="discover-card" hidden>
   <div class="card-header">
@@ -17,6 +18,7 @@
   <p class="header-meta">最近 30 天活跃的群</p>
   <button class="btn" id="discover-btn" onclick="discoverGroups()">扫描本地群聊</button>
   <p id="discover-status" role="status"></p>
+  <div class="group-batch-toolbar"><div class="field"><label for="discover-batch-select">选择待添加群</label><select id="discover-batch-select" data-group-selector="required"><option value="">请先扫描群聊</option></select></div><button class="btn btn-primary" type="button" onclick="addSelectedDiscoveredGroups()">添加所选群</button></div>
   <div class="table-wrap">
     <table class="table">
       <thead><tr><th>群号</th><th>群名</th><th>近 30 天消息</th><th>最近消息</th><th>操作</th></tr></thead>
@@ -36,6 +38,7 @@
 </section>
 
 <script>
+var discoveredBatchGroups=[];
   var configuredGroups = [];
   var categoryLabels = {tech: '技术', resource: '资源', project: '项目', study: '学习', general: '综合'};
   var toggleLabels = {daily_summary: '每日摘要', important_candidates: '重点审核', enabled: '关注（立即保存，启用消息更新）'};
@@ -92,7 +95,7 @@
 
   function loadGroups() {
     api('GET', '/api/groups').then(function(data) {
-      configuredGroups = data.groups;
+      configuredGroups = data.groups;refreshGroupBatchSelections();
       renderConfiguredGroups();
     }).catch(function(error) { groupResult('群聊读取失败：'+error.message+'，请刷新重试。',true); });
   }
@@ -120,8 +123,8 @@
     document.getElementById('discover-status').textContent='正在扫描本地群聊…';
     toast('正在读取本地 QQ 数据库', '');
     api('GET', '/api/discover-groups').then(function(data) {
-      var configuredIds = new Set(configuredGroups.map(function(group) { return group.group_id; }));
       var groups = data.groups.slice().sort(function(a, b) { return (b.message_count_30d || 0) - (a.message_count_30d || 0); });
+      var configuredIds = new Set(configuredGroups.map(function(group) { return group.group_id; }));discoveredBatchGroups=groups.filter(function(g){return !configuredIds.has(g.group_id);});var selection=document.getElementById('discover-batch-select');selection.textContent='';discoveredBatchGroups.forEach(function(g){var o=document.createElement('option');o.value=g.group_id;o.textContent=g.name;selection.appendChild(o);});
       groups.forEach(function(source) {
         var configured = configuredGroups.find(function(group) { return group.group_id === source.group_id; });
         if (!configured) return;

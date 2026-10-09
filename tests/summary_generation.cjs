@@ -1,7 +1,7 @@
 const fs=require('fs'),vm=require('vm'),assert=require('node:assert/strict');
 const nodes=new Map();
-function node(id){if(!nodes.has(id))nodes.set(id,{value:'',hidden:false,disabled:false,textContent:'',children:[],appendChild(n){this.children.push(n);},focus(){},setAttribute(){}});return nodes.get(id);}
-global.document={getElementById:node,createElement:tag=>({tag,appendChild(){},setAttribute(){},addEventListener(){}}),activeElement:{focus(){}},querySelectorAll:()=>[],addEventListener(){}};
+function node(id){if(!nodes.has(id))nodes.set(id,{value:'',hidden:false,disabled:false,textContent:'',children:[],appendChild(n){this.children.push(n);},focus(){global.focusedTestNode=id;},querySelector(){return null;},setAttribute(){}});return nodes.get(id);}
+global.document={getElementById:node,createElement:tag=>({tag,appendChild(){},setAttribute(){},addEventListener(){}}),activeElement:{focus(){}},querySelector:()=>node('visible-modal-button'),querySelectorAll:()=>[],addEventListener(){}};
 global.window={addEventListener(){}};
 global.summaryNode=(tag,cls,text)=>({tag,textContent:text||'',appendChild(){}});
 global.summaryButton=summaryNode;const results=[];global.summaryShowResult=(...args)=>results.push(args);global.refreshDateHints=()=>{};
@@ -16,6 +16,7 @@ global.selectedRangeGroupIds=()=>[11];
   node('report-from').value='2026-10-03';node('report-to').value='2026-10-04';node('report-group').value='11';
   rangeGroups=[{group_id:11,name:'Synthetic',enabled:true}];
   openRangeSummary();
+  assert.equal(global.focusedTestNode,'visible-modal-button','opening the dialog focuses a visible control');
   assert.equal(node('range-start-date').value,'2026-10-03','first open follows reading dates');
   assert.equal(node('range-time-mode').value,'custom','arbitrary reading dates select custom');
   setRangeDates('today');

@@ -94,11 +94,12 @@ def add_topic_routes(app, *, archive, config, templates, require_login, operatio
     @app.get('/api/topics', dependencies=[Depends(require_login)])
     async def list_topics(q: str = Query('', max_length=100),
                           group_id: int | None = Query(None, ge=-(2**63), lt=2**63),
+                          group_ids: list[int] | None = Query(None),
                           date_from: str | None = None, date_to: str | None = None,
                           status: Literal['all', 'tracking', 'archived'] = 'all',
                           page: int = Query(1, ge=1, le=2**31),
                           page_size: int = Query(20, ge=1, le=100)):
-        return await execute(lambda: service.list_topics(q=q, group_id=group_id,
+        return await execute(lambda: service.list_topics(q=q, group_id=group_id, group_ids=group_ids,
             date_from=date_from, date_to=date_to, status=status, page=page, page_size=page_size))
 
     @app.post('/api/topics/refresh', dependencies=[Depends(require_login)])

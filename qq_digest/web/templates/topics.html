@@ -8,7 +8,7 @@
 <section id="topics-browse">
   <form class="filter-toolbar topics-filters" onsubmit="topicsFilter(event)">
     <div class="field"><label for="topics-q">话题关键词</label><input class="input" id="topics-q" maxlength="100" placeholder="查找话题名称"></div>
-    <div class="field"><label for="topics-group">群聊</label><select id="topics-group"><option value="">全部群聊</option></select></div>
+    <div class="field"><label for="topics-group">群聊</label><select id="topics-group" data-group-selector="filter"><option value="">全部群聊</option></select></div>
     <div class="field"><label for="topics-from">开始日期</label><input class="input" type="date" id="topics-from"></div>
     <div class="field"><label for="topics-to">结束日期</label><input class="input" type="date" id="topics-to"></div>
     <div class="field"><label for="topics-filter-status">跟踪状态</label><select id="topics-filter-status"><option value="all">全部</option><option value="tracking">跟踪中</option><option value="archived">已归档</option></select></div>

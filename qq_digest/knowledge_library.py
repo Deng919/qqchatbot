@@ -8,6 +8,7 @@ from zoneinfo import ZoneInfo
 from .candidate_context import candidate_source_context
 from .candidates import CandidateService
 from .knowledge import KnowledgeItem
+from .group_selection import normalize_group_selection
 from .search import _like_pattern
 
 
@@ -30,10 +31,12 @@ class KnowledgeLibrary:
                 'content': row['content'], 'reason': row['reason'], 'link': row['link'],
                 'excerpt': row['excerpt'], 'message_ids': json.loads(row['message_ids'])}
 
-    def list_items(self, *, q='', group_id=None, item_type=None, page=1):
+    def list_items(self, *, q='', group_id=None, item_type=None, page=1, group_ids=None):
+        selected = normalize_group_selection(group_id, group_ids)
         clauses, params = ["c.status='confirmed'"], []
-        if group_id is not None:
-            clauses.append('c.group_id=?'); params.append(group_id)
+        if selected:
+            clauses.append('c.group_id IN (' + ','.join('?' for _ in selected) + ')')
+            params.extend(selected)
         if item_type:
             clauses.append('c.candidate_type=?'); params.append(item_type)
         if q.strip():

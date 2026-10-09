@@ -4,6 +4,7 @@ import json
 from datetime import datetime, timezone
 
 from .archive import Archive
+from .group_selection import normalize_group_selection
 from .models import SummaryCandidate
 
 
@@ -104,20 +105,22 @@ class CandidateService:
         date_to: str | None = None,
         q: str = "",
         limit: int = 200,
+        group_ids: list[int] | tuple[int, ...] | None = None,
     ) -> list[SummaryCandidate]:
         if status not in {"pending", "later", "confirmed", "ignored", "all"}:
             raise ValueError("非法候选状态")
         if candidate_type not in {None, "", "resource", "experience"}:
             raise ValueError("非法候选类型")
 
+        selected = normalize_group_selection(group_id, group_ids)
         clauses: list[str] = []
         params: list[object] = []
         if status != "all":
             clauses.append("status=?")
             params.append(status)
-        if group_id is not None:
-            clauses.append("group_id=?")
-            params.append(group_id)
+        if selected:
+            clauses.append('group_id IN (' + ','.join('?' for _ in selected) + ')')
+            params.extend(selected)
         if candidate_type:
             clauses.append("candidate_type=?")
             params.append(candidate_type)
@@ -141,8 +144,8 @@ class CandidateService:
         ).fetchall()
         return [self._row_to_candidate(row) for row in rows]
 
-    def pending(self, group_id: int | None = None) -> list[SummaryCandidate]:
-        return self.query(status="pending", group_id=group_id)
+    def pending(self, group_id: int | None = None, *, group_ids=None) -> list[SummaryCandidate]:
+        return self.query(status="pending", group_id=group_id, group_ids=group_ids)
 
     def get(self, candidate_id: int) -> SummaryCandidate:
         row = self.archive.connection.execute(

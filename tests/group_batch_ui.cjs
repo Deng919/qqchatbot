@@ -1,0 +1,10 @@
+const fs=require('fs'),vm=require('vm'),assert=require('node:assert/strict');
+const file=__dirname+'/../qq_digest/web/templates/group_batch_feedback.html';
+assert.ok(fs.existsSync(file),'shared batch feedback must exist');
+const code=fs.readFileSync(file,'utf8').match(/<script>([\s\S]*?)<\/script>/)[1];
+const c={console};vm.createContext(c);vm.runInContext(code,c);
+const payload={group_ids:[1,2,3],start:'2026-10-01',end:'2026-10-07',refresh:true};
+const retry=c.groupBatchRetryPayload(payload,[{group_id:1,status:'success'},{group_id:2,status:'failed'},{group_id:3,status:'success'}]);
+assert.equal(retry.group_ids.join(','),'2');assert.equal(retry.start,payload.start);assert.equal(retry.end,payload.end);assert.equal(payload.group_ids.join(','),'1,2,3');
+const add=c.groupBatchRetryPayload({groups:[{group_id:1,name:'A'},{group_id:2,name:'B'}]},[{group_id:1,status:'skipped'},{group_id:2,status:'failed'}]);assert.equal(add.groups.length,1);assert.equal(add.groups[0].group_id,2);
+console.log('Batch retry preserves submitted dates and retries only failed groups');

@@ -8,7 +8,7 @@
 <section id="knowledge-browse">
   <form class="knowledge-filters" onsubmit="knowledgeFilter(event)" aria-label="知识筛选">
     <div class="field"><label for="knowledge-q">关键词</label><input id="knowledge-q" class="input" type="search" maxlength="100" placeholder="标题、正文或说明"></div>
-    <div class="field"><label for="knowledge-group">来源群</label><select id="knowledge-group" class="input"><option value="">全部群</option></select></div>
+    <div class="field"><label for="knowledge-group">来源群</label><select id="knowledge-group" data-group-selector="filter" class="input"><option value="">全部群</option></select></div>
     <div class="field"><label for="knowledge-type">分类</label><select id="knowledge-type" class="input"><option value="">全部分类</option><option value="resource">资源</option><option value="experience">经验</option></select></div>
     <button class="btn btn-primary" type="submit">筛选知识</button>
   </form>

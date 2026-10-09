@@ -3,9 +3,10 @@
 {% block page_title %}更新消息与维护{% endblock %}
 {% block page_description %}{% endblock %}
 {% block content %}
+{% include "group_batch_feedback.html" %}
 <details class="collection-maintenance" {% if not features.get('history_inspection',true) %}hidden{% endif %}><summary>历史缺口巡检</summary>
 <section class="card history-inspection" id="history-inspection" aria-label="多群历史缺口巡检" {% if not features.get('history_inspection',true) %}data-feature-off{% endif %}>
-  <div class="card-header"><span>历史缺口巡检 <small class="header-meta">全部已启用群</small></span><button class="btn btn-sm" id="inspection-run" type="button" onclick="runHistoryInspection()">立即巡检</button></div>
+  <div class="card-header"><span>历史缺口巡检 <small class="header-meta">下方所选群</small></span><button class="btn btn-sm" id="inspection-run" type="button" onclick="runHistoryInspection()">立即巡检</button></div>
   <div class="inspection-body">
     <p id="inspection-status" role="status">正在读取巡检记录...</p>
     <p class="inspection-note">补采后请重新检查。源库缺失或无法读取时，不能核实缺口。</p>
@@ -29,7 +30,7 @@
 </details>
 <div class="status-line" id="repair-hint" hidden>补采范围已填好。</div>
 <section class="filter-toolbar collect-toolbar" id="manual-collect-controls" aria-label="采集条件">
-  <div class="field group-field"><label for="collect-group">群聊</label><select id="collect-group" class="input"><option value="">选择群...</option></select></div>
+  <div class="field group-field"><label for="collect-group">群聊</label><select id="collect-group" data-group-selector="required" class="input"><option value="">选择群...</option></select></div>
   <div class="field"><label for="collect-start">开始日期</label><input type="date" id="collect-start" class="input"></div>
   <div class="field"><label for="collect-end">结束日期</label><input type="date" id="collect-end" class="input"></div>
   <button class="btn btn-primary toolbar-action" id="collect-action" onclick="collectMessages()">更新消息</button>
@@ -75,7 +76,7 @@
       if (token !== inspectionLoadToken) return;
       inspectionPage = data.page;
       var last = data.latest_run, statuses = {success:'检查完成',partial_success:'部分群无法检查',failed:'检查失败',running:'上次检查中断，请重新巡检'};
-      document.getElementById('inspection-status').textContent = data.running ? '正在巡检全部已启用群...' : !data.source_available
+      document.getElementById('inspection-status').textContent = data.running ? '正在巡检…' : !data.source_available
         ? '请先配置并启用 NTQQ 数据源，再进行巡检。' : last
         ? '最近执行：' + inspectionTime(last.finished_at || last.started_at) + ' · ' + (statuses[last.status] || last.status) + (last.error ? ' · ' + last.error : '')
         : '尚无巡检记录。';
@@ -117,11 +118,12 @@
     }).catch(function(error) { toast('保存失败：' + error.message,'error'); }).finally(function() { button.disabled = false; });
   }
   function runHistoryInspection() {
+    var inspectionIds;try{inspectionIds=GroupSelector.value(document.getElementById('collect-group'));if(!inspectionIds)throw new Error('请选择群聊');}catch(e){toast(e.message,'error');return;}
     if (inspectionBusy) return;
     inspectionBusy = true; document.getElementById('inspection-run').disabled = true; document.getElementById('inspection-run').textContent = '巡检中...';
     document.getElementById('inspection-save').disabled = true;
-    document.getElementById('inspection-status').textContent = '正在检查所有已启用群，结果将按群和日期汇总...';
-    api('POST', '/api/history-inspection/run', {refresh:document.getElementById('inspection-refresh').checked}).then(function(result) {
+    document.getElementById('inspection-status').textContent = '正在检查所选群，结果将按群和日期汇总...';
+    api('POST', '/api/history-inspection/run', {refresh:document.getElementById('inspection-refresh').checked,group_ids:inspectionIds}).then(function(result) {
       inspectionPage = 1; toast(result.status === 'success' ? '巡检完成，本次发现 ' + result.missing_count + ' 条待补消息' : '巡检未全部完成，请查看失败原因', result.status === 'success' ? 'success' : 'error');
     }).catch(function(error) { toast('巡检失败：' + error.message,'error'); }).finally(function() { inspectionBusy = false; loadHistoryInspection(); });
   }
@@ -147,75 +149,18 @@
       document.getElementById('collect-empty').textContent = '加载群列表失败: ' + e.message;
     });
   }
-  function collectMessages() {
-    var gid = document.getElementById('collect-group').value;
-    var start = document.getElementById('collect-start').value;
-    var end = document.getElementById('collect-end').value;
-    if (!gid) { toast('请选择群', 'error'); return; }
-    if (!start || !end) { toast('请选择日期范围', 'error'); return; }
-    if (start > end) { toast('开始日期不能晚于结束日期', 'error'); return; }
-    var repair = params.get('repair') === '1';
-    var button = document.getElementById('collect-action');
-    button.disabled = true;
-    button.textContent = repair ? '刷新并补采中...' : '采集中...';
-    toast(repair ? '正在刷新数据库并补采，可能需要几分钟' : '采集中...', '');
-    var result=document.getElementById('collect-operation-result');result.hidden=false;result.textContent='正在更新消息，请等待；完成后会显示结果。';document.getElementById('collect-next').hidden=true;
-    api('POST', '/api/collect', {group_id: parseInt(gid, 10), start: start, end: end, refresh: true}).then(function(d) {
-      result.textContent='消息更新完成：读取 '+formatNumber(d.total)+' 条，新增 '+formatNumber(d.inserted)+' 条。';
-      document.getElementById('collect-next').innerHTML='<a class="btn btn-sm" href="/search?'+escapeHtml(new URLSearchParams({group_id:gid,date_from:start,date_to:end}).toString())+'">查看已保存消息</a><a class="btn btn-sm" href="/reports?'+escapeHtml(new URLSearchParams({group_id:gid,date_from:start,date_to:end,view:'groups'}).toString())+'">查看或生成摘要</a>';document.getElementById('collect-next').hidden=false;
-      var el = document.getElementById('collect-results');
-      var gap = document.getElementById('collect-gap-summary');
-      var days = d.missing_days || [];
-      gap.hidden = false;
-      gap.textContent = !d.total ? '源库在所选日期没有消息' : days.length
-        ? '本次补齐：' + days.map(function(item) { return item.date + '（' + formatNumber(item.count) + ' 条）'; }).join('、')
-        : '所选日期的源库消息已在归档中，无需补齐';
-      document.getElementById('collect-count').textContent = '采集 ' + formatNumber(d.total) + ' 条 · 新增 ' + formatNumber(d.inserted) + ' 条' + (d.preview_truncated ? ' · 显示最近 500 条' : '');
-      if (!d.messages.length) {
-        el.innerHTML = '<div class="empty">该时间段无消息</div>';
-        toast('采集完成，源库在该日期范围没有消息', 'success');
-        return;
-      }
-      el.innerHTML = d.messages.map(function(m) {
-        var t = m.timestamp.slice(11,16);
-        var d2 = m.timestamp.slice(5,10);
-        var typeBadge = m.message_type === 'text' ? 'badge-blue' : m.message_type === 'file' ? 'badge-orange' : 'badge-dim';
-        return '<div class="msg-item"><span class="msg-time">' + escapeHtml(d2) + ' ' + escapeHtml(t) + '</span><span class="msg-sender">' + escapeHtml(m.sender_name||m.sender_qq||'未知发送者') + '</span><span class="badge ' + typeBadge + '">' + escapeHtml(m.message_type) + '</span><span class="msg-text">' + escapeHtml(m.text) + '</span></div>';
-      }).join('');
-      toast('采集到 ' + formatNumber(d.total) + ' 条消息，新增 ' + formatNumber(d.inserted) + ' 条', 'success');
-    }).catch(function(e) { result.textContent='消息更新失败：'+e.message+'。已有归档保留，可检查 QQ 和数据源后重试。'; })
-      .finally(function() { button.disabled = false; button.textContent = repair ? '刷新并补采' : '更新消息'; });
-  }
-  function checkGaps() {
-    var gid = document.getElementById('collect-group').value;
-    var start = document.getElementById('collect-start').value;
-    var end = document.getElementById('collect-end').value;
-    if (!gid) { toast('请选择群', 'error'); return; }
-    if (!start || !end || start > end) { toast('请选择有效的日期范围', 'error'); return; }
-    var button = document.getElementById('check-gaps');
-    var collectButton = document.getElementById('collect-action');
-    button.disabled = true;
-    collectButton.disabled = true;
-    button.textContent = '检查中...';
-    toast('正在刷新数据库并检查所选日期，可能需要几分钟', '');
-    api('POST', '/api/collect', {group_id: parseInt(gid, 10), start: start, end: end, refresh: true, dry_run: true}).then(function(d) {
-      var days = d.missing_days || [];
-      var missing = days.reduce(function(total, item) { return total + item.count; }, 0);
-      var gap = document.getElementById('collect-gap-summary');
-      gap.hidden = false;
-      gap.textContent = !d.total ? '源库在所选日期没有消息' : days.length
-        ? '发现未归档消息：' + days.map(function(item) { return item.date + '（' + formatNumber(item.count) + ' 条）'; }).join('、')
-        : '所选日期的源库消息已在归档中，无需补采';
-      document.getElementById('collect-count').textContent = '源库 ' + formatNumber(d.total) + ' 条 · 待补 ' + formatNumber(missing) + ' 条';
-      document.getElementById('collect-results').innerHTML = '<div class="empty">检查完成后可刷新并补采。</div>';
-      if (missing) {
-        params.set('repair', '1');
-        document.getElementById('repair-hint').hidden = false;
-        collectButton.textContent = '刷新并补采';
-      }
-      toast(missing ? '发现 ' + formatNumber(missing) + ' 条待补消息' : '检查完成，没有发现缺口', 'success');
-    }).catch(function(e) { toast('缺口检查失败: ' + e.message, 'error'); })
-      .finally(function() { button.disabled = false; collectButton.disabled = false; button.textContent = '检查缺口'; });
+  var collectBusy=false,collectSnapshot=null;
+  function collectMessages(){return runCollectBatch(false);}
+  function checkGaps(){return runCollectBatch(true);}
+  function collectControls(busy){collectBusy=busy;['collect-action','check-gaps','collect-group','collect-start','collect-end','btn-refresh'].forEach(function(id){document.getElementById(id).disabled=busy;});document.getElementById('collect-action').textContent=busy?'处理中…':params.get('repair')==='1'?'刷新并补采':'更新消息';}
+  function runCollectBatch(dryRun,retry){
+    if(collectBusy)return;
+    var payload;try{payload=retry||{group_ids:GroupSelector.value(document.getElementById('collect-group')),start:document.getElementById('collect-start').value,end:document.getElementById('collect-end').value,refresh:true,dry_run:!!dryRun};if(!payload.group_ids||!payload.group_ids.length)throw new Error('请选择群聊');if(!payload.start||!payload.end||payload.start>payload.end)throw new Error('请选择有效日期范围');}catch(e){toast(e.message,'error');return;}
+    collectSnapshot=JSON.parse(JSON.stringify(payload));collectControls(true);var status=document.getElementById('collect-operation-result');status.hidden=false;status.textContent=(payload.dry_run?'正在检查':'正在更新')+' '+payload.group_ids.length+' 个群 · '+payload.start+' 至 '+payload.end;document.getElementById('collect-next').hidden=true;document.getElementById('collect-results').textContent='处理中…';
+    return api('POST','/api/collect/batch',payload).then(function(data){status.textContent=(payload.dry_run?'检查':'更新')+'完成 · '+payload.start+' 至 '+payload.end;renderGroupBatchFeedback(document.getElementById('collect-results'),data,payload,function(next){runCollectBatch(next.dry_run,next);});document.getElementById('collect-count').textContent='本次选择 '+payload.group_ids.length+' 个群';
+      var host=document.getElementById('collect-next');host.textContent='';if(!payload.dry_run){[['查看已保存消息','/search'],['查看或生成摘要','/reports']].forEach(function(pair){var p=new URLSearchParams({date_from:payload.start,date_to:payload.end});GroupSelector.appendParams(p,payload.group_ids);var link=document.createElement('a');link.className='btn btn-sm';link.textContent=pair[0];link.href=pair[1]+'?'+p;host.appendChild(link);});host.hidden=false;}
+      else if((data.results||[]).some(function(row){return (row.missing_days||[]).length;})){params.set('repair','1');document.getElementById('repair-hint').hidden=false;}
+    }).catch(function(e){status.textContent=e.message;document.getElementById('collect-results').textContent='本次未完成，可重试。';}).finally(function(){collectControls(false);});
   }
   function refreshDatabase() {
     var btn = document.getElementById('btn-refresh');
@@ -253,7 +198,7 @@
     document.getElementById('collect-end').value = params.get('end');
   }
   loadGroupOptions().then(function() {
-    if (params.get('group_id')) document.getElementById('collect-group').value = params.get('group_id');
+    var ids=GroupSelector.fromParams(params);if(ids)GroupSelector.setSelected(document.getElementById('collect-group'),ids);
     if (params.get('repair') === '1') document.getElementById('manual-collect-controls').scrollIntoView({block:'start'});
   });
   if (featureFlags.history_inspection !== false) { loadHistoryInspection(); setInterval(loadHistoryInspection, 30000); }

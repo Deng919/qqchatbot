@@ -3,6 +3,7 @@ function node(){return {value:'',hidden:false,open:false,disabled:false,children
 const elements={},requests=[],get=id=>elements[id]??=node(),tick=()=>new Promise(r=>setImmediate(r));
 const scope={console,URLSearchParams,Date,Number,Array,Object,Promise,String,Math,location:{search:''},history:{replaceState(){}},window:{scrollY:0,scrollTo(){}},requestAnimationFrame(f){f();},document:{activeElement:node(),getElementById:get,createElement(tag){let n=node();n.tag=tag;return n;}},destroyMessageContext(){},mountMessageContext(){},api(method,url,body){return new Promise((resolve,reject)=>requests.push({method,url,body,resolve,reject}));}};
 vm.createContext(scope);
+vm.runInContext(fs.readFileSync('qq_digest/web/templates/group_selector.html','utf8').match(/<script>([\s\S]*?)<\/script>/)[1],scope);
 const script=fs.readFileSync('qq_digest/web/templates/topics_script.html','utf8').match(/<script>([\s\S]*?)<\/script>/)[1];
 vm.runInContext(script,scope);
 const groupsSource=fs.readFileSync('qq_digest/web/templates/groups.html','utf8');

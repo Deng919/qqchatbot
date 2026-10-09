@@ -67,8 +67,8 @@
   </div>
   <form id="range-summary-form" onsubmit="submitRangeSummary(event)">
     <fieldset id="range-summary-fields">
-      <div class="field"><label for="range-group-search">群组</label><input class="input" id="range-group-search" type="search" placeholder="搜索已启用群组" oninput="filterRangeGroups()"></div>
-      <div class="range-group-actions"><button class="btn btn-sm" type="button" onclick="selectVisibleRangeGroups(true)">选择可见群</button><button class="btn btn-sm" type="button" onclick="selectVisibleRangeGroups(false)">清除可见群</button></div>
+      <div class="field" hidden><label for="range-group-search">群组</label><input class="input" id="range-group-search" type="search" placeholder="搜索已启用群组" oninput="filterRangeGroups()"></div>
+      <div class="range-group-actions" hidden><button class="btn btn-sm" type="button" onclick="selectVisibleRangeGroups(true)">选择可见群</button><button class="btn btn-sm" type="button" onclick="selectVisibleRangeGroups(false)">清除可见群</button></div>
       <div id="range-group-list" class="range-group-list" aria-label="选择群组"><div class="empty">加载群组...</div></div>
       <div class="field"><label for="range-time-mode">摘要时间</label><select class="input" id="range-time-mode" onchange="setRangeDates(this.value)"><option value="today">今天</option><option value="week">最近七天</option><option value="custom">自定义</option></select></div>
       <div class="range-date-grid">

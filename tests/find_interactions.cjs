@@ -4,6 +4,7 @@ const elements={},requests=[]; const get=id=>elements[id]??=node();
 get('search-kind').value='message';get('search-group').options=[{value:'',textContent:'全部群'}];
 const scope={console,URLSearchParams,Date,Number,Array,JSON,Promise,String,featureFlags:{tasks:false,review:false,bookmarks:false},escapeHtml:s=>String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'),formatNumber:String,refreshDateHints(){},location:{search:''},history:{replaceState(){}},localStorage:{getItem(){return null},setItem(){}},document:{body:{style:{overflow:''}},getElementById:get,querySelectorAll(){return []},addEventListener(){},createElement:node},api(method,url){return new Promise((resolve,reject)=>requests.push({url,resolve,reject}));}};
 vm.createContext(scope);
+vm.runInContext(fs.readFileSync('qq_digest/web/templates/group_selector.html','utf8').match(/<script>([\s\S]*?)<\/script>/)[1],scope);
 for(const file of ['bookmark_actions.html','message_context_script.html','find_helpers.html','find_script.html'])vm.runInContext(fs.readFileSync('qq_digest/web/templates/'+file,'utf8').replace(/<style>[\s\S]*?<\/style>/,'').replace(/<\/?script>/g,''),scope);
 (async()=>{
   requests.shift().resolve({groups:[]});await new Promise(resolve=>setImmediate(resolve));
@@ -39,7 +40,7 @@ for(const file of ['bookmark_actions.html','message_context_script.html','find_h
   get('search-group').appendChild=function(option){this.options.push(option);};
   vm.runInContext(fs.readFileSync('qq_digest/web/templates/find_script.html','utf8').replace(/<\/?script>/g,''),scope);
   requests.shift().reject(Error('groups unavailable'));await new Promise(resolve=>setImmediate(resolve));
-  const filtered=requests.shift();assert.equal(new URLSearchParams(filtered.url.split('?')[1]).get('group_id'),'11','Group lookup failure cannot widen an existing search link');
+  const filtered=requests.shift();assert.equal(new URLSearchParams(filtered.url.split('?')[1]).getAll('group_ids').join(','),'11','Group lookup failure cannot widen an existing search link');
   filtered.resolve({results:[],total:0,page:1,page_size:20});await new Promise(resolve=>setImmediate(resolve));
   assert.ok(get('find-filter-hint').textContent.includes('读取失败'));
   scope.location.search='';get('search-q').value='';

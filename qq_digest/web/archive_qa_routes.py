@@ -3,12 +3,14 @@ import asyncio
 import hashlib
 from contextlib import nullcontext
 from datetime import date, datetime, timedelta
+from typing import Annotated
 
 from fastapi import Depends, HTTPException, Request
 from fastapi.responses import RedirectResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from ..archive_qa import ArchiveQAService
+from ..group_selection import normalize_group_selection
 from ..ai.client import AIClient, AIError, AILimitExceeded
 from ..ai_usage import usage_for
 from ..config import ConfigError
@@ -20,9 +22,15 @@ class PreviewQuestion(BaseModel):
     model_config={'extra':'forbid'}
     question: str = Field(min_length=2,max_length=2000)
     query: str = Field(default='',max_length=100)
-    group_id: int | None = Field(default=None,ge=-(2**63),lt=2**63)
+    group_id: Annotated[int, Field(strict=True,ge=-(2**63),lt=2**63)] | None = None
+    group_ids: list[Annotated[int, Field(strict=True,ge=-(2**63),lt=2**63)]] | None = Field(default=None,max_length=1000)
     date_from: date
     date_to: date
+
+    @model_validator(mode='after')
+    def validate_selection(self):
+        normalize_group_selection(self.group_id, self.group_ids)
+        return self
 
 
 class AskQuestion(BaseModel):
@@ -62,7 +70,8 @@ def add_archive_qa_routes(app, *, archive, config, templates, require_login, ope
     @app.post('/api/archive-qa/preview',dependencies=[Depends(require_login)])
     async def preview(request:Request,payload:PreviewQuestion):
         return await execute(lambda:service.preview(owner=owner(request),question=payload.question,
-            query=payload.query,group_id=payload.group_id,date_from=payload.date_from.isoformat(),date_to=payload.date_to.isoformat()))
+            query=payload.query,group_id=payload.group_id,group_ids=payload.group_ids,
+            date_from=payload.date_from.isoformat(),date_to=payload.date_to.isoformat()))
 
     @app.post('/api/archive-qa/ask',dependencies=[Depends(require_login)])
     async def ask(request:Request,payload:AskQuestion):

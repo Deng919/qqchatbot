@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field, StrictBool
 from .archive import Archive
 from .collector.ntqq import NTQQCollector
 from .config import Config
+from .group_selection import normalize_group_selection
 
 
 class InspectionSettings(BaseModel):
@@ -39,17 +40,28 @@ class HistoryInspectionService:
             )
         return self.settings()
 
-    def latest_run(self):
+    def latest_run(self, *, full_only: bool = False):
+        kinds = ('history_inspection',) if full_only else ('history_inspection', 'history_inspection_partial')
         row = self.archive.connection.execute(
-            "SELECT * FROM jobs WHERE job_type='history_inspection' ORDER BY job_id DESC LIMIT 1"
+            f"SELECT * FROM jobs WHERE job_type IN ({','.join('?' for _ in kinds)}) ORDER BY job_id DESC LIMIT 1",
+            kinds,
         ).fetchone()
-        return dict(row) if row else None
+        if row is None:
+            return None
+        result = dict(row)
+        partial = row['job_type'] == 'history_inspection_partial'
+        result['scope'] = 'selected' if partial else 'all'
+        result['group_ids'] = [item['group_id'] for item in self.archive.connection.execute(
+            'SELECT group_id FROM job_group_results WHERE job_id=? ORDER BY group_id',
+            (row['job_id'],))] if partial else None
+        return result
 
     def due(self, now: datetime) -> bool:
         settings = self.settings()
         if not settings["enabled"]:
             return False
-        latest = self.latest_run()
+        # A manually selected subset does not postpone the all-group timer.
+        latest = self.latest_run(full_only=True)
         if not latest or latest["status"] == "running":
             return True
         try:
@@ -71,19 +83,27 @@ class HistoryInspectionService:
             ))
         return present
 
-    def run(self, collector, *, now: datetime | None = None, prepare=None) -> dict:
+    def run(self, collector, *, now: datetime | None = None, prepare=None, group_ids=None) -> dict:
+        groups = self.archive.enabled_groups()
+        if group_ids is not None:
+            ids = normalize_group_selection(group_ids=group_ids, required=True)
+            known = {group.group_id: group for group in self.archive.all_groups()}
+            if any(gid not in known for gid in ids):
+                raise KeyError("群组不存在")
+            groups = [known[gid] for gid in ids if known[gid].enabled]
         current = (now or datetime.now(self.timezone)).astimezone(self.timezone)
         days = self.settings()["lookback_days"]
         end = datetime.combine(current.date(), time.min, self.timezone)
         start = end - timedelta(days=days)
         checked_at = datetime.now(timezone.utc).isoformat()
-        job_id = self.archive.start_job("history_inspection")
+        partial = group_ids is not None
+        job_id = self.archive.start_job("history_inspection_partial" if partial else "history_inspection")
         outcomes, errors = {}, []
         missing_count = 0
         try:
             if prepare:
                 prepare()
-            for group in self.archive.enabled_groups():
+            for group in groups:
                 try:
                     # Exhaust the source before accepting results: a late read
                     # failure must never publish a partial scan as successful.
@@ -129,21 +149,32 @@ class HistoryInspectionService:
         except Exception as exc:
             errors.append(" ".join(str(exc).split())[:300] or type(exc).__name__)
             status = "failed"
-        self.archive.finish_job(job_id, status, "\n".join(errors), group_outcomes=outcomes)
+        # Persist submitted scope even if refresh fails before collecting or
+        # a selected group is disabled. Skipped is an existing archive status.
+        recorded_outcomes = {gid: outcomes.get(gid, 'skipped') for gid in ids} if partial else outcomes
+        self.archive.finish_job(job_id, status, "\n".join(errors), group_outcomes=recorded_outcomes)
         return {"job_id": job_id, "status": status, "groups_checked": len(outcomes),
+                "scope": "selected" if partial else "all", "group_ids": list(ids) if partial else None,
                 "groups_failed": sum(value == "failed" for value in outcomes.values()),
                 "missing_count": missing_count, "errors": errors,
                 "start_date": start.date().isoformat(), "end_date": (end.date()-timedelta(days=1)).isoformat()}
 
-    def snapshot(self, *, page: int = 1, page_size: int = 10) -> dict:
+    def snapshot(self, *, page: int = 1, page_size: int = 10, group_ids=None) -> dict:
         latest = self.latest_run()
-        total = self.archive.connection.execute("SELECT COUNT(*) FROM groups WHERE enabled=1").fetchone()[0]
+        parameters = []
+        scope = ''
+        if group_ids is not None:
+            ids = normalize_group_selection(group_ids=group_ids,required=True)
+            scope = f" AND g.group_id IN ({','.join('?' for _ in ids)})"
+            parameters.extend(ids)
+        total = self.archive.connection.execute(
+            'SELECT COUNT(*) FROM groups g WHERE g.enabled=1'+scope,parameters).fetchone()[0]
         page = min(page, max(1, (total + page_size - 1) // page_size))
         rows = self.archive.connection.execute(
             """SELECT g.group_id,g.name,s.* FROM groups g LEFT JOIN history_inspection_groups s ON s.group_id=g.group_id
-               WHERE g.enabled=1 ORDER BY CASE WHEN s.status='failed' THEN 0 WHEN s.missing_days<>'[]' THEN 1
+               WHERE g.enabled=1"""+scope+""" ORDER BY CASE WHEN s.status='failed' THEN 0 WHEN s.missing_days<>'[]' THEN 1
                  WHEN s.status IS NULL THEN 2 ELSE 3 END,g.group_id LIMIT ? OFFSET ?""",
-            (page_size, (page-1)*page_size),
+            [*parameters,page_size, (page-1)*page_size],
         ).fetchall()
         groups = []
         for row in rows:
@@ -161,7 +192,7 @@ class HistoryInspectionService:
                 "total": total, "page": page, "page_size": page_size}
 
 
-def run_history_inspection(*, config: Config, refresh: bool = False, now=None, collector=None) -> dict:
+def run_history_inspection(*, config: Config, refresh: bool = False, now=None, collector=None, group_ids=None) -> dict:
     if not config.ntqq.enabled or not config.ntqq.db_dir:
         raise ValueError("请先启用 NTQQ 并配置源数据库目录")
     archive = Archive.open(config.archive_path)
@@ -175,6 +206,6 @@ def run_history_inspection(*, config: Config, refresh: bool = False, now=None, c
                     raise RuntimeError(f"数据库刷新失败：{result.message}")
         active = collector or NTQQCollector(db_dir=config.ntqq.db_dir,
             qq_number=config.ntqq.qq_number, timezone_name=config.ntqq.timezone)
-        return HistoryInspectionService(archive, timezone_name=config.summary.timezone).run(active, now=now, prepare=prepare)
+        return HistoryInspectionService(archive, timezone_name=config.summary.timezone).run(active, now=now, prepare=prepare, group_ids=group_ids)
     finally:
         archive.close()

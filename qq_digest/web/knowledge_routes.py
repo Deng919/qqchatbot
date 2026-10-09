@@ -57,8 +57,9 @@ def add_knowledge_routes(app, *, archive, knowledge, config, templates, require_
 
     @app.get('/api/knowledge',dependencies=[Depends(require_login)])
     async def list_knowledge(q:str=Query('',max_length=100),group_id:int|None=Query(None,ge=-(2**63),lt=2**63),
-                             item_type:Literal['resource','experience']|None=None,page:int=Query(1,ge=1,le=2**31)):
-        return library.list_items(q=q,group_id=group_id,item_type=item_type,page=page)
+                             item_type:Literal['resource','experience']|None=None,page:int=Query(1,ge=1,le=2**31),
+                             group_ids:list[int]|None=Query(None)):
+        return execute(lambda:library.list_items(q=q,group_id=group_id,group_ids=group_ids,item_type=item_type,page=page))
 
     @app.get('/api/knowledge/from-message',dependencies=[Depends(require_login)])
     async def source_preview(group_id:int=Query(ge=-(2**63),lt=2**63),msg_id:str=Query(min_length=1,max_length=512)):
