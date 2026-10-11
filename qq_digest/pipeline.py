@@ -158,7 +158,19 @@ class DailyPipeline:
         )
         return result
 
-    def _run_without_job_tracking(self, now: datetime) -> DailyRunResult:
+    def run_summary_only(self, now: datetime) -> DailyRunResult:
+        """Generate a daily report from already archived messages only."""
+        return self._run_without_job_tracking(
+            now, collect=False, send_notifications=False
+        )
+
+    def _run_without_job_tracking(
+        self,
+        now: datetime,
+        *,
+        collect: bool = True,
+        send_notifications: bool = True,
+    ) -> DailyRunResult:
         local_now = now.astimezone(self.timezone)
         start, end = summary_window(now, self.window_mode, self.timezone)
         if self.window_mode == "today":
@@ -174,22 +186,25 @@ class DailyPipeline:
         prepared_groups = []
         knowledge_base = self._load_knowledge_base()
         for group in self.archive.enabled_groups(daily_summary=True):
-            try:
-                raw_msgs = list(self.collector.collect(group.group_id, start, end))
-            except Exception as exc:
-                logger.error("采集群 %s 失败: %s", group.name, exc)
-                self.archive.mark_sync_failure(
-                    group_id=group.group_id,
-                    status="adapter_incompatible",
-                    error=_group_failure(group, "collection", exc).error,
+            if collect:
+                try:
+                    raw_msgs = list(self.collector.collect(group.group_id, start, end))
+                except Exception as exc:
+                    logger.error("采集群 %s 失败: %s", group.name, exc)
+                    self.archive.mark_sync_failure(
+                        group_id=group.group_id,
+                        status="adapter_incompatible",
+                        error=_group_failure(group, "collection", exc).error,
+                    )
+                    result.failed_groups.append(_group_failure(group, "collection", exc))
+                    continue
+                ingest = self.archive.ingest(raw_msgs)
+                result.messages_inserted += ingest.inserted
+                self.archive.mark_manual_collect_success(
+                    group_id=group.group_id, status="report_collection_completed"
                 )
-                result.failed_groups.append(_group_failure(group, "collection", exc))
-                continue
-            ingest = self.archive.ingest(raw_msgs)
-            result.messages_inserted += ingest.inserted
-            self.archive.mark_manual_collect_success(
-                group_id=group.group_id, status="report_collection_completed"
-            )
+            else:
+                raw_msgs = []
 
             messages = self.archive.messages_between(group.group_id, start, end)
             messages = self.attachments.prepare(messages)
@@ -287,12 +302,13 @@ class DailyPipeline:
                     prepared.rollback()
                     raise
                 prepared.finalize()
-                self._send_notifications(
-                    report_id,
-                    report_date,
-                    len(group_candidate_ids),
-                    group.name,
-                )
+                if send_notifications:
+                    self._send_notifications(
+                        report_id,
+                        report_date,
+                        len(group_candidate_ids),
+                        group.name,
+                    )
                 result.report_paths.append(prepared.paths)
                 result.candidate_ids.extend(group_candidate_ids)
                 result.groups_processed += 1

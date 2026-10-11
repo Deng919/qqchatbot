@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -234,6 +234,88 @@ def test_run_daily_creates_report_and_candidate(tmp_path):
     assert report["effective_template"] == "adaptive"
     job = archive.connection.execute("SELECT * FROM jobs").fetchone()
     assert job["status"] == "success"
+
+
+def test_summary_only_reuses_daily_report_without_collecting_or_creating_job(tmp_path):
+    now = datetime(2026, 8, 24, 22, 0, tzinfo=ZoneInfo("Asia/Shanghai"))
+    archive = Archive.open(tmp_path / "archive.sqlite")
+    archive.upsert_groups([GroupConfig(group_id=123, name="测试群")])
+    archive.ingest(
+        [
+            NormalizedMessage(
+                msg_id="fixture-123",
+                group_id=123,
+                sender_qq=1,
+                timestamp=now - timedelta(minutes=1),
+                text="已归档消息",
+                collected_at=now,
+            )
+        ]
+    )
+    pipeline = DailyPipeline(
+        archive=archive,
+        collector=BrokenCollector(),
+        ai_client=FakeAI(),
+        report_dir=tmp_path / "reports",
+        max_context_chars=1000,
+        timezone_name="Asia/Shanghai",
+        window_mode="today",
+    )
+    notifier = SuccessfulNotifier()
+    pipeline.notifier = notifier
+
+    first = pipeline.run_summary_only(now)
+    second = pipeline.run_summary_only(now)
+
+    assert first.status == "success"
+    assert len(first.report_paths) == 1
+    assert second.report_paths == []
+    assert second.skipped_groups == [123]
+    assert len(pipeline.summarizer.ai.calls) == 1
+    assert notifier.calls == []
+    assert archive.connection.execute("SELECT COUNT(*) FROM jobs").fetchone()[0] == 0
+
+
+def test_summary_only_today_uses_supplied_now_as_window_end(tmp_path):
+    now = datetime(2026, 8, 24, 12, 0, tzinfo=ZoneInfo("Asia/Shanghai"))
+    archive = Archive.open(tmp_path / "archive.sqlite")
+    archive.upsert_groups([GroupConfig(group_id=123, name="测试群")])
+    archive.ingest(
+        [
+            NormalizedMessage(
+                msg_id="fixture-123",
+                group_id=123,
+                sender_qq=1,
+                timestamp=now - timedelta(minutes=1),
+                text="截止前消息",
+                collected_at=now,
+            ),
+            NormalizedMessage(
+                msg_id="future",
+                group_id=123,
+                sender_qq=1,
+                timestamp=now + timedelta(minutes=1),
+                text="截止后消息",
+                collected_at=now,
+            ),
+        ]
+    )
+    pipeline = DailyPipeline(
+        archive=archive,
+        collector=BrokenCollector(),
+        ai_client=FakeAI(),
+        report_dir=tmp_path / "reports",
+        max_context_chars=1000,
+        timezone_name="Asia/Shanghai",
+        window_mode="today",
+    )
+
+    result = pipeline.run_summary_only(now)
+
+    assert result.status == "success"
+    prompt = "\n".join(item["content"] for item in pipeline.summarizer.ai.calls[0])
+    assert "截止前消息" in prompt
+    assert "截止后消息" not in prompt
 
 
 def test_run_daily_skips_ai_and_report_when_group_has_no_messages(tmp_path):
