@@ -15,12 +15,21 @@ from .collector.fixture import FixtureCollector
 from .collector.ntqq import NTQQCollector
 from .config import Config
 from .notify import BotConfig
-from .pipeline import DailyPipeline
 from . import refresh as database_refresh
 from .scheduler import summary_window
 
 
 logger = logging.getLogger("qq_digest.scheduler")
+DailyPipeline = None
+
+
+def _daily_pipeline_class():
+    global DailyPipeline
+    if DailyPipeline is None:
+        from .pipeline import DailyPipeline as pipeline_class
+
+        DailyPipeline = pipeline_class
+    return DailyPipeline
 
 
 def build_collector(config: Config) -> Collector:
@@ -109,7 +118,7 @@ def run_daily_task(
                 return {"success": False, "status": "failed", "error": error}
 
         worker_archive = Archive.open(config.archive_path)
-        pipeline = DailyPipeline(
+        pipeline = _daily_pipeline_class()(
             archive=worker_archive,
             attachment_config=config,
             collector=build_collector(config),

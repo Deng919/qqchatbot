@@ -200,15 +200,78 @@ def test_summarize_regenerates_legacy_report_then_reuses_adaptive_fingerprint(
     ai = FakeAI()
     monkeypatch.setattr("qq_digest.cli.load_config", lambda path: config)
     monkeypatch.setattr("qq_digest.cli.build_ai_client", lambda config: ai)
+    from qq_digest.pipeline import DailyPipeline
+
+    summary_times = []
+    original_summary_only = DailyPipeline.run_summary_only
+
+    def summary_only(pipeline, supplied_now):
+        summary_times.append(supplied_now)
+        return original_summary_only(pipeline, supplied_now)
+
+    def forbidden_collection(*args, **kwargs):
+        raise AssertionError("summarize must not collect messages")
+
+    monkeypatch.setattr(DailyPipeline, "run_summary_only", summary_only)
+    monkeypatch.setattr("qq_digest.collector.fixture.FixtureCollector.collect", forbidden_collection)
 
     first = runner.invoke(app, ["summarize", "--config-path", "unused.yaml"])
     second = runner.invoke(app, ["summarize", "--config-path", "unused.yaml"])
 
     assert first.exit_code == 0
     assert second.exit_code == 0
+    assert len(summary_times) == 2
+    assert all(value.tzinfo == timezone for value in summary_times)
     assert len(ai.calls) == 1
-    current = Archive.open(archive_path).report_for(123, report_date)
-    assert current["effective_template"] == "adaptive"
-    assert current["input_fingerprint"]
-    payload = json.loads(Path(current["json_path"]).read_text(encoding="utf-8"))
-    assert payload["overview"] == "今日发布了一项重要更新。"
+    archive = Archive.open(archive_path)
+    try:
+        current = archive.report_for(123, report_date)
+        assert current["effective_template"] == "adaptive"
+        assert current["input_fingerprint"]
+        payload = json.loads(Path(current["json_path"]).read_text(encoding="utf-8"))
+        assert payload["overview"] == "今日发布了一项重要更新。"
+        assert archive.connection.execute("SELECT COUNT(*) FROM jobs").fetchone()[0] == 0
+        assert archive.connection.execute("SELECT COUNT(*) FROM send_log").fetchone()[0] == 0
+    finally:
+        archive.close()
+
+
+def test_summarize_closes_resources_and_returns_nonzero_for_group_failure(tmp_path, monkeypatch):
+    from qq_digest.pipeline import DailyRunResult, GroupRunFailure
+
+    config = SimpleNamespace(
+        archive_path=tmp_path / "archive.sqlite",
+        groups=[],
+        report_dir=tmp_path / "reports",
+        ai=SimpleNamespace(max_context_chars=1000),
+        summary=SimpleNamespace(timezone="Asia/Shanghai", window_mode="today"),
+        resolve_knowledge_paths=lambda: {},
+    )
+    closed = []
+    archive = Archive.open(config.archive_path)
+    original_close = archive.close
+
+    def close_archive():
+        closed.append("archive")
+        original_close()
+
+    archive.close = close_archive
+    monkeypatch.setattr("qq_digest.cli.load_config", lambda path: config)
+    monkeypatch.setattr("qq_digest.cli.Archive.open", lambda path: archive)
+    monkeypatch.setattr(
+        "qq_digest.cli.build_ai_client",
+        lambda config: SimpleNamespace(close=lambda: closed.append("ai")),
+    )
+    monkeypatch.setattr(
+        "qq_digest.pipeline.DailyPipeline.run_summary_only",
+        lambda pipeline, now: DailyRunResult(
+            report_date=now.date().isoformat(), groups_processed=0, messages_inserted=0,
+            failed_groups=[GroupRunFailure(123, "失败群", "summary", "provider unavailable")],
+        ),
+    )
+
+    result = runner.invoke(app, ["summarize", "--config-path", "unused.yaml"])
+
+    assert result.exit_code == 1
+    assert "provider unavailable" in result.stderr
+    assert closed == ["ai", "archive"]

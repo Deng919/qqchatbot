@@ -330,108 +330,42 @@ def summarize(
     """为今天的时间窗生成摘要报告（不采集，只用已归档消息）。"""
     config = load_config(config_path)
     archive = Archive.open(config.archive_path)
-    archive.seed_groups(config.groups)
-    from .scheduler import summary_window
-    from .summary import Summarizer
-    from .group_summary import GroupSummaryBuilder, summary_input_fingerprint
-    from .reports import ReportWriter, published_report_is_valid
-    from .candidates import CandidateService
-
-    tz = ZoneInfo(config.summary.timezone)
-    now = datetime.now(tz)
-    start, end = summary_window(now, config.summary.window_mode, tz)
-    report_date = start.date().isoformat()
-    ai_client = build_ai_client(config)
-    summarizer = Summarizer(ai=ai_client, max_context_chars=config.ai.max_context_chars)
-    report_writer = ReportWriter(config.report_dir)
-    candidates = CandidateService(archive)
-    knowledge_parts = []
-    for path in config.resolve_knowledge_paths().values():
-        if path.exists():
-            content = path.read_text(encoding="utf-8")
-            if content.strip():
-                knowledge_parts.append(content)
-    knowledge_base = "\n\n".join(knowledge_parts)
-
+    ai_client = None
     try:
-        for group in archive.enabled_groups(daily_summary=True):
-            messages = archive.messages_between(group.group_id, start, end)
-            from .attachments import AttachmentService
-            messages=AttachmentService(archive,config).prepare(messages)
-            if not messages:
-                typer.echo(_console_safe(f"  {group.name}: 无消息"))
-                continue
-            fingerprint = summary_input_fingerprint(
-                group=group,
-                report_kind="daily",
-                messages=messages,
-                timezone=tz,
-                knowledge_base=knowledge_base,
-                max_context_chars=config.ai.max_context_chars,
+        archive.seed_groups(config.groups)
+        ai_client = build_ai_client(config)
+        pipeline = DailyPipeline(
+            archive=archive,
+            collector=FixtureCollector(),
+            ai_client=ai_client,
+            attachment_config=config,
+            report_dir=config.report_dir,
+            max_context_chars=config.ai.max_context_chars,
+            timezone_name=config.summary.timezone,
+            window_mode=config.summary.window_mode,
+            knowledge_paths=config.resolve_knowledge_paths(),
+        )
+        result = pipeline.run_summary_only(
+            datetime.now(ZoneInfo(config.summary.timezone))
+        )
+        typer.echo(
+            f"处理 {result.groups_processed} 个群，生成 {len(result.report_paths)} 份报告，"
+            f"跳过 {len(result.skipped_groups)} 个群，候选 {len(result.candidate_ids)} 条。"
+        )
+        if result.failed_groups:
+            typer.echo(
+                "部分群处理失败: "
+                + "; ".join(
+                    f"{item.group_name}({item.stage}): {item.error}"
+                    for item in result.failed_groups
+                ),
+                err=True,
             )
-            existing = archive.report_for(group.group_id, report_date)
-            if (
-                existing is not None
-                and existing["input_fingerprint"] == fingerprint
-                and published_report_is_valid(
-                    existing["markdown_path"], existing["json_path"]
-                )
-            ):
-                typer.echo(_console_safe(f"  {group.name}: 报告未变化，跳过"))
-                continue
-
-            artifact = GroupSummaryBuilder(summarizer).build(
-                group=group,
-                window_start=start,
-                window_end=end,
-                report_date=report_date,
-                candidate_date=report_date,
-                messages=messages,
-                timezone=tz,
-                knowledge_base=knowledge_base,
-                report_kind="daily",
-            )
-            prepared = report_writer.prepare_named(
-                f"{report_date}__{group.group_id}",
-                artifact.markdown,
-                artifact.payload,
-            )
-            old_candidate_ids = (
-                archive.candidates_for_report(existing["candidate_ids"])
-                if existing is not None
-                else []
-            )
-            try:
-                with archive.transaction():
-                    candidate_ids = [
-                        candidates.create_in_transaction(**kwargs)
-                        for kwargs in artifact.candidate_kwargs
-                    ]
-                    archive.record_report_in_transaction(
-                        group_id=group.group_id,
-                        report_date=report_date,
-                        effective_template="adaptive",
-                        markdown_path=prepared.paths.markdown,
-                        json_path=prepared.paths.json,
-                        candidate_ids=candidate_ids,
-                        input_fingerprint=fingerprint,
-                        source_message_count=artifact.source_message_count,
-                        revision_markdown=artifact.markdown,
-                        revision_payload=artifact.payload,
-                    )
-                    archive.delete_unreferenced_pending_candidates_in_transaction(
-                        old_candidate_ids
-                    )
-                    prepared.install()
-            except Exception:
-                prepared.rollback()
-                raise
-            prepared.finalize()
-            typer.echo(_console_safe(
-                f"  {group.name}: 报告已生成, {len(candidate_ids)} 条候选"
-            ))
+            raise typer.Exit(1)
     finally:
-        ai_client.close()
+        if ai_client is not None:
+            ai_client.close()
+        archive.close()
 
 
 @app.command("notify")
