@@ -1735,6 +1735,33 @@ def test_run_daily_returns_partial_group_details(web_client, monkeypatch):
     assert "temporary AI outage" in data["failed_groups"][0]["error"]
 
 
+def test_run_daily_delegates_to_application_runner(web_client, monkeypatch):
+    client, _, _ = web_client
+    calls = []
+    monkeypatch.setattr(
+        "qq_digest.web.app.application_runner.run_daily_task",
+        lambda cfg, **kwargs: calls.append((cfg, kwargs)) or {
+            "success": True,
+            "status": "success",
+            "report_date": "2026-10-11",
+            "groups_processed": 1,
+            "messages_inserted": 2,
+            "reports": 1,
+            "candidates": 0,
+            "succeeded_groups": [123],
+            "skipped_groups": [],
+            "failed_groups": [],
+        },
+    )
+    client.post("/login", data={"password": "password123"})
+
+    response = client.post("/api/run-daily")
+
+    assert response.status_code == 200
+    assert calls and calls[0][0] is client.app.state.config
+    assert calls[0][1]["refresh"] is True
+
+
 def test_run_daily_preflight_failure_remains_server_error(
     web_client, monkeypatch, tmp_path
 ):

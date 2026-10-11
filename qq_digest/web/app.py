@@ -40,6 +40,7 @@ from ..report_qa import (
 from ..report_sources import load_verified_report_sources
 from ..report_previews import load_report_preview
 from ..report_revisions import ReportRevisionService, RevisionConflict
+from .. import application_runner
 from .auth import PasswordHasher, SessionCookie
 from .operations import OperationBusy, OperationCoordinator
 from .history_inspection import add_history_inspection_routes, history_inspection_loop
@@ -326,124 +327,13 @@ def create_app(
     def _run_daily_task(
         cfg, run_at: datetime | None = None, retry_of_job_id: int | None = None
     ):
-        """Synchronous daily pipeline: refresh DB then run summaries."""
-        import logging
-        scheduler_logger = logging.getLogger("qq_digest.scheduler")
-        worker_archive = None
-        ai_client = None
-        pipeline_started = False
-        scheduled_at = run_at or datetime.now(ZoneInfo(cfg.summary.timezone))
-        target_date = summary_window(
-            scheduled_at, cfg.summary.window_mode, ZoneInfo(cfg.summary.timezone)
-        )[0].date().isoformat()
-
-        def record_preflight_failure(error: str) -> None:
-            failure_archive = Archive.open(cfg.archive_path)
-            try:
-                job_id = failure_archive.start_job(
-                    "daily_digest", target_date=target_date,
-                    retry_of_job_id=retry_of_job_id,
-                )
-                failure_archive.finish_job(job_id, "failed", error)
-            finally:
-                failure_archive.close()
-
-        try:
-            from ..ai.factory import build_ai_client
-            ai_client = build_ai_client(cfg)
-
-            # Step 1: Refresh NTQQ database
-            if cfg.ntqq.enabled and cfg.ntqq.db_dir:
-                scheduler_logger.info("定时任务: 刷新 NTQQ 数据库...")
-                from ..refresh import refresh_database
-                refresh_result = refresh_database(
-                    qq_number=cfg.ntqq.qq_number,
-                    output_dir=cfg.ntqq.db_dir,
-                    snapshot_root=cfg.work_dir / "snapshots",
-                    cache_owner=cfg.data_dir,
-                )
-                scheduler_logger.info("定时任务刷新: %s", refresh_result.message)
-                if not refresh_result.success:
-                    error = f"数据库刷新失败: {refresh_result.message}"
-                    record_preflight_failure(error)
-                    return {
-                        "success": False,
-                        "status": "failed",
-                        "error": error,
-                    }
-
-            # Step 2: Create fresh collector (picks up new DB)
-            from ..collector.ntqq import NTQQCollector
-            from ..collector.fixture import FixtureCollector
-            from ..pipeline import DailyPipeline
-            from ..notify import BotConfig
-
-            if cfg.ntqq.enabled and cfg.ntqq.db_dir:
-                collector = NTQQCollector(
-                    db_dir=cfg.ntqq.db_dir,
-                    qq_number=cfg.ntqq.qq_number,
-                    timezone_name=cfg.ntqq.timezone,
-                )
-            else:
-                collector = FixtureCollector()
-
-            # Step 3: Run daily pipeline
-            worker_archive = Archive.open(cfg.archive_path)
-            pipeline = DailyPipeline(
-                archive=worker_archive,
-                attachment_config=cfg,
-                collector=collector,
-                ai_client=ai_client,
-                report_dir=cfg.report_dir,
-                max_context_chars=cfg.ai.max_context_chars,
-                timezone_name=cfg.summary.timezone,
-                window_mode=cfg.summary.window_mode,
-                knowledge_paths=cfg.resolve_knowledge_paths(),
-                bot_config=(
-                    BotConfig(
-                        app_id=cfg.qq_bot.app_id,
-                        app_secret=os.environ.get(cfg.qq_bot.app_secret_env, ""),
-                        allowed_openids=cfg.qq_bot.allowed_openids,
-                        api_base=cfg.qq_bot.api_base,
-                        websocket_url=cfg.qq_bot.websocket_url,
-                        max_retries=cfg.qq_bot.max_retries,
-                        retry_base_seconds=cfg.qq_bot.retry_base_seconds,
-                    )
-                    if cfg.qq_bot.enabled and cfg.qq_bot.app_id
-                    else None
-                ),
-            )
-            pipeline_started = True
-            result = pipeline.run_daily(
-                scheduled_at, retry_of_job_id=retry_of_job_id
-            )
-            scheduler_logger.info(
-                "定时任务完成: %d 群, %d 消息, %d 报告, %d 候选",
-                result.groups_processed, result.messages_inserted,
-                len(result.report_paths), len(result.candidate_ids),
-            )
-            return {
-                "success": result.status == "success",
-                "status": result.status,
-                "report_date": target_date,
-                "groups_processed": result.groups_processed,
-                "messages_inserted": result.messages_inserted,
-                "reports": len(result.report_paths),
-                "candidates": len(result.candidate_ids),
-                "succeeded_groups": result.succeeded_groups,
-                "skipped_groups": result.skipped_groups,
-                "failed_groups": [asdict(item) for item in result.failed_groups],
-            }
-        except Exception as exc:
-            scheduler_logger.error("定时任务失败: %s", exc, exc_info=True)
-            if not pipeline_started:
-                record_preflight_failure(str(exc))
-            return {"success": False, "status": "failed", "error": str(exc)}
-        finally:
-            if ai_client is not None:
-                ai_client.close()
-            if worker_archive is not None:
-                worker_archive.connection.close()
+        """Run the shared daily runtime while the Web layer owns scheduling."""
+        return application_runner.run_daily_task(
+            cfg,
+            scheduled_at=run_at,
+            retry_of_job_id=retry_of_job_id,
+            refresh=True,
+        )
 
     def _run_manual_summary_task(cfg, payload: ManualRangePayload, *, single_day_as_daily=False, on_progress=None):
         from ..ai.factory import build_ai_client

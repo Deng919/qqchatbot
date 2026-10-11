@@ -13,6 +13,7 @@ import typer
 import uvicorn
 
 from .ai.factory import build_ai_client
+from . import application_runner
 from .archive import Archive
 from .candidates import CandidateService
 from .collector.fixture import FixtureCollector
@@ -520,50 +521,29 @@ def run_daily(
     """执行一次同步、摘要、报告和候选流水线。"""
     config = load_config(config_path)
     archive = Archive.open(config.archive_path)
-    archive.seed_groups(config.groups)
-    if config.ntqq.enabled and config.ntqq.db_dir:
-        collector = NTQQCollector(
-            db_dir=config.ntqq.db_dir,
-            qq_number=config.ntqq.qq_number,
-            timezone_name=config.ntqq.timezone,
-        )
-    else:
-        collector = FixtureCollector()
-
-    bot_config = None
-    if config.qq_bot.enabled and config.qq_bot.app_id:
-        bot_config = BotConfig(
-            app_id=config.qq_bot.app_id,
-            app_secret=os.environ.get(config.qq_bot.app_secret_env, ""),
-            allowed_openids=config.qq_bot.allowed_openids,
-            api_base=config.qq_bot.api_base,
-            websocket_url=config.qq_bot.websocket_url,
-            max_retries=config.qq_bot.max_retries,
-            retry_base_seconds=config.qq_bot.retry_base_seconds,
-        )
-
-    pipeline = DailyPipeline(
-        archive=archive,
-        collector=collector,
-        ai_client=build_ai_client(config),
-        attachment_config=config,
-        report_dir=config.report_dir,
-        max_context_chars=config.ai.max_context_chars,
-        timezone_name=config.summary.timezone,
-        window_mode=config.summary.window_mode,
-        bot_config=bot_config,
-        knowledge_paths=config.resolve_knowledge_paths(),
+    try:
+        archive.seed_groups(config.groups)
+    finally:
+        archive.close()
+    result = application_runner.run_daily_task(
+        config,
+        scheduled_at=datetime.now(ZoneInfo(config.summary.timezone)),
+        refresh=False,
     )
-    result = pipeline.run_daily(datetime.now(ZoneInfo(config.summary.timezone)))
+    if result["status"] == "failed":
+        typer.echo(result["error"], err=True)
+        raise typer.Exit(1)
     typer.echo(
-        f"处理 {result.groups_processed} 个群，新增 {result.messages_inserted} 条消息，"
-        f"生成 {len(result.report_paths)} 份报告，候选 {len(result.candidate_ids)} 条。"
+        f"处理 {result['groups_processed']} 个群，新增 "
+        f"{result['messages_inserted']} 条消息，生成 "
+        f"{result['reports']} 份报告，候选 {result['candidates']} 条。"
     )
-    if result.failed_groups:
+    if result.get("failed_groups"):
         typer.echo(
             "部分群处理失败: "
             + "; ".join(
-                f"{item.group_name}({item.stage})" for item in result.failed_groups
+                f"{item['group_name']}({item['stage']})"
+                for item in result["failed_groups"]
             ),
             err=True,
         )

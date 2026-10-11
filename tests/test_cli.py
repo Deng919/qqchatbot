@@ -49,27 +49,79 @@ def test_run_daily_reports_partial_group_failures(tmp_path, monkeypatch):
         summary=SimpleNamespace(timezone="Asia/Shanghai", window_mode="today"),
         resolve_knowledge_paths=lambda: {},
     )
-    archive = SimpleNamespace(seed_groups=lambda groups: None)
-    daily_result = SimpleNamespace(
-        groups_processed=1,
-        messages_inserted=2,
-        report_paths=[tmp_path / "report.md"],
-        candidate_ids=[],
-        failed_groups=[
-            SimpleNamespace(group_name="失败群", stage="summary")
-        ],
-    )
-    pipeline = SimpleNamespace(run_daily=lambda now: daily_result)
+    archive = SimpleNamespace(seed_groups=lambda groups: None, close=lambda: None)
+    daily_result = {
+        "status": "partial_success",
+        "groups_processed": 1,
+        "messages_inserted": 2,
+        "reports": 1,
+        "candidates": 0,
+        "failed_groups": [{"group_name": "失败群", "stage": "summary"}],
+    }
     monkeypatch.setattr("qq_digest.cli.load_config", lambda path: config)
     monkeypatch.setattr("qq_digest.cli.Archive.open", lambda path: archive)
-    monkeypatch.setattr("qq_digest.cli.build_ai_client", lambda config: object())
-    monkeypatch.setattr("qq_digest.cli.DailyPipeline", lambda **kwargs: pipeline)
+    monkeypatch.setattr("qq_digest.application_runner.run_daily_task", lambda cfg, **kwargs: daily_result)
 
     result = runner.invoke(app, ["run-daily"])
 
     assert result.exit_code == 0
     assert "处理 1 个群，新增 2 条消息" in result.stdout
     assert "失败群(summary)" in result.stderr
+
+
+def test_run_daily_delegates_runtime_composition_to_application_runner(
+    tmp_path, monkeypatch
+):
+    config = SimpleNamespace(
+        archive_path=tmp_path / "archive.sqlite",
+        groups=[GroupConfig(group_id=123, name="测试群")],
+        summary=SimpleNamespace(timezone="Asia/Shanghai"),
+    )
+    calls = []
+    monkeypatch.setattr("qq_digest.cli.load_config", lambda path: config)
+    monkeypatch.setattr(
+        "qq_digest.application_runner.run_daily_task",
+        lambda cfg, **kwargs: calls.append((cfg, kwargs)) or {
+            "status": "success",
+            "success": True,
+            "groups_processed": 1,
+            "messages_inserted": 2,
+            "reports": 1,
+            "candidates": 0,
+            "failed_groups": [],
+        },
+    )
+
+    result = runner.invoke(app, ["run-daily", "--config-path", "unused.yaml"])
+
+    assert result.exit_code == 0
+    assert calls and calls[0][0] is config
+    assert calls[0][1]["refresh"] is False
+    assert calls[0][1]["scheduled_at"].tzinfo == ZoneInfo("Asia/Shanghai")
+    assert "处理 1 个群，新增 2 条消息" in result.stdout
+    archive = Archive.open(config.archive_path)
+    try:
+        assert archive.enabled_groups()[0].group_id == 123
+    finally:
+        archive.close()
+
+
+def test_run_daily_returns_nonzero_for_runtime_failure(tmp_path, monkeypatch):
+    config = SimpleNamespace(
+        archive_path=tmp_path / "archive.sqlite",
+        groups=[],
+        summary=SimpleNamespace(timezone="Asia/Shanghai"),
+    )
+    monkeypatch.setattr("qq_digest.cli.load_config", lambda path: config)
+    monkeypatch.setattr(
+        "qq_digest.application_runner.run_daily_task",
+        lambda cfg, **kwargs: {"success": False, "status": "failed", "error": "provider unavailable"},
+    )
+
+    result = runner.invoke(app, ["run-daily", "--config-path", "unused.yaml"])
+
+    assert result.exit_code == 1
+    assert "provider unavailable" in result.stderr
 
 
 def test_summarize_regenerates_legacy_report_then_reuses_adaptive_fingerprint(
