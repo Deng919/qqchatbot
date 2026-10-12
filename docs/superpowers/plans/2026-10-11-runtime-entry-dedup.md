@@ -252,4 +252,3 @@ Confirm that no SQLite schema, URL, template, configuration, or untracked legacy
 git add docs/PROJECT_REVIEW_2026-10-07.md docs/ROADMAP.md
 git commit -m "docs: record runtime entry deduplication"
 ```
-
