@@ -66,7 +66,7 @@ def test_success_keeps_data_and_commits_program_pointers(tmp_path):
     assert state['current'] == 'new' and state['rollback'] == 'old'
     assert config.read_bytes() == content and backups == [True]
     assert runtime.entries == ['new']
-    assert json.loads((registry.state_dir / 'transaction.json').read_text())['status'] == 'success'
+    assert json.loads((registry.state_dir / 'transaction.json').read_text(encoding='utf-8'))['status'] == 'success'
 
 
 def test_failed_launch_stops_target_then_recovers_old_program(tmp_path):
@@ -78,7 +78,7 @@ def test_failed_launch_stops_target_then_recovers_old_program(tmp_path):
     assert runtime.launched == [('new', False), ('old', True)]
     assert registry.read_state()['current'] == 'old'
     assert config.exists()
-    assert json.loads((registry.state_dir / 'transaction.json').read_text())['status'] == 'rolled_back'
+    assert json.loads((registry.state_dir / 'transaction.json').read_text(encoding='utf-8'))['status'] == 'rolled_back'
 
 
 def test_parent_still_running_never_starts_another_writer(tmp_path):
@@ -143,7 +143,7 @@ def test_target_changed_after_backup_is_not_launched(tmp_path):
 def test_interrupted_worker_recovers_without_retrying_target(tmp_path):
     registry, records, _, service, _ = env(tmp_path)
     prepare(service, records[1])
-    transaction = json.loads((registry.state_dir / 'transaction.json').read_text())
+    transaction = json.loads((registry.state_dir / 'transaction.json').read_text(encoding='utf-8'))
     transaction.update(status='starting', child_pid=222, child_identity={'created': 1})
     atomic_json(registry.state_dir / 'transaction.json', transaction)
     runtime = Runtime()
@@ -188,7 +188,7 @@ def test_bridge_failed_worker_launch_releases_lock(tmp_path, monkeypatch):
     with pytest.raises(OSError):
         bridge.switch_version('new', records[1]['digest'])
     assert bridge._operations.can_start('collect')
-    assert json.loads((registry.state_dir/'transaction.json').read_text())['status'] == 'canceled'
+    assert json.loads((registry.state_dir/'transaction.json').read_text(encoding='utf-8'))['status'] == 'canceled'
 
 
 def test_recovery_launch_must_be_confirmed(tmp_path):
@@ -197,13 +197,13 @@ def test_recovery_launch_must_be_confirmed(tmp_path):
     runtime = Runtime(result=False)
     runtime.confirm = lambda *args, **kwargs: False
     assert run_transaction(registry, runtime) == 1
-    assert json.loads((registry.state_dir/'transaction.json').read_text())['status'] == 'recovery_failed'
+    assert json.loads((registry.state_dir/'transaction.json').read_text(encoding='utf-8'))['status'] == 'recovery_failed'
 
 
 def test_unverified_live_target_never_starts_recovery_writer(tmp_path):
     registry, records, _, service, _ = env(tmp_path)
     prepare(service, records[1])
-    transaction = json.loads((registry.state_dir/'transaction.json').read_text())
+    transaction = json.loads((registry.state_dir/'transaction.json').read_text(encoding='utf-8'))
     transaction.update(status='starting', child_pid=222, child_identity=None)
     atomic_json(registry.state_dir/'transaction.json', transaction)
     runtime = Runtime()
@@ -212,7 +212,7 @@ def test_unverified_live_target_never_starts_recovery_writer(tmp_path):
     runtime.stop_existing = fail
     assert run_transaction(registry, runtime) == 1
     assert runtime.launched == []
-    assert json.loads((registry.state_dir/'transaction.json').read_text())['status'] == 'recovery_failed'
+    assert json.loads((registry.state_dir/'transaction.json').read_text(encoding='utf-8'))['status'] == 'recovery_failed'
 
 
 def test_failed_second_prepare_keeps_existing_transaction(tmp_path, monkeypatch):
