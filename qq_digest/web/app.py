@@ -328,9 +328,10 @@ def create_app(
         cfg, run_at: datetime | None = None, retry_of_job_id: int | None = None
     ):
         """Run the shared daily runtime while the Web layer owns scheduling."""
+        scheduled_at = run_at or datetime.now(ZoneInfo(cfg.summary.timezone))
         return application_runner.run_daily_task(
             cfg,
-            scheduled_at=run_at,
+            scheduled_at=scheduled_at,
             retry_of_job_id=retry_of_job_id,
             refresh=True,
         )

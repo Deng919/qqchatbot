@@ -21,14 +21,21 @@ from .scheduler import summary_window
 
 logger = logging.getLogger("qq_digest.scheduler")
 DailyPipeline = None
+_DEFAULT_DAILY_PIPELINE = None
 
 
 def _daily_pipeline_class():
-    global DailyPipeline
-    if DailyPipeline is None:
-        from .pipeline import DailyPipeline as pipeline_class
+    global DailyPipeline, _DEFAULT_DAILY_PIPELINE
+    from .pipeline import DailyPipeline as pipeline_class
 
+    if DailyPipeline is None:
         DailyPipeline = pipeline_class
+        _DEFAULT_DAILY_PIPELINE = pipeline_class
+    elif (
+        DailyPipeline is _DEFAULT_DAILY_PIPELINE
+        and pipeline_class is not _DEFAULT_DAILY_PIPELINE
+    ):
+        return pipeline_class
     return DailyPipeline
 
 
