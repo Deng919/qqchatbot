@@ -18,9 +18,9 @@ Baseline: `90f1d76`. User requested autonomous execution without routine approva
 
 **Create:** `tests/test_web_background_tasks.py`.
 
-- [ ] Run the existing baseline:
+- [x] Run the existing baseline:
   `D:\CodexTools\python\Scripts\python.exe -m pytest tests/test_web.py tests/test_scheduler.py tests/test_operations.py tests/test_features.py tests/test_storage_handoff.py -o addopts='' -q`.
-- [ ] Add real-archive fixtures and a one-cycle sleep driver, keeping replacement
+- [x] Add real-archive fixtures and a one-cycle sleep driver, keeping replacement
   time local to these tests. Each test imports the new module inside its body so
   missing-module failures are visible rather than preventing collection:
 
@@ -32,18 +32,18 @@ def test_daily_respects_live_pause(runtime, monkeypatch):
     # enters daily work and the shared dictionary reflects its result.
 ```
 
-- [ ] Test persisted daily catch-up date/result handling, current-date retry
+- [x] Test persisted daily catch-up date/result handling, current-date retry
   limits and operation admission; use real scheduler queries and seeded jobs.
-- [ ] Test setup/feature/running pauses; test running flag and claim release after
+- [x] Test setup/feature/running pauses; test running flag and claim release after
   worker error and cancellation. A blocking physical worker must retain its claim
   until released after cancellation.
-- [ ] Test collection startup/intervals, live enable/disable, saved result and
+- [x] Test collection startup/intervals, live enable/disable, saved result and
   failure cleanup; test the notification queue continues after a logged error.
-- [ ] Test lifespan with/without bot: replace external listeners and workers,
+- [x] Test lifespan with/without bot: replace external listeners and workers,
   assert startup, listener stop before cancellation, all tasks awaited and topic
   closure after shutdown. Include an app integration test for manual requests
   observing background running/result state.
-- [ ] Run the new test file with `-o addopts='' -q`. Confirm expected failures
+- [x] Run the new test file with `-o addopts='' -q`. Confirm expected failures
   from the absent module before writing production code.
 
 ## Task 2: Move loops and lifecycle
@@ -51,7 +51,7 @@ def test_daily_respects_live_pause(runtime, monkeypatch):
 **Create:** `qq_digest/web/background_tasks.py`.
 **Modify:** `qq_digest/web/app.py`, `tests/test_web.py`.
 
-- [ ] Copy the original loop bodies from baseline lines 383-511, dedent Python
+- [x] Copy the original loop bodies from baseline lines 383-511, dedent Python
   while preserving string contents, and give explicit parameters:
 
 ```python
@@ -72,7 +72,7 @@ Import asyncio, datetime, ZoneInfo, scheduler functions, setup_in_progress,
 OperationBusy and guarded_to_thread in the destination. Keep worker imports,
 exception branches, SQL, sleeps and assignments unchanged.
 
-- [ ] Move the existing lifespan body into this factory; keep internal bot state
+- [x] Move the existing lifespan body into this factory; keep internal bot state
   dictionaries outside the returned context as in the original app closure:
 
 ```python
@@ -88,7 +88,7 @@ def background_lifespan(*, config, archive, candidates, knowledge, operations,
     return lifespan
 ```
 
-- [ ] Replace the old nested loops/lifespan in `create_app` with:
+- [x] Replace the old nested loops/lifespan in `create_app` with:
 
 ```python
     lifespan = background_lifespan(
@@ -103,23 +103,41 @@ Remove the now-unused bot state declarations and imports from `app.py`; retain
 live-switch test move `pending_catchup_date` monkeypatch from `web.app` to
 `web.background_tasks`; no semantic assertion changes.
 
-- [ ] Run the new tests and the baseline suite plus worker, history-inspection,
+- [x] Run the new tests and the baseline suite plus worker, history-inspection,
   first-use, notification and sync tests. Resolve actual failures within scope.
-- [ ] Compare moved loop AST bodies against baseline after callback renaming;
+- [x] Compare moved loop AST bodies against baseline after callback renaming;
   compare all existing route bodies, startup state restoration and callback
   definitions unchanged. Inspect lifecycle differences explicitly.
-- [ ] Commit extraction and tests: `refactor: isolate web background tasks`.
+- [x] Commit extraction and tests: `refactor: isolate web background tasks`.
 
 ## Task 3: Review and integrate
 
-- [ ] Use requesting-code-review for an independent read-only review against
+- [x] Use requesting-code-review for an independent read-only review against
   `90f1d76`; address verified issues before integration.
-- [ ] Run full Python suite with `-o addopts='' -q`; report skips/warnings.
-- [ ] Run all `tests/*.cjs`, checking every exit code; run compileall and
+- [x] Run full Python suite with `-o addopts='' -q`; report skips/warnings.
+- [x] Run all `tests/*.cjs`, checking every exit code; run compileall and
   `git diff --check 90f1d76`.
-- [ ] Update this plan with exact results. Record the M-02 implementation scope
+- [x] Update this plan with exact results. Record the M-02 implementation scope
   in `docs/ROADMAP.md`; do not mark unrelated M-01/M-03 goals complete.
-- [ ] Check original checkout tracked changes/HEAD, fast-forward to verified
+- [x] Check original checkout tracked changes/HEAD, fast-forward to verified
   implementation, compare tree identity and run focused integration there.
-- [ ] Record integration, commit documentation and fast-forward again. Preserve
+- [x] Record integration, commit documentation and fast-forward again. Preserve
   untracked files and report completion plus validation limits.
+
+## Verification record
+
+- Baseline suite: 141 passed, one existing Starlette/httpx deprecation warning.
+- Before extraction, all 26 initial new cases failed because the new module was absent; the added route integration case also failed for the same reason.
+- After extraction, all 27 new cases passed in 11.61s.
+- Expanded related regression: 207 passed, one warning, in 90.78s. This includes worker lifecycle, history inspection, first-use, notification and sync tests.
+- AST comparison confirmed all three loop bodies identical after callback renaming and the lifecycle identical after explicit loop bindings. All retained create_app statements/routes and state restoration remain identical.
+- 29 CJS scripts passed; compileall and cumulative diff checks passed.
+- Original checkout baseline: 90f1d76, no tracked changes; existing three untracked files retained.
+- Independent read-only review of `90f1d76..3a56d75`: no actionable findings. It independently confirmed shared-state identity, AST preservation, dependencies and shutdown ordering.
+- Full Python regression: 1,296 passed, 2 skipped, 1 existing Starlette/httpx deprecation warning in 436.50s. Rerunning the skipped cases with `-rs` confirmed missing Windows symlink creation permission.
+- Original branch `codex/public-beta-2026-10-06` fast-forwarded from `90f1d76` to implementation `3a56d75`. Original/worktree committed tree identity matched: `5ebe7202e2096c994141e35bea2a539c506deb84` before this documentation-only update.
+- Post-merge regression: 31 passed, one existing warning in 13.78s. Includes every new background case and existing live feature switch, scheduler API and persisted restart-state checks.
+- Compilation and cumulative diff checks passed on the original checkout. The activity lock and two untracked legacy templates have identical SHA-256 values before/after integration; no tracked local edits remain there.
+- `docs/ROADMAP.md` records M-02 as implemented; M-01/M-03 remain open. State initialization/restoration stays beside the existing route consumers, as specified.
+- Original checkout: `D:/Desktop/AI/chatbot`; managed worktree retained at `C:/Users/xun/.codex/worktrees/runner-dedup/chatbot`.
+- Desktop packaging and real QQ/AI/notification end-to-end validation were not performed.
