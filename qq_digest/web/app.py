@@ -4,8 +4,6 @@ from .worker_threads import guarded_to_thread
 
 import asyncio
 import json
-import os
-from contextlib import asynccontextmanager
 from dataclasses import asdict
 from datetime import date, datetime, timezone
 from pathlib import Path
@@ -31,7 +29,7 @@ from ..collector.ntqq import NTQQCollector
 from ..config import Config, ConfigError
 from ..knowledge import KnowledgeWriter, remove_item
 from ..scheduler import (
-    daily_retry_state, pending_catchup_date, run_at_for_report_date, summary_window,
+    daily_retry_state, run_at_for_report_date, summary_window,
 )
 from ..message_context import message_context
 from ..report_qa import (
@@ -43,7 +41,7 @@ from ..report_revisions import ReportRevisionService, RevisionConflict
 from .. import application_runner
 from .auth import PasswordHasher, SessionCookie
 from .operations import OperationBusy, OperationCoordinator
-from .history_inspection import add_history_inspection_routes, history_inspection_loop
+from .history_inspection import add_history_inspection_routes
 from .report_revisions import add_report_revision_routes
 from .features import add_feature_routes
 from .summary_reading_routes import add_summary_reading_routes
@@ -57,7 +55,7 @@ from .knowledge_routes import add_knowledge_routes
 from .topic_routes import add_topic_routes
 from .reminder_routes import add_reminder_routes
 from .bookmark_routes import add_bookmark_routes
-from ..reminder_scheduler import reminder_loop
+from .background_tasks import background_lifespan
 from ..report_selection import selected_report_groups
 
 templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"),
@@ -253,9 +251,6 @@ def create_app(
     config: Config | None = None,
     config_path: Path | None = None,
 ):
-    # QQ Bot WebSocket listener state
-    ws_state = {"listener": None, "task": None}
-    notification_state = {"notifier": None, "task": None}
     # Daily scheduler state
     scheduler_state = {
         "last_run_date": "",
@@ -380,201 +375,11 @@ def create_app(
                 ai_client.close()
             worker_archive.close()
 
-    async def _daily_scheduler_loop():
-        """Check every 60s if it's time to run the daily task."""
-        import logging
-        scheduler_logger = logging.getLogger("qq_digest.scheduler")
-        while True:
-            await asyncio.sleep(60)
-            if (
-                not config
-                or setup_in_progress(config)
-                or not feature_service.enabled('auto_daily')
-                or scheduler_state["running"]
-                or not operations.can_start("daily")
-            ):
-                continue
-
-            tz = ZoneInfo(config.summary.timezone)
-            now = datetime.now(tz)
-            today = now.date().isoformat()
-            catchup_date = pending_catchup_date(
-                archive.connection, now,
-                mode=config.summary.window_mode,
-                max_attempts=config.summary.max_attempts,
-                retry_interval_minutes=config.summary.retry_interval_minutes,
-            )
-            if catchup_date is not None:
-                scheduler_logger.info("补生成遗漏日报: %s", catchup_date)
-                try:
-                    with operations.claim("daily"):
-                        scheduler_state["running"] = True
-                        scheduler_state["last_attempt_date"] = catchup_date.isoformat()
-                        try:
-                            catchup_result = await guarded_to_thread(
-                                _run_daily_task, config,
-                                run_at_for_report_date(
-                                    catchup_date, config.summary.window_mode, tz
-                                ),
-                            )
-                            latest_report = archive.connection.execute(
-                                """SELECT target_date FROM jobs WHERE job_type='daily_digest'
-                                   ORDER BY COALESCE(target_date, substr(started_at, 1, 10)) DESC,
-                                            job_id DESC LIMIT 1"""
-                            ).fetchone()
-                            if latest_report and latest_report["target_date"] == catchup_date.isoformat():
-                                scheduler_state["last_result"] = catchup_result
-                        finally:
-                            scheduler_state["running"] = False
-                except OperationBusy:
-                    pass
-                continue
-
-            scheduled_target = summary_window(
-                now, config.summary.window_mode, tz
-            )[0].date().isoformat()
-            retry = daily_retry_state(
-                archive.connection,
-                now,
-                target_hour=config.summary.hour,
-                target_minute=config.summary.minute,
-                max_attempts=config.summary.max_attempts,
-                retry_interval_minutes=config.summary.retry_interval_minutes,
-                target_date=scheduled_target,
-            )
-            if not retry.due:
-                continue
-
-            # Time to run
-            scheduler_logger.info(
-                "定时任务触发: %s，第 %d/%d 次",
-                today,
-                retry.attempts + 1,
-                config.summary.max_attempts,
-            )
-            scheduler_state["last_attempt_date"] = today
-            try:
-                with operations.claim("daily"):
-                    scheduler_state["running"] = True
-                    try:
-                        result = await guarded_to_thread(_run_daily_task, config)
-                        scheduler_state["last_result"] = result
-                        if result.get("success"):
-                            scheduler_state["last_run_date"] = today
-                    finally:
-                        scheduler_state["running"] = False
-            except OperationBusy:
-                continue
-
-    async def _notification_queue_loop(notifier):
-        import logging
-        from .storage_handoff import run_notification_queue
-
-        while True:
-            try:
-                await run_notification_queue(config, operations, notifier)
-            except Exception:
-                logging.getLogger("qq_digest.notify").exception(
-                    "通知队列处理失败，将在下一周期重试"
-                )
-            await asyncio.sleep(60)
-
-    async def _message_sync_loop():
-        if not config:
-            return
-        await asyncio.sleep(config.collection.startup_delay_seconds)
-        while True:
-            if (
-                config.collection.enabled
-                and not setup_in_progress(config)
-                and feature_service.enabled('auto_collection')
-                and config.ntqq.enabled
-                and operations.can_start("sync")
-            ):
-                from ..sync import run_message_sync
-
-                try:
-                    with operations.claim("sync"):
-                        sync_scheduler_state["running"] = True
-                        try:
-                            result = await guarded_to_thread(
-                                run_message_sync, config=config
-                            )
-                            sync_scheduler_state["last_result"] = result.to_dict()
-                            sync_scheduler_state["last_run_at"] = datetime.now(
-                                ZoneInfo(config.summary.timezone)
-                            ).strftime("%Y-%m-%d %H:%M")
-                        finally:
-                            sync_scheduler_state["running"] = False
-                except OperationBusy:
-                    pass
-            await asyncio.sleep(config.collection.interval_minutes * 60)
-
-    @asynccontextmanager
-    async def lifespan(app: FastAPI):
-        # Startup: launch WebSocket listener if QQ Bot is configured
-        cfg = config
-        if cfg and cfg.qq_bot.enabled and cfg.qq_bot.app_id:
-            from ..notify import QQBotNotifier, BotConfig, BotCommandHandler, WebSocketListener
-
-            bot_config = BotConfig(
-                app_id=cfg.qq_bot.app_id,
-                app_secret=os.environ.get(cfg.qq_bot.app_secret_env, ""),
-                allowed_openids=cfg.qq_bot.allowed_openids,
-                api_base=cfg.qq_bot.api_base,
-                websocket_url=cfg.qq_bot.websocket_url,
-                max_retries=cfg.qq_bot.max_retries,
-                retry_base_seconds=cfg.qq_bot.retry_base_seconds,
-            )
-            notifier = QQBotNotifier(bot_config)
-            handler = BotCommandHandler(
-                notifier=notifier,
-                candidates=candidates,
-                knowledge=knowledge,
-                group_names={g.group_id: g.name for g in archive.enabled_groups()},
-            )
-            ws_state["listener"] = WebSocketListener(notifier=notifier, handler=handler, operations=operations)
-            ws_state["task"] = asyncio.get_event_loop().create_task(ws_state["listener"].start())
-            notification_state["notifier"] = notifier
-            notification_state["task"] = asyncio.get_event_loop().create_task(
-                _notification_queue_loop(notifier)
-            )
-
-        # Start daily scheduler
-        scheduler_state["task"] = asyncio.get_event_loop().create_task(_daily_scheduler_loop())
-        sync_scheduler_state["task"] = asyncio.get_event_loop().create_task(
-            _message_sync_loop()
-        )
-        inspection_task = asyncio.create_task(history_inspection_loop(
-            config, operations, enabled=lambda: feature_service.enabled('history_inspection') and not setup_in_progress(config)))
-        reminder_task = asyncio.create_task(reminder_loop(
-            archive.connection.execute('PRAGMA database_list').fetchone()['file'], operations,
-            enabled=lambda: feature_service.enabled('reminders'),
-            timezone_name=config.summary.timezone if config else 'Asia/Shanghai',
-            sink_getter=lambda: getattr(app.state, 'reminder_sink', None)))
-
-        yield
-
-        # Shutdown: stop listener
-        if ws_state["listener"]:
-            await ws_state["listener"].stop()
-        background_tasks = [
-            task
-            for task in (
-                ws_state["task"],
-                notification_state["task"],
-                scheduler_state["task"],
-                sync_scheduler_state["task"],
-                inspection_task,
-                reminder_task,
-            )
-            if task is not None
-        ]
-        for task in background_tasks:
-            task.cancel()
-        if background_tasks:
-            await asyncio.gather(*background_tasks, return_exceptions=True)
-        await guarded_to_thread(app.state.close_topic_tracking)
+    lifespan = background_lifespan(
+        config=config, archive=archive, candidates=candidates, knowledge=knowledge,
+        operations=operations, scheduler_state=scheduler_state,
+        sync_scheduler_state=sync_scheduler_state, run_daily_task=_run_daily_task,
+    )
 
     app = FastAPI(title="QQ Digest", lifespan=lifespan)
     cookie = SessionCookie(session_secret, session_hours * 3600)

@@ -142,7 +142,7 @@ def test_live_auto_switches_pause_schedulers_before_work(web_client, monkeypatch
         work_calls.append('worker')
         raise AssertionError('disabled scheduler reached a worker')
     monkeypatch.setattr('qq_digest.web.app.asyncio.sleep', tick)
-    monkeypatch.setattr('qq_digest.web.app.pending_catchup_date', forbidden)
+    monkeypatch.setattr('qq_digest.web.background_tasks.pending_catchup_date', forbidden)
     monkeypatch.setattr('qq_digest.sync.run_message_sync', forbidden)
     monkeypatch.setattr('qq_digest.web.history_inspection.run_history_inspection', forbidden)
     async def check():
