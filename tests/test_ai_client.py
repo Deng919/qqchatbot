@@ -365,7 +365,7 @@ def test_bridge_client_decodes_non_utf8_process_output(tmp_path):
             stdout=json.dumps({
                 "ok": True,
                 "content": json.dumps({"summary": "中文"}, ensure_ascii=False),
-            }).encode("gb18030"),
+            }, ensure_ascii=False).encode("gb18030"),
             stderr="警告".encode("gb18030"),
         )
 
@@ -377,6 +377,47 @@ def test_bridge_client_decodes_non_utf8_process_output(tmp_path):
     )
 
     assert client.chat([{"role": "user", "content": "测试"}]) == {"summary": "中文"}
+
+
+def test_bridge_client_accepts_valid_stdout_with_non_text_stderr(tmp_path):
+    def fake_runner(command, **kwargs):
+        return subprocess.CompletedProcess(
+            command,
+            0,
+            stdout=json.dumps(
+                {"ok": True, "content": json.dumps({"summary": "中文"})}
+            ).encode("utf-8"),
+            stderr=b"\xff\xfe warning",
+        )
+
+    client = BridgeAIClient(
+        wrapper_path=tmp_path / "wrapper.ps1",
+        account_directory=tmp_path / "accounts",
+        runner=fake_runner,
+        request_directory=tmp_path,
+    )
+
+    assert client.chat([{"role": "user", "content": "测试"}]) == {"summary": "中文"}
+
+
+def test_bridge_client_rejects_invalid_process_encoding_without_leaking_bytes(tmp_path):
+    invalid_output = b'{"ok":true,"content":"{\\"summary\\":\\"' + b"\xff" + b'\\"}"}'
+
+    def fake_runner(command, **kwargs):
+        return subprocess.CompletedProcess(
+            command, 0, stdout=invalid_output, stderr=b""
+        )
+
+    client = BridgeAIClient(
+        wrapper_path=tmp_path / "wrapper.ps1",
+        account_directory=tmp_path / "accounts",
+        runner=fake_runner,
+        request_directory=tmp_path,
+    )
+
+    with pytest.raises(AIError, match="编码无效") as captured:
+        client.chat([{"role": "user", "content": "测试"}])
+    assert "\\xff" not in str(captured.value)
 
 
 def test_bridge_client_reports_non_utf8_error_output(tmp_path):

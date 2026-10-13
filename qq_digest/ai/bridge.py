@@ -13,7 +13,7 @@ from .protocol import ChatProvider
 
 
 def _decode_process_output(value: str | bytes | None) -> str:
-    """Decode bridge output without letting Windows' active code page crash parsing."""
+    """Decode bridge output using the two encodings emitted by the wrapper."""
     if value is None:
         return ""
     if isinstance(value, str):
@@ -21,7 +21,10 @@ def _decode_process_output(value: str | bytes | None) -> str:
     try:
         return value.decode("utf-8")
     except UnicodeDecodeError:
-        return value.decode("gb18030", errors="replace")
+        try:
+            return value.decode("gb18030")
+        except UnicodeDecodeError as exc:
+            raise AIError("chatgpt-bridge 返回文本编码无效") from exc
 
 
 def _parse_json_content(text: str) -> dict[str, Any]:
@@ -58,7 +61,7 @@ class BridgeAIClient:
         model: str = "",
         timeout_seconds: float = 180,
         queue_timeout_seconds: int = 60,
-        runner: Callable[..., subprocess.CompletedProcess[str]] = subprocess.run,
+        runner: Callable[..., subprocess.CompletedProcess[str | bytes]] = subprocess.run,
         request_directory: Path | None = None,
     ) -> None:
         self.wrapper_path = Path(wrapper_path)
@@ -110,24 +113,25 @@ class BridgeAIClient:
                 # Pipes capture output but do not prevent a console in a GUI EXE.
                 creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
             )
-            stdout_text = _decode_process_output(result.stdout)
-            stderr_text = _decode_process_output(result.stderr)
             if result.returncode != 0:
                 message = "chatgpt-bridge 调用失败"
                 try:
+                    stderr_text = _decode_process_output(result.stderr)
                     error = json.loads(stderr_text.strip())
                     if isinstance(error, dict) and isinstance(error.get("error"), str):
                         message = error["error"][:1000]
-                except (json.JSONDecodeError, AttributeError):
+                except (AIError, json.JSONDecodeError, AttributeError):
                     pass
                 raise AIError(message)
+            stdout_text = _decode_process_output(result.stdout)
             if not stdout_text.strip():
                 message = "chatgpt-bridge 未返回有效输出"
                 try:
+                    stderr_text = _decode_process_output(result.stderr)
                     error = json.loads(stderr_text.strip())
                     if isinstance(error, dict) and isinstance(error.get("error"), str):
                         message = error["error"][:1000]
-                except (json.JSONDecodeError, AttributeError):
+                except (AIError, json.JSONDecodeError, AttributeError):
                     pass
                 raise AIError(message)
             try:

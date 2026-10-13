@@ -330,3 +330,83 @@ def test_report_writer_removes_partial_first_write_when_json_replace_fails(
         )
 
     assert not list(tmp_path.iterdir())
+
+
+@pytest.mark.parametrize('winerror', [5, 32, 33])
+def test_report_install_recovers_temporary_windows_conflict(tmp_path, monkeypatch, winerror):
+    real_replace = os.replace
+    attempts = []
+
+    def conflicted_replace(source, target):
+        if Path(target).suffix == '.json':
+            attempts.append(source)
+            if len(attempts) == 1:
+                error = PermissionError('temporary lock')
+                error.winerror = winerror
+                raise error
+        return real_replace(source, target)
+
+    monkeypatch.setattr('qq_digest.reports.os.replace', conflicted_replace)
+    prepared = ReportWriter(tmp_path).prepare_named('daily', '中文摘要', {'overview': '中文摘要'})
+    prepared.install()
+    prepared.finalize()
+    assert len(attempts) == 2
+    assert prepared.paths.markdown.read_text(encoding='utf-8') == '中文摘要'
+    assert json.loads(prepared.paths.json.read_text(encoding='utf-8')) == {'overview': '中文摘要'}
+    assert sorted(p.name for p in tmp_path.iterdir()) == ['daily.json', 'daily.md']
+
+
+@pytest.mark.parametrize('winerror,expected_attempts', [(5, 3), (None, 1)])
+def test_persistent_report_conflict_preserves_previous_pair(tmp_path, monkeypatch, winerror, expected_attempts):
+    writer = ReportWriter(tmp_path)
+    original = writer.prepare_named('daily', 'old', {'overview': 'old'})
+    original.install()
+    original.finalize()
+    real_replace = os.replace
+    attempts = []
+
+    def conflicted_replace(source, target):
+        if Path(source).suffix == '.tmp' and Path(target).suffix == '.json':
+            attempts.append(source)
+            error = PermissionError('persistent lock')
+            error.winerror = winerror
+            raise error
+        return real_replace(source, target)
+
+    monkeypatch.setattr('qq_digest.reports.os.replace', conflicted_replace)
+    prepared = writer.prepare_named('daily', 'new', {'overview': 'new'})
+    with pytest.raises(PermissionError, match='persistent lock'):
+        prepared.install()
+    assert len(attempts) == expected_attempts
+    assert original.paths.markdown.read_text(encoding='utf-8') == 'old'
+    assert json.loads(original.paths.json.read_text(encoding='utf-8')) == {'overview': 'old'}
+    assert sorted(p.name for p in tmp_path.iterdir()) == ['daily.json', 'daily.md']
+
+
+def test_report_rollback_recovers_temporary_windows_conflict(tmp_path, monkeypatch):
+    writer = ReportWriter(tmp_path)
+    original = writer.prepare_named('daily', 'old', {'overview': 'old'})
+    original.install()
+    original.finalize()
+    real_replace = os.replace
+    restores = []
+
+    def conflicted_replace(source, target):
+        if Path(source).suffix == '.tmp' and Path(target).suffix == '.json':
+            raise OSError('publication failed')
+        if Path(source).suffix == '.bak':
+            restores.append(source)
+            if len(restores) == 1:
+                error = PermissionError('temporary rollback conflict')
+                error.winerror = 32
+                raise error
+        return real_replace(source, target)
+
+    monkeypatch.setattr('qq_digest.reports.os.replace', conflicted_replace)
+    prepared = writer.prepare_named('daily', 'new', {'overview': 'new'})
+    with pytest.raises(OSError, match='publication failed'):
+        prepared.install()
+    assert len(restores) == 2
+    assert original.paths.markdown.read_text(encoding='utf-8') == 'old'
+    assert json.loads(original.paths.json.read_text(encoding='utf-8')) == {'overview': 'old'}
+    assert sorted(p.name for p in tmp_path.iterdir()) == ['daily.json', 'daily.md']

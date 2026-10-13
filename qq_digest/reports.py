@@ -4,10 +4,28 @@ import json
 import os
 import shutil
 import tempfile
+import time
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from uuid import uuid4
+
+
+_REPLACE_RETRY_WINERRORS = frozenset({5, 32, 33})
+
+
+def _replace_with_retry(source: Path, target: Path) -> None:
+    """Replace one report file, tolerating a short Windows file lock."""
+    for attempt in range(3):
+        try:
+            os.replace(source, target)
+            return
+        except PermissionError as exc:
+            if getattr(exc, "winerror", None) not in _REPLACE_RETRY_WINERRORS:
+                raise
+            if attempt == 2:
+                raise
+            time.sleep(0.1 * (attempt + 1))
 
 
 @dataclass(frozen=True)
@@ -34,7 +52,7 @@ class PreparedReportWrite:
                     shutil.copy2(target, backup)
                     self.backup_paths[target] = backup
             for target, temporary in self.temporary_paths.items():
-                os.replace(temporary, target)
+                _replace_with_retry(temporary, target)
                 self.installed_paths.append(target)
         except Exception:
             self.rollback()
@@ -46,7 +64,7 @@ class PreparedReportWrite:
         for target in reversed(self.installed_paths):
             backup = self.backup_paths.get(target)
             if backup is not None and backup.exists():
-                os.replace(backup, target)
+                _replace_with_retry(backup, target)
             else:
                 target.unlink(missing_ok=True)
         self._cleanup()
