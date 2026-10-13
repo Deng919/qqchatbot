@@ -13,6 +13,8 @@ from .ai.client import reject_response
 
 
 def _normalize_message_ids(value):
+    if value is None:
+        return []
     if not isinstance(value, list):
         return value
     return [
@@ -21,6 +23,10 @@ def _normalize_message_ids(value):
         else message_id
         for message_id in value
     ]
+
+
+def _normalize_text(value):
+    return "" if value is None else value
 
 
 class EvidenceItem(BaseModel):
@@ -42,11 +48,15 @@ class Resource(EvidenceItem):
     url: str = Field(default="", validation_alias=AliasChoices("url", "link"))
     description: str = ""
 
+    _normalize_text_fields = field_validator("title", "url", "description", mode="before")(_normalize_text)
+
 
 class TaskOutput(EvidenceItem):
     owner: str
     description: str
     deadline: str = ""
+
+    _normalize_text_fields = field_validator("owner", "description", "deadline", mode="before")(_normalize_text)
 
 
 class CandidateOutput(BaseModel):
@@ -56,6 +66,8 @@ class CandidateOutput(BaseModel):
     content: str = ""
     reason: str
     message_ids: list[str] = Field(default_factory=list)
+
+    _normalize_text_fields = field_validator("title", "link", "content", "reason", mode="before")(_normalize_text)
 
     @field_validator("message_ids", mode="before")
     @classmethod

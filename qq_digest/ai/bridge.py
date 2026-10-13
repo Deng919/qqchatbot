@@ -12,6 +12,18 @@ from .client import AIError, AILimitExceeded
 from .protocol import ChatProvider
 
 
+def _decode_process_output(value: str | bytes | None) -> str:
+    """Decode bridge output without letting Windows' active code page crash parsing."""
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        return value
+    try:
+        return value.decode("utf-8")
+    except UnicodeDecodeError:
+        return value.decode("gb18030", errors="replace")
+
+
 def _parse_json_content(text: str) -> dict[str, Any]:
     text = text.strip()
     if text.startswith("```"):
@@ -93,23 +105,33 @@ class BridgeAIClient:
                 command,
                 check=False,
                 capture_output=True,
-                text=True,
-                encoding="utf-8",
+                text=False,
                 timeout=self.timeout_seconds,
                 # Pipes capture output but do not prevent a console in a GUI EXE.
                 creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
             )
+            stdout_text = _decode_process_output(result.stdout)
+            stderr_text = _decode_process_output(result.stderr)
             if result.returncode != 0:
                 message = "chatgpt-bridge 调用失败"
                 try:
-                    error = json.loads(result.stderr.strip())
+                    error = json.loads(stderr_text.strip())
+                    if isinstance(error, dict) and isinstance(error.get("error"), str):
+                        message = error["error"][:1000]
+                except (json.JSONDecodeError, AttributeError):
+                    pass
+                raise AIError(message)
+            if not stdout_text.strip():
+                message = "chatgpt-bridge 未返回有效输出"
+                try:
+                    error = json.loads(stderr_text.strip())
                     if isinstance(error, dict) and isinstance(error.get("error"), str):
                         message = error["error"][:1000]
                 except (json.JSONDecodeError, AttributeError):
                     pass
                 raise AIError(message)
             try:
-                payload = json.loads(result.stdout)
+                payload = json.loads(stdout_text)
                 content = payload["content"]
                 if not payload.get("ok") or not isinstance(content, str):
                     raise ValueError

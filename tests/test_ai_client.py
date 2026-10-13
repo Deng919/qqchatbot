@@ -357,6 +357,68 @@ def test_bridge_client_redacts_wrapper_stderr(tmp_path):
         client.chat([{"role": "user", "content": "hi"}])
 
 
+def test_bridge_client_decodes_non_utf8_process_output(tmp_path):
+    def fake_runner(command, **kwargs):
+        return subprocess.CompletedProcess(
+            command,
+            0,
+            stdout=json.dumps({
+                "ok": True,
+                "content": json.dumps({"summary": "中文"}, ensure_ascii=False),
+            }).encode("gb18030"),
+            stderr="警告".encode("gb18030"),
+        )
+
+    client = BridgeAIClient(
+        wrapper_path=tmp_path / "wrapper.ps1",
+        account_directory=tmp_path / "accounts",
+        runner=fake_runner,
+        request_directory=tmp_path,
+    )
+
+    assert client.chat([{"role": "user", "content": "测试"}]) == {"summary": "中文"}
+
+
+def test_bridge_client_reports_non_utf8_error_output(tmp_path):
+    def fake_runner(command, **kwargs):
+        return subprocess.CompletedProcess(
+            command,
+            1,
+            stdout=b"",
+            stderr=json.dumps({"error": "桥接失败"}, ensure_ascii=False).encode("gb18030"),
+        )
+
+    client = BridgeAIClient(
+        wrapper_path=tmp_path / "wrapper.ps1",
+        account_directory=tmp_path / "accounts",
+        runner=fake_runner,
+        request_directory=tmp_path,
+    )
+
+    with pytest.raises(AIError, match="桥接失败"):
+        client.chat([{"role": "user", "content": "测试"}])
+
+
+def test_bridge_client_reports_wrapper_error_when_zero_exit_has_no_stdout(tmp_path):
+    def fake_runner(command, **kwargs):
+        return subprocess.CompletedProcess(
+            command,
+            0,
+            stdout=b"",
+            stderr=json.dumps({"ok": False, "error": "terminated"}).encode("utf-8"),
+        )
+
+    client = BridgeAIClient(
+        wrapper_path=tmp_path / "wrapper.ps1",
+        account_directory=tmp_path / "accounts",
+        runner=fake_runner,
+        request_directory=tmp_path,
+    )
+
+    with pytest.raises(AIError, match="terminated"):
+        client.chat([{"role": "user", "content": "测试"}])
+
+
 class _FakeProvider:
     def __init__(self, result=None, error=None):
         self.result = result

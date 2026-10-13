@@ -171,6 +171,21 @@ def test_summary_response_rejects_ambiguous_wrapped_text_items():
         SummaryResponse.model_validate(payload)
 
 
+def test_summary_response_normalizes_null_optional_ai_fields():
+    payload = valid_response()
+    payload["resources"][0]["url"] = None
+    payload["tasks"][0].update(owner=None, deadline=None)
+    payload["candidates"][0].update(link=None, content=None)
+
+    result = SummaryResponse.model_validate(payload)
+
+    assert result.resources[0].url == ""
+    assert result.tasks[0].owner == ""
+    assert result.tasks[0].deadline == ""
+    assert result.candidates[0].link == ""
+    assert result.candidates[0].content == ""
+
+
 def test_summarizer_does_not_send_template_to_model():
     ai = FakeAI({**valid_response(), "overview": "概览"})
     summarizer = Summarizer(ai=ai, max_context_chars=1000)
