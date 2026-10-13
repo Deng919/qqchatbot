@@ -1,14 +1,14 @@
 <script>
   var rangeGroups=[], rangeBusy=false, rangeOpener=null, rangeInitialized=false, rangePreferredGroup='';
-  var rangeGroupsLoading=false,rangeGroupsLoaded=false,rangePreviewTimer=null,rangePreviewToken=0,rangePreviewData=null,rangePreviewKey='';
+  var rangeGroupsLoading=false,rangeGroupsLoaded=false,rangePreviewTimer=null,rangePreviewToken=0,rangePreviewData=null,rangePreviewKey='',rangeFormDirty=false;
   var summaryGenerationBusy=false,summaryGenerationStarted=0;
   function rangePayload(){return {group_ids:selectedRangeGroupIds(),start_date:document.getElementById('range-start-date').value,end_date:document.getElementById('range-end-date').value};}
   function rangeScopeKey(){return JSON.stringify(rangePayload());}
   function updateGenerationControls(){document.getElementById('range-open-btn').disabled=false;document.getElementById('range-submit-btn').disabled=summaryGenerationBusy||!rangePreviewData||rangePreviewData.total_messages===0||rangePreviewKey!==rangeScopeKey();}
   function generationLink(host,text,url){var link=document.createElement('a');link.className='btn btn-sm';link.textContent=text;link.href=url;host.appendChild(link);}
   function generationNextSteps(groups,scope){var host=document.getElementById('summary-run-actions');generationLink(host,'查看运行记录','/overview');generationLink(host,'检查 AI 连接','/settings?section=ai');generationLink(host,'更新消息',groups&&groups.length===1?'/collect?'+new URLSearchParams({group_id:groups[0],start:scope?scope.start_date:document.getElementById('range-start-date').value,end:scope?scope.end_date:document.getElementById('range-end-date').value}):'/groups');}
-  function setRangeDates(mode){var dates=recentWeekDates();document.getElementById('range-time-mode').value=mode;if(mode!=='custom'){document.getElementById('range-start-date').value=mode==='today'?dates.end:dates.start;document.getElementById('range-end-date').value=dates.end;}refreshDateHints();updateRangeSelectionSummary();}
-  function onRangeDateChange(){document.getElementById('range-time-mode').value='custom';updateRangeSelectionSummary();}
+  function setRangeDates(mode){rangeFormDirty=true;var dates=recentWeekDates();document.getElementById('range-time-mode').value=mode;if(mode!=='custom'){document.getElementById('range-start-date').value=mode==='today'?dates.end:dates.start;document.getElementById('range-end-date').value=dates.end;}refreshDateHints();updateRangeSelectionSummary();}
+  function onRangeDateChange(){rangeFormDirty=true;document.getElementById('range-time-mode').value='custom';updateRangeSelectionSummary();}
   function rangePreviewNextSteps(){var host=document.getElementById('range-preview-actions');host.textContent='';var payload=rangePayload();generationLink(host,'更新所选群消息',payload.group_ids.length===1?'/collect?'+new URLSearchParams({group_id:payload.group_ids[0],start:payload.start_date,end:payload.end_date}):'/groups');var retry=document.createElement('button');retry.className='btn btn-sm';retry.type='button';retry.textContent='重新检查数量';retry.onclick=refreshRangePreview;host.appendChild(retry);}
   function refreshRangePreview(){
     clearTimeout(rangePreviewTimer);var token=++rangePreviewToken,payload=rangePayload(),key=JSON.stringify(payload),days=rangeDayCount();rangePreviewData=null;rangePreviewKey='';updateGenerationControls();var status=document.getElementById('range-preview-status');document.getElementById('range-preview-groups').textContent='';document.getElementById('range-preview-actions').textContent='';
@@ -42,7 +42,7 @@
       .catch(function(e) { document.getElementById('range-group-list').textContent='群聊加载失败：'+e.message+'。收起后重新打开可重试。'; }).finally(function(){rangeGroupsLoading=false;});
   }
   var rangeGroupSelector=null;
-  function renderRangeGroups(){var host=document.getElementById('range-group-list');if(!rangeGroupSelector){host.textContent='';var ids=rangePreferredGroup&&rangePreferredGroup!=='__empty__'?rangePreferredGroup.split(',').map(Number):[];rangeGroupSelector=GroupSelector.mount(host,{allowAll:false,selected:ids,groups:rangeGroups,open:true,checkboxClass:'range-group-checkbox',onChange:updateRangeSelectionSummary});}else rangeGroupSelector.setGroups(rangeGroups);}
+  function renderRangeGroups(){var host=document.getElementById('range-group-list');if(!rangeGroupSelector){host.textContent='';var ids=rangePreferredGroup&&rangePreferredGroup!=='__empty__'?rangePreferredGroup.split(',').map(Number):[];rangeGroupSelector=GroupSelector.mount(host,{allowAll:false,selected:ids,groups:rangeGroups,open:true,checkboxClass:'range-group-checkbox',onChange:function(){rangeFormDirty=true;updateRangeSelectionSummary();}});}else rangeGroupSelector.setGroups(rangeGroups);}
   function filterRangeGroups(){if(rangeGroupSelector)rangeGroupSelector.setQuery(document.getElementById('range-group-search').value);}
   function selectVisibleRangeGroups(selected){if(rangeGroupSelector)rangeGroupSelector.chooseVisible(selected);}
   function selectedRangeGroupIds(){return rangeGroupSelector?rangeGroupSelector.ids():[];}

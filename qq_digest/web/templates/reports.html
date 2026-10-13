@@ -72,8 +72,8 @@
       <div id="range-group-list" class="range-group-list" aria-label="选择群组"><div class="empty">加载群组...</div></div>
       <div class="field"><label for="range-time-mode">摘要时间</label><select class="input" id="range-time-mode" onchange="setRangeDates(this.value)"><option value="today">今天</option><option value="week">最近七天</option><option value="custom">自定义</option></select></div>
       <div class="range-date-grid">
-        <div class="field"><label for="range-start-date">开始日期</label><input class="input" id="range-start-date" type="date" required onchange="onRangeDateChange()"></div>
-        <div class="field"><label for="range-end-date">结束日期</label><input class="input" id="range-end-date" type="date" required onchange="onRangeDateChange()"></div>
+        <div class="field"><label for="range-start-date">开始日期</label><input class="input" id="range-start-date" type="date" required oninput="rangeFormDirty=true" onchange="onRangeDateChange()"></div>
+        <div class="field"><label for="range-end-date">结束日期</label><input class="input" id="range-end-date" type="date" required oninput="rangeFormDirty=true" onchange="onRangeDateChange()"></div>
       </div>
       <div id="range-selection-summary" class="range-selection-summary">已选择 0 个群，共 1 天</div>
       <section class="range-input-preview" aria-label="本地消息预览"><p id="range-preview-status" role="status">选择群聊后查看消息数量。</p><div id="range-preview-groups"></div><p class="header-meta">使用本地消息，最多 7 天。实际纳入数量见生成结果。</p><div id="range-preview-actions" class="actions"></div></section>
@@ -231,7 +231,7 @@
       document.getElementById('revision-notice').textContent='正在查看只读历史 v'+version+' · '+new Date(data.created_at).toLocaleString('zh-CN')+' · '+data.reason+(!data.content_available?' · 内容不完整':'')+'。问答和来源请回到当前版本查看。';
       ['report-completeness','report-evidence','report-source-context'].forEach(function(id) { document.getElementById(id).hidden=true; });
       revisionControls();
-    }).catch(function(error) { if(token===reportSelectionToken) toast('历史读取失败：'+error.message,'error'); });
+    }).catch(function(error) { if(token===reportSelectionToken) { var message='历史版本读取失败：'+error.message; document.getElementById('report-content').textContent=message; var notice=document.getElementById('revision-notice');notice.textContent=message;var retry=document.createElement('button');retry.type='button';retry.className='btn btn-sm';retry.textContent='重试读取';retry.onclick=selectReportVersion;notice.appendChild(retry);revisionControls(); } });
   }
   function saveReportCorrection(event) {
     event.preventDefault(); if (!revisionIsCurrent() || revisionBusy) return;
@@ -407,7 +407,7 @@
     api('POST', '/api/reports/' + report.kind + '/' + report.id + '/ask', {question: question, history: history, expected_version:report.current_version}).then(function(data) {
       if (requestToken !== qaRequestToken) return;
       appendQAMessage('你', question); appendQAMessage('DeepSeek', data.answer);
-      renderQASources(data); qaHistory.push({role: 'user', content: question}, {role: 'assistant', content: data.answer}); qaHistory = qaHistory.slice(-6); input.value = '';
+      renderQASources(data); qaHistory.push({role: 'user', content: question}, {role: 'assistant', content: data.answer}); qaHistory = qaHistory.slice(-6); if (input.value.trim() === question) input.value = '';
     }).catch(function(error) { if (requestToken === qaRequestToken) toast('问答失败: ' + error.message, 'error'); })
       .finally(function() { if (requestToken === qaRequestToken) { qaBusy = false; document.getElementById('report-qa-submit').disabled = false; input.focus(); } });
   }

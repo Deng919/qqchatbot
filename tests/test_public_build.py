@@ -1,6 +1,28 @@
 import json
+from pathlib import Path
 
 from scripts import build_desktop
+
+
+def test_direct_build_script_uses_checkout_package(tmp_path):
+    import os
+    import subprocess
+    import sys
+
+    shadow = tmp_path / "qq_digest"
+    shadow.mkdir()
+    (shadow / "__init__.py").write_text("", encoding="utf-8")
+    script = Path(build_desktop.__file__).resolve()
+    probe = (
+        "import runpy; "
+        f"runpy.run_path({str(script)!r}, run_name='build_probe'); "
+        "import qq_digest; print(qq_digest.__file__)"
+    )
+    result = subprocess.check_output(
+        [sys.executable, "-c", probe], cwd=tmp_path,
+        env={**os.environ, "PYTHONPATH": str(tmp_path)}, text=True,
+    )
+    assert Path(result.strip()).resolve() == build_desktop.PROJECT / "qq_digest" / "__init__.py"
 
 
 def test_public_command_excludes_bridge_and_bundles_profile(tmp_path):

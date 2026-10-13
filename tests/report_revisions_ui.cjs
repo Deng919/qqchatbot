@@ -16,7 +16,7 @@ const reading = fs.readFileSync('qq_digest/web/templates/summary_reading_script.
 vm.runInThisContext(reading.slice(reading.indexOf('  function summaryNode('),reading.indexOf('  function summaryButton(')));
 vm.runInThisContext(reading.slice(reading.indexOf('  function summaryRenderMarkdown('),reading.indexOf('  function summaryReadDailyResults(')));
 vm.runInThisContext(script.slice(0,script.indexOf('  function reportParams()')));
-vm.runInThisContext(script.slice(script.indexOf('  function openReportQA()'),script.indexOf('  function appendQAMessage')));
+vm.runInThisContext(script.slice(script.indexOf('  function openReportQA()'),script.indexOf('  document.addEventListener')));
 (async()=>{
   qaReport={kind:'daily',id:1,current_version:1,group_name:'test',start:'2026-10-01',end:'2026-10-01'};
   document.getElementById('report-content').textContent='v1 body';
@@ -42,6 +42,24 @@ vm.runInThisContext(script.slice(script.indexOf('  function openReportQA()'),scr
   assert.equal(document.getElementById('report-qa-dialog').hidden,true);
   assert.equal(document.getElementById('correction-fields').disabled,true);
   assert.equal(document.getElementById('report-evidence').hidden,true);
+  revisionReport.viewing_version=2;revisionReport.current_version=2;document.getElementById('report-content').textContent='current body';
+  let rejectHistory;global.api=()=>new Promise((resolve,reject)=>{rejectHistory=reject;});
+  document.getElementById('revision-select').value='1';selectReportVersion();
+  rejectHistory(new Error('历史服务不可用'));await new Promise(setImmediate);
+  assert.match(document.getElementById('report-content').textContent,/历史版本读取失败：历史服务不可用/);
+  assert.match(document.getElementById('revision-notice').textContent,/重试/);
+  const retry=document.getElementById('revision-notice').children.find(child=>child.tagName==='button');
+  assert.ok(retry,'history failure must offer a direct retry action');
+  let releaseRetry;global.api=()=>new Promise(resolve=>{releaseRetry=resolve;});retry.onclick();
+  assert.match(document.getElementById('report-content').textContent,/正在读取历史版本/);
+  releaseRetry({markdown:'retried history',created_at:'2026-10-01',reason:'retry',content_available:true});await new Promise(setImmediate);
+  assert.match(document.getElementById('report-content').textContent,/retried history/);
+  featureFlags={report_revisions:true,report_qa:true};qaReport={kind:'daily',id:1,current_version:2};revisionReport={kind:'daily',id:1,current_version:2,viewing_version:2};qaRequestToken=0;qaHistory=[];qaBusy=false;
+  let releaseQuestion;global.api=()=>new Promise(resolve=>{releaseQuestion=resolve;});
+  document.getElementById('report-qa-question').value='问题 A';askReport({preventDefault(){}});
+  document.getElementById('report-qa-question').value='问题 B';
+  releaseQuestion({answer:'回答 A',context_message_count:1,sources:[]});await new Promise(setImmediate);
+  assert.equal(document.getElementById('report-qa-question').value,'问题 B','an answer must not clear a newer draft');
   global.featureFlags={report_revisions:false,report_qa:true};
   let revisionCalls=0;global.api=()=>{revisionCalls++;throw Error('history disabled');};
   await loadReportRevisions(reportSelectionToken);

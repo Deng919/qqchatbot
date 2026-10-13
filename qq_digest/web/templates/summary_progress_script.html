@@ -50,8 +50,8 @@
     return api('GET','/api/summaries/progress').then(function(data){
       if(!data.generation||summaryGenerationBusy||summaryProgressId)return;
       var run=data.generation;summaryProgressId=run.generation_id;summaryProgressScope=run.scope;summaryProgressFinished=null;
-      rangeInitialized=true;rangePreferredGroup=run.scope.group_ids.join(',');
-      document.getElementById('range-start-date').value=run.scope.start_date;document.getElementById('range-end-date').value=run.scope.end_date;
+      if(!rangeFormDirty){rangeInitialized=true;rangePreferredGroup=run.scope.group_ids.join(',');
+        document.getElementById('range-start-date').value=run.scope.start_date;document.getElementById('range-end-date').value=run.scope.end_date;}
       summaryShowResult('最近一次摘要生成：'+run.scope.start_date+' 至 '+run.scope.end_date,'running');summaryDrawProgress(run);
       if(run.status==='running'){summaryGenerationBusy=true;summaryGenerationStarted=Date.now()-run.elapsed_seconds*1000;setRangeBusy(true);updateGenerationControls();summaryProgressTimer=setTimeout(function(){summaryPollProgress(run.generation_id);},1000);}
       else summaryFinishProgress(run.generation_id,run.result,run.scope,run.error);

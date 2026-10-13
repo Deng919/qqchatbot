@@ -11,6 +11,8 @@ from pathlib import Path
 
 
 PROJECT = Path(__file__).resolve().parents[1]
+# Direct script execution must use the same checkout for metadata and EXE code.
+sys.path.insert(0, str(PROJECT))
 CACHE = Path(r"D:\Cache\QQDigestDesktop")
 RELEASE = Path(r"D:\Apps\QQDigestDesktop")
 TEMPLATES = (

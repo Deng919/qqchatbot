@@ -1,7 +1,7 @@
 const fs=require('fs'),vm=require('vm'),assert=require('node:assert/strict');
 const path='qq_digest/web/templates/ai_usage_script.html';
 assert.ok(fs.existsSync(path),'AI usage settings script is not implemented');
-class Node {constructor(){this.children=[];this.value='';this.disabled=false;this.hidden=false;this.dataset={};this._text='';}appendChild(n){this.children.push(n);return n;}set textContent(v){this._text=v;this.children=[];}get textContent(){return this._text+this.children.map(n=>n.textContent).join('');}addEventListener(){}}
+class Node {constructor(){this.children=[];this.value='';this.disabled=false;this.hidden=false;this.dataset={};this._text='';this.listeners={};}appendChild(n){this.children.push(n);return n;}set textContent(v){this._text=v;this.children=[];}get textContent(){return this._text+this.children.map(n=>n.textContent).join('');}addEventListener(name,fn){this.listeners[name]=fn;}dispatchEvent(event){if(this.listeners[event.type])this.listeners[event.type](event);}}
 const ids=['ai-usage-refresh','ai-usage-summary','ai-usage-form','ai-usage-options','ai-usage-limit','ai-usage-rates','ai-usage-save','ai-usage-result'];
 const nodes=Object.fromEntries(ids.map(id=>[id,new Node()]));const calls=[];
 const context={document:{getElementById:id=>nodes[id],createElement:()=>new Node()},console,Number,Map,Promise};
@@ -18,8 +18,23 @@ const tick=()=>new Promise(setImmediate);
   calls[2].reject(new Error('用量设置已在其他窗口更新，请刷新后再保存'));await tick();
   assert.equal(nodes['ai-usage-limit'].value,'5','failed save must preserve draft');assert.equal(context.usageRevision,2);
   assert.equal(nodes['ai-usage-save'].disabled,false);
-  context.saveAIUsage({preventDefault(){}});const result=data(3);result.settings.monthly_limit=5;calls[3].resolve(result);await tick();
+  nodes['ai-usage-limit'].value='99';
+  context.usageRates[0].inputs.input_hit.value='1.25';
+  context.usageRates[0].inputs.input_miss.value='';
+  context.usageRates[0].inputs.output.value='3';
+  nodes['ai-usage-form'].dispatchEvent({type:'input'});
+  context.loadAIUsage();
+  assert.equal(calls.length,4,'refresh should issue one request');
+  const refreshed=data(2);refreshed.current_model.model='new-model';calls[3].resolve(refreshed);await tick();
+  assert.equal(nodes['ai-usage-limit'].value,'99','refresh must preserve an unsaved limit draft');
+  const draftRate=context.usageRates.find(rate=>rate.model==='model');
+  assert.ok(draftRate,'refresh must keep the previous model draft when the current model changes');
+  assert.equal(draftRate.inputs.input_hit.value,'1.25','refresh must preserve a rate draft');
+  assert.equal(draftRate.inputs.input_miss.value,'','refresh must preserve an unknown rate');
+  assert.equal(draftRate.inputs.output.value,'3','refresh must preserve an output rate');
+  context.saveAIUsage({preventDefault(){}});const result=data(3);result.settings.monthly_limit=5;calls.at(-1).resolve(result);await tick();
   assert.equal(context.usageRevision,3);assert.match(nodes['ai-usage-result'].textContent,/已保存/);
+  assert.equal(context.usageDraftDirty,false,'successful save must reset draft protection');
   context.renderAIUsage({...data(3),calls:2,successful:1,failed:1});
   assert.match(nodes['ai-usage-summary'].textContent,/失败 1（50.0%）/);
   console.log('Usage unknown display, stale response, duplicate save and conflict draft retention verified');

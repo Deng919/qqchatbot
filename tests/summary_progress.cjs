@@ -3,6 +3,7 @@ const nodes=new Map();
 function node(id){if(!nodes.has(id))nodes.set(id,{hidden:true,textContent:'',value:0,max:0,setAttribute(k,v){this[k]=v;}});return nodes.get(id);}
 global.document={getElementById:node};
 global.summaryGenerationBusy=false;global.summaryGenerationStarted=0;
+global.rangeFormDirty=false;
 global.updateGenerationControls=()=>{};global.setRangeBusy=()=>{};
 global.summaryShowResult=()=>{};global.generationNextSteps=()=>{};const outcomes=[];global.renderSummaryOutcome=(r,s)=>outcomes.push({r,s});
 let next=0;const timers=new Map();global.setTimeout=fn=>{timers.set(++next,fn);return next;};global.clearTimeout=id=>timers.delete(id);
@@ -17,6 +18,13 @@ const base={generation_id:'abc',scope:{group_ids:[11,22,33,44,55,66,77,88,99],st
   assert.match(node('summary-progress-stage').textContent,/群三.*AI/);
   assert.match(node('range-progress-count').textContent,/2.*9/);
   assert.equal(node('range-generation-progress').hidden,false);
+  summaryProgressId=null;summaryProgressFinished=null;summaryGenerationBusy=false;rangeInitialized=true;rangeFormDirty=true;
+  rangePreferredGroup='22';node('range-start-date').value='2026-10-01';node('range-end-date').value='2026-10-02';
+  const userEditing=summaryRestoreGeneration();
+  requests.at(-1).resolve({generation:{...base,scope:{...base.scope,start_date:'2026-09-01',end_date:'2026-09-01'}}});await userEditing;
+  assert.equal(node('range-start-date').value,'2026-10-01','restore must not replace user-edited dates');
+  assert.equal(node('range-end-date').value,'2026-10-02','restore must preserve the edited end date');
+  assert.equal(rangePreferredGroup,'22','restore must preserve the edited group preference');
   const polling=summaryPollProgress('abc');const count=requests.length;
   summaryPollProgress('abc');assert.equal(requests.length,count,'polls may not overlap');
   requests.at(-1).reject(new Error('offline'));await polling;

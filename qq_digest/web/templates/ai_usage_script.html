@@ -1,9 +1,10 @@
 <script>
-var usageRevision=null,usageBusy=false,usageEpoch=0,usageRates=[];
+var usageRevision=null,usageBusy=false,usageEpoch=0,usageRates=[],usageDraftDirty=false;
 function usageNode(tag,text,cls){var node=document.createElement(tag);if(text!==undefined)node.textContent=text;if(cls)node.className=cls;return node;}
 function usageResult(text){var node=document.getElementById('ai-usage-result');node.textContent=text;node.hidden=!text;}
 function usageDisabled(value){document.getElementById('ai-usage-options').disabled=value;document.getElementById('ai-usage-save').disabled=value;document.getElementById('ai-usage-refresh').disabled=usageBusy;}
 function renderAIUsage(data){
+  var draft=usageDraftDirty?{limit:document.getElementById('ai-usage-limit').value,rates:usageRates.map(function(rate){var values={provider:rate.provider,model:rate.model};['input_hit','input_miss','output'].forEach(function(key){values[key]=rate.inputs[key].value;});return values;})}:null;
   usageRevision=data.settings.revision;document.getElementById('ai-usage-limit').value=String(data.settings.monthly_limit);
   var host=document.getElementById('ai-usage-summary');host.textContent='';
   host.appendChild(usageNode('strong',data.month+' · '+data.calls+' 次调用'));
@@ -13,7 +14,7 @@ function renderAIUsage(data){
   host.appendChild(usageNode('div','按 '+data.settings.timezone+' 的自然月统计。'));
   if(data.settings.monthly_limit&&data.calls>=data.settings.monthly_limit)host.appendChild(usageNode('div','本月 AI 调用已达上限，可调整上限或下月继续','usage-alert'));
   var models=new Map();data.settings.rates.forEach(function(rate){models.set(JSON.stringify([rate.provider,rate.model]),rate);});
-  var sources=(data.models||[]).concat(data.current_model&&data.current_model.provider?[data.current_model]:[]);
+  var sources=(data.models||[]).concat(data.current_model&&data.current_model.provider?[data.current_model]:[],draft?draft.rates:[]);
   sources.forEach(function(model){var key=JSON.stringify([model.provider,model.model]);if(!models.has(key))models.set(key,{provider:model.provider,model:model.model,input_hit:null,input_miss:null,output:null});});
   usageRates=[];var ratesHost=document.getElementById('ai-usage-rates');ratesHost.textContent='';
   if(!models.size)ratesHost.appendChild(usageNode('p','首次 API 调用后可为该模型填写单价。','settings-note'));
@@ -27,6 +28,10 @@ function renderAIUsage(data){
     });
     section.appendChild(fields);ratesHost.appendChild(section);usageRates.push({provider:rate.provider,model:rate.model,inputs:inputs});
   });
+  if(draft){
+    document.getElementById('ai-usage-limit').value=draft.limit;
+    draft.rates.forEach(function(saved){var rate=usageRates.find(function(item){return item.provider===saved.provider&&item.model===saved.model;});if(rate){['input_hit','input_miss','output'].forEach(function(key){rate.inputs[key].value=saved[key];});}});
+  }
 }
 function loadAIUsage(){
   if(usageBusy)return Promise.resolve();var epoch=++usageEpoch;usageDisabled(true);usageResult('');
@@ -41,11 +46,12 @@ function saveAIUsage(event){
   var rates=usageRates.map(function(rate){var result={provider:rate.provider,model:rate.model};['input_hit','input_miss','output'].forEach(function(key){result[key]=rate.inputs[key].value===''?null:rate.inputs[key].value;});return result;});
   var epoch=++usageEpoch;usageBusy=true;usageDisabled(true);usageResult('正在保存…');
   return api('PUT','/api/ai-usage/settings',{monthly_limit:Number(text),rates:rates,expected_revision:usageRevision})
-    .then(function(data){if(epoch===usageEpoch){renderAIUsage(data);usageResult('用量设置已保存');}})
+    .then(function(data){if(epoch===usageEpoch){usageDraftDirty=false;renderAIUsage(data);usageResult('用量设置已保存');}})
     .catch(function(error){if(epoch===usageEpoch)usageResult('保存失败：'+error.message);})
     .finally(function(){if(epoch===usageEpoch){usageBusy=false;usageDisabled(false);}});
 }
 document.getElementById('ai-usage-form').addEventListener('submit',saveAIUsage);
+document.getElementById('ai-usage-form').addEventListener('input',function(){usageDraftDirty=true;});
 document.getElementById('ai-usage-refresh').addEventListener('click',loadAIUsage);
 loadAIUsage();
 </script>
