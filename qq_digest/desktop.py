@@ -18,7 +18,7 @@ import uvicorn
 
 from .archive import Archive
 from .candidates import CandidateService
-from .config import load_config
+from .config import ConfigError, load_config
 from .runtime_paths import cache_root
 from .desktop_settings import DesktopBridge
 from .knowledge import KnowledgeWriter
@@ -27,7 +27,7 @@ from .web.app import create_app
 
 from .distribution import is_public_distribution
 
-DESKTOP_BACKEND_ID = "2026-10-14-candidate-workflow" + ('-deepseek-only' if is_public_distribution() else '')
+DESKTOP_BACKEND_ID = "2026-10-14-full-audit-remediation" + ('-deepseek-only' if is_public_distribution() else '')
 
 
 def resolve_config_path(install_dir: Path) -> Path:
@@ -120,6 +120,9 @@ class DesktopService:
 def make_server(config_path: Path, *, port: int | None = None,
                 bridge: DesktopBridge | None = None) -> uvicorn.Server:
     config = load_config(config_path)
+    session_secret = config.resolve_session_secret()
+    if not session_secret:
+        raise ConfigError("Session secret 未设置")
     archive = Archive.open(config.archive_path)
     archive.seed_groups(config.groups)
     web_app = create_app(
@@ -127,7 +130,7 @@ def make_server(config_path: Path, *, port: int | None = None,
         candidates=CandidateService(archive),
         knowledge=KnowledgeWriter(config.resolve_knowledge_paths()),
         password_hash=config.security.web_password_hash,
-        session_secret=config.resolve_session_secret(),
+        session_secret=session_secret,
         session_hours=config.security.session_hours,
         config=config,
         config_path=config_path,

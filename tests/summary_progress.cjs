@@ -1,7 +1,7 @@
 const fs=require('fs'), vm=require('vm'), assert=require('node:assert/strict');
 const nodes=new Map();
 function node(id){if(!nodes.has(id))nodes.set(id,{hidden:true,textContent:'',value:0,max:0,setAttribute(k,v){this[k]=v;}});return nodes.get(id);}
-global.document={getElementById:node};
+const events=new Map();global.document={getElementById:node,addEventListener:(name,handler)=>events.set(name,handler)};
 global.summaryGenerationBusy=false;global.summaryGenerationStarted=0;
 global.rangeFormDirty=false;
 global.updateGenerationControls=()=>{};global.setRangeBusy=()=>{};
@@ -30,6 +30,16 @@ const base={generation_id:'abc',scope:{group_ids:[11,22,33,44,55,66,77,88,99],st
   requests.at(-1).reject(new Error('offline'));await polling;
   assert.equal(summaryGenerationBusy,true,'connection loss must not claim generation failed');
   assert.match(node('summary-progress-connection').textContent,/重连/);
+  timers.clear();summaryProgressTimer=null;
+  const expired=summaryPollProgress('abc');requests.at(-1).reject(Object.assign(new Error('登录已过期'),{status:401}));await expired;
+  assert.equal(summaryGenerationBusy,true,'a running server job remains running during auth expiry');
+  assert.match(node('summary-progress-connection').textContent,/查询已暂停/);
+  assert.equal(timers.size,0,'auth expiry must stop polling until explicit login');
+  const beforeLogin=requests.length;events.get('qq-digest-session-restored')();
+  assert.equal(requests.length,beforeLogin+1,'successful login reconnects exactly once');
+  assert.equal(requests.at(-1).method,'GET','login must never replay the generation POST');
+  requests.at(-1).resolve({generation:base});await new Promise(setImmediate);
+  assert.equal(timers.size,1,'normal polling resumes after authenticated recovery');
   const recovering=summaryPollProgress('abc');
   const result={status:'partial_success',created_reports:[],reused_reports:[],skipped_groups:[],failed_groups:[{group_name:'群三',error:'失败'}]};
   requests.at(-1).resolve({generation:{...base,status:'partial_success',stage:'finished',completed:9,counts:{created:5,reused:2,skipped:1,failed:1},result}});await recovering;

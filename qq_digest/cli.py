@@ -259,7 +259,10 @@ def sync(
     """执行一次消息采集（增量同步）。"""
     config = load_config(config_path)
     archive = Archive.open(config.archive_path)
-    archive.seed_groups(config.groups)
+    try:
+        archive.seed_groups(config.groups)
+    finally:
+        archive.close()
     if not config.ntqq.enabled or not config.ntqq.db_dir:
         typer.echo("NTQQ 未启用")
         raise typer.Exit(1)
@@ -268,23 +271,16 @@ def sync(
         qq_number=config.ntqq.qq_number,
         timezone_name=config.ntqq.timezone,
     )
-    tz = ZoneInfo(config.summary.timezone)
-    now = datetime.now(tz)
-    start = now.replace(hour=0, minute=0, second=0, microsecond=0)
-    groups = archive.enabled_groups()
-    if group_id:
-        groups = [g for g in groups if g.group_id == group_id]
-    total = 0
-    for g in groups:
-        msgs = list(collector.collect(g.group_id, start, now))
-        result = archive.ingest(msgs)
-        archive.mark_sync(group_id=g.group_id, last_timestamp=now)
-        archive.connection.commit()
-        total += result.inserted
-        typer.echo(_console_safe(
-            f"  {g.name}: 新增 {result.inserted} 条, 跳过 {result.skipped} 条"
-        ))
-    typer.echo(f"采集完成: 共新增 {total} 条消息")
+    from .sync import run_message_sync
+    result = run_message_sync(
+        config=config, now=datetime.now(ZoneInfo(config.summary.timezone)),
+        refresh=False, collector=collector, group_id=group_id,
+    )
+    typer.echo(f"采集完成: 共新增 {result.messages_inserted} 条消息")
+    if not result.success:
+        for error in result.errors:
+            typer.echo(_console_safe(error), err=True)
+        raise typer.Exit(1)
 
 
 @app.command("backfill")
@@ -315,7 +311,7 @@ def backfill(
         typer.echo(_console_safe(f"回填 {g.name}..."))
         msgs = list(collector.collect(g.group_id, start, now))
         result = archive.ingest(msgs)
-        archive.mark_sync(group_id=g.group_id, last_timestamp=now)
+        archive.mark_manual_collect_success(group_id=g.group_id, status="backfill_completed")
         archive.connection.commit()
         total += result.inserted
         typer.echo(f"  新增 {result.inserted} 条, 跳过 {result.skipped} 条")

@@ -43,7 +43,7 @@ def test_topic_routes_require_login_before_parameter_validation(web_client):
     assert client.patch('/api/topics/1', json={}).status_code == 401
     assert client.post('/api/topics/1/merge', json={}).status_code == 401
     assert client.patch('/api/topic-discussions/1', json={}).status_code == 401
-    assert client.get('/topics', follow_redirects=False).headers['location'] == '/login'
+    assert client.get('/topics', follow_redirects=False).headers['location'] == '/login?next=%2Ftopics'
 
 
 def test_topics_disabled_by_default_and_reopening_preserves_index(web_client, tmp_path):

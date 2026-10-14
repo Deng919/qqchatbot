@@ -142,7 +142,7 @@ def add_group_batch_routes(app, *, archive, config, require_login, operations):
                 patch = payload.patch.model_dump(exclude_unset=True)
                 values = [json.dumps(v,ensure_ascii=False) if k=='keywords' else int(v) if isinstance(v,bool) else v for k,v in patch.items()]
                 with ar.transaction():
-                    ar.connection.executemany(f"UPDATE groups SET {','.join(k+'=?' for k in patch)} WHERE group_id=?",
+                    ar.connection.executemany(f"UPDATE groups SET {','.join(k+'=?' for k in patch)},revision=revision+1 WHERE group_id=?",
                         [(*values,gid) for gid in ids])
                 results = [{'group_id':gid,'status':'success'} for gid in ids]
                 return {'results':results,'totals':batch_totals(results)}

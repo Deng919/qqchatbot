@@ -13,7 +13,7 @@ const syncStatus=scope.syncCell({sync_status:'report_collection_completed'});
 assert.doesNotMatch(syncStatus,/采集失败/,'A completed limited report collection must not be classified as failure');
 const topic=id=>({topic_id:id,title:'项目 '+id,status:'tracking',revision:1,discussion_count:2,groups:[],first_date:'2026-10-04',last_date:'2026-10-05',latest_progress:'进展',latest_conclusions:[],open_questions:[],discussions:[],page:1,page_size:20,total:0});
 (async()=>{
- requests.shift().resolve({groups:[]});requests.shift().resolve({reports_processed:0,skipped_reports:0});await tick();requests.shift().resolve({topics:[],total:0,page:1,page_size:20});await tick();
+ requests.shift().resolve({groups:[]});requests.shift().resolve({topics:[],total:0,page:1,page_size:20});await tick();requests.shift().resolve({reports_processed:0,skipped_reports:0});await tick();requests.shift().resolve({topics:[],total:0,page:1,page_size:20});await tick();
  let p1=scope.topicsShow(1),r1=requests.shift(),p2=scope.topicsShow(2),r2=requests.shift();r2.resolve(topic(2));await p2;r1.resolve(topic(1));await p1;
  assert.equal(get('topics-title').textContent,'项目 2','Old detail cannot replace newer topic');
  const loading=scope.topicsShow(3),old=requests.shift();scope.topicsReturn();requests.shift().resolve({topics:[],total:0,page:1,page_size:20});await tick();old.resolve(topic(3));await loading;assert.equal(get('topics-detail').hidden,true);

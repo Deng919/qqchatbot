@@ -98,11 +98,20 @@ class TaskInboxService:
             raise ValueError("建议不存在或来源已失效")
         timestamp = self._now(now).isoformat()
         if action == "ignore":
-            with self.archive.transaction():
-                self.archive.connection.execute(
-                    "INSERT INTO task_suggestion_decisions(suggestion_key,group_id,decision,task_id,decided_at) "
-                    "VALUES (?,?,'ignored',NULL,?)", (key, suggestion["group_id"], timestamp),
-                )
+            try:
+                with self.archive.transaction():
+                    self.archive.connection.execute(
+                        "INSERT INTO task_suggestion_decisions(suggestion_key,group_id,decision,task_id,decided_at) "
+                        "VALUES (?,?,'ignored',NULL,?)", (key, suggestion["group_id"], timestamp),
+                    )
+            except sqlite3.IntegrityError as exc:
+                # Only a competing decision is a normal business conflict.
+                # Preserve other constraint failures for diagnostics.
+                if self.archive.connection.execute(
+                    'SELECT 1 FROM task_suggestion_decisions WHERE suggestion_key=?', (key,)
+                ).fetchone():
+                    raise ValueError('建议已处理，请刷新后重试') from exc
+                raise
             return None
         title, owner, due_date = self._fields(title, owner, due_date)
         try:

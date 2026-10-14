@@ -100,9 +100,9 @@ var discoveredBatchGroups=[];
     }).catch(function(error) { groupResult('群聊读取失败：'+error.message+'，请刷新重试。',true); });
   }
   function updateGroup(groupId, patch) {
-    api('PATCH', '/api/groups/' + groupId, patch).then(function() {
+    var original=configuredGroups.find(function(item){return item.group_id===groupId;});var payload=Object.assign({},patch,{expected_revision:original.revision});api('PATCH', '/api/groups/' + groupId, payload).then(function(data) {
       var group = configuredGroups.find(function(item) { return item.group_id === groupId; });
-      if (group) Object.assign(group, patch);
+      if (group) Object.assign(group, patch, {revision:data.revision});
       groupResult('关注设置已保存');
     }).catch(function(error) { groupResult('设置未保存：'+error.message,true); loadGroups(); });
   }

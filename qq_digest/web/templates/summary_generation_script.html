@@ -66,9 +66,9 @@
     var start=scope.start_date,end=scope.end_date,groupIds=scope.group_ids;
     var message=rangeResultMessage(data),failures=data.failed_groups.map(function(item){return item.group_name+'：'+item.error;}),result=document.getElementById('range-result');
     result.textContent=message+(failures.length?'\n'+failures.join('\n'):'');result.hidden=false;
-    var readable=data.created_reports.length+data.reused_reports.length;
-    if(readable)result.appendChild(summaryButton('阅读本次摘要',function(){summaryReadRangeResults(start,end,groupIds);},'btn btn-sm'));
-    summaryShowResult(message+(failures.length?'\n'+failures.join('\n'):'')+(!readable?'\n本次没有可阅读的摘要。':''),data.status==='partial_success'?'failed':'success',readable?function(){summaryReadRangeResults(start,end,groupIds);}:null);
+    var keys=data.created_reports.concat(data.reused_reports).map(function(report){return report.report_key;}),readable=keys.length&&keys.every(function(key){return /^(daily|range):[1-9][0-9]*$/.test(key||'');});
+    if(readable)result.appendChild(summaryButton('阅读本次摘要',function(){summaryReadRangeResults(start,end,groupIds,keys);},'btn btn-sm'));
+    summaryShowResult(message+(failures.length?'\n'+failures.join('\n'):'')+(!readable?'\n本次没有可阅读的摘要。':''),data.status==='partial_success'?'failed':'success',readable?function(){summaryReadRangeResults(start,end,groupIds,keys);}:null);
     if(failures.length||!readable)generationNextSteps(groupIds,scope);loadReports();
   }
   function submitRangeSummary(event) {

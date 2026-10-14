@@ -1,5 +1,6 @@
 """Task page and API, sharing the existing task inbox service."""
-import asyncio
+from pathlib import Path
+import sqlite3
 from typing import Literal
 
 from fastapi import HTTPException, Request
@@ -7,6 +8,7 @@ from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, ConfigDict, Field, StrictInt
 
 from ..task_inbox import TaskConflictError, TaskInboxService
+from ..archive import Archive
 from .worker_threads import guarded_to_thread
 
 
@@ -51,10 +53,25 @@ def add_task_routes(app, *, archive, config, templates, require_login):
             config.summary.timezone if config is not None else "Asia/Shanghai"
         ))
 
+    database_path = archive.connection.execute('PRAGMA database_list').fetchone()['file']
+
+    async def task_worker(method, *args, **kwargs):
+        def invoke():
+            if not database_path:
+                return getattr(task_inbox_service(), method)(*args, **kwargs)
+            worker = Archive.open(Path(database_path))
+            try:
+                service = TaskInboxService(worker, timezone_name=(
+                    config.summary.timezone if config else 'Asia/Shanghai'))
+                return getattr(service, method)(*args, **kwargs)
+            finally:
+                worker.close()
+        return await guarded_to_thread(invoke) if database_path else invoke()
+
     @app.get("/api/tasks/suggestions")
     async def api_task_suggestions(request: Request):
         require_login(request)
-        return {"items": await asyncio.to_thread(task_inbox_service().suggestions)}
+        return {"items": await task_worker('suggestions')}
 
     @app.get("/api/tasks")
     async def api_tasks(request: Request,
@@ -66,10 +83,14 @@ def add_task_routes(app, *, archive, config, templates, require_login):
     async def api_task_decision(request: Request, key: str, payload: TaskDecisionPayload):
         require_login(request)
         try:
-            task = await guarded_to_thread(
-                task_inbox_service().decide, key, action=payload.action,
+            task = await task_worker(
+                'decide', key, action=payload.action,
                 title=payload.title, owner=payload.owner, due_date=payload.due_date,
             )
+        except sqlite3.OperationalError as exc:
+            if getattr(exc, 'sqlite_errorcode', 0) & 0xff in (sqlite3.SQLITE_BUSY, sqlite3.SQLITE_LOCKED):
+                raise HTTPException(status_code=503, detail='待办存储暂时繁忙，请稍后重试') from exc
+            raise
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         return {"task": task, "decision": payload.action}

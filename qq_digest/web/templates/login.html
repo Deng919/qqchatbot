@@ -51,11 +51,15 @@
 
       {% if error %}<div class="error" role="alert">{{ error }}</div>{% endif %}
       <form method="post" action="/login">
+        <input type="hidden" name="next" id="login-next" value="{{ next_path|default('/') }}">
         <label for="password">密码</label>
         <input id="password" type="password" name="password" autocomplete="current-password" required autofocus>
         <button type="submit">登录</button>
       </form>
     </section>
   </main>
+  <script>
+    try { var target=sessionStorage.getItem('qq-digest-login-return');if(target&&document.getElementById('login-next').value==='/')document.getElementById('login-next').value=target;sessionStorage.removeItem('qq-digest-login-return'); } catch(e) {}
+  </script>
 </body>
 </html>

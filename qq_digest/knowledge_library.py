@@ -3,18 +3,20 @@ from __future__ import annotations
 
 import json
 from datetime import datetime, timezone
+from contextlib import contextmanager
 from zoneinfo import ZoneInfo
 
 from .candidate_context import candidate_source_context
 from .candidates import CandidateService
-from .knowledge import KnowledgeItem
+from .knowledge import KnowledgeItem, remove_item
 from .group_selection import normalize_group_selection
 from .search import _like_pattern
 
 
 class KnowledgeLibrary:
-    def __init__(self, archive, writer, timezone_name='Asia/Shanghai'):
+    def __init__(self, archive, writer, timezone_name='Asia/Shanghai', group_names=None):
         self.archive, self.writer = archive, writer
+        self.group_names=group_names or {}
         self.candidates = CandidateService(archive)
         self.zone = ZoneInfo(timezone_name)
 
@@ -77,34 +79,46 @@ class KnowledgeLibrary:
                 'date':datetime.fromisoformat(row['timestamp']).astimezone(self.zone).date().isoformat(),
                 'timestamp':row['timestamp'],'text':row['text']}
 
-    def save_message(self, *, group_id, msg_id, title, item_type, reason='', link=''):
-        source = self.source(group_id,msg_id)
-        # One explicit source/type is saved once, regardless of a double click's title.
-        rows=self.archive.connection.execute(
-            "SELECT c.candidate_id,c.message_ids" + self._select()
-            + " WHERE c.status='confirmed' AND c.group_id=? AND c.candidate_type=?",
-            (group_id,item_type)).fetchall()
-        for row in rows:
-            if json.loads(row['message_ids']) == [msg_id]:
-                return {'item_id':row['candidate_id'],'reused':True}
-        path=self.writer.path_for(item_type)
-        original=path.read_bytes() if path.exists() else None
+    @contextmanager
+    def _publication(self):
+        # Take the SQLite writer lock before reading file snapshots. Roll back
+        # files while it is still held so another publisher cannot be erased.
+        db=self.archive.connection
+        db.execute('BEGIN IMMEDIATE')
+        originals={}
+        def remember(path):
+            if path not in originals:
+                originals[path]=path.read_bytes() if path.exists() else None
         try:
-            with self.archive.transaction():
-                candidate_id=self.candidates.create_in_transaction(
-                    group_id=group_id,created_date=source['date'],candidate_type=item_type,
-                    title=title,link=link,reason=reason,content=source['text'],
-                    excerpt=source['text'][:200],message_ids=[msg_id])
-                # Existing deferred/ignored AI candidates do not refresh their body
-                # on deduplication. An explicit raw-message save must use the source.
-                self.archive.connection.execute(
-                    'UPDATE candidates SET content=?,reason=?,excerpt=?,ignore_reason=? WHERE candidate_id=?',
-                    (source['text'],reason,source['text'][:200],'',candidate_id))
-                self._publish(candidate_id)
+            yield remember
+            db.commit()
         except Exception:
-            self._restore(path,original)
+            try:
+                for path,original in originals.items():self._restore(path,original)
+            finally:
+                db.rollback()
             raise
-        return {'item_id':candidate_id,'reused':False}
+
+    def save_message(self, *, group_id, msg_id, title, item_type, reason='', link=''):
+        with self._publication() as remember:
+            source=self.source(group_id,msg_id)
+            rows=self.archive.connection.execute(
+                "SELECT c.candidate_id,c.message_ids" + self._select()
+                + " WHERE c.status='confirmed' AND c.group_id=? AND c.candidate_type=?",
+                (group_id,item_type)).fetchall()
+            for row in rows:
+                if json.loads(row['message_ids']) == [msg_id]:
+                    return {'item_id':row['candidate_id'],'reused':True}
+            remember(self.writer.path_for(item_type))
+            candidate_id=self.candidates.create_in_transaction(
+                group_id=group_id,created_date=source['date'],candidate_type=item_type,
+                title=title,link=link,reason=reason,content=source['text'],
+                excerpt=source['text'][:200],message_ids=[msg_id],human_edited=True)
+            self.archive.connection.execute(
+                'UPDATE candidates SET content=?,reason=?,excerpt=?,ignore_reason=?,revision=revision+1,human_edited=1 WHERE candidate_id=?',
+                (source['text'],reason,source['text'][:200],'',candidate_id))
+            self._publish(candidate_id)
+            return {'item_id':candidate_id,'reused':False}
 
     @staticmethod
     def _restore(path, original):
@@ -120,23 +134,34 @@ class KnowledgeLibrary:
         self.writer.write(KnowledgeItem(
             item_id=str(candidate_id),date=candidate.created_date,
             category='资源' if candidate.candidate_type=='resource' else '经验',
-            source_group=group['name'] if group else str(candidate.group_id),title=candidate.title,
+            source_group=group['name'] if group else self.group_names.get(candidate.group_id,str(candidate.group_id)),title=candidate.title,
             link=candidate.link,value=candidate.reason,excerpt=candidate.excerpt,content=candidate.content),
             candidate.candidate_type)
         now=datetime.now(timezone.utc).isoformat()
         self.archive.connection.execute(
             'INSERT OR IGNORE INTO knowledge_items(item_id,candidate_id,markdown_path,written_at) VALUES(?,?,?,?)',
             (str(candidate_id),candidate_id,str(self.writer.path_for(candidate.candidate_type)),now))
-        self.archive.connection.execute("UPDATE candidates SET status='confirmed',updated_at=? WHERE candidate_id=?",
+        self.archive.connection.execute("UPDATE candidates SET status='confirmed',updated_at=?,revision=revision+1,human_edited=1 WHERE candidate_id=?",
                                         (now,candidate_id))
 
     def confirm_candidate(self, candidate_id):
-        candidate=self.candidates.get(candidate_id)
-        path=self.writer.path_for(candidate.candidate_type)
-        original=path.read_bytes() if path.exists() else None
-        try:
-            with self.archive.transaction():
-                self._publish(candidate_id)
-        except Exception:
-            self._restore(path,original)
-            raise
+        with self._publication() as remember:
+            candidate=self.candidates.get(candidate_id)
+            if candidate.status=='confirmed':return
+            if candidate.status not in {'pending','later'}:
+                raise ValueError('只有待审核或稍后的候选可以入库')
+            remember(self.writer.path_for(candidate.candidate_type))
+            self._publish(candidate_id)
+
+    def undo_candidate(self, candidate_id):
+        with self._publication() as remember:
+            candidate=self.candidates.get(candidate_id)
+            if candidate.status!='confirmed':raise ValueError('只有已入库的候选可以撤销')
+            row=self.archive.connection.execute('SELECT markdown_path FROM knowledge_items WHERE candidate_id=?',(candidate_id,)).fetchone()
+            if row is None:raise ValueError('找不到对应的知识库条目')
+            from pathlib import Path
+            path=Path(row['markdown_path']);remember(path)
+            remove_item(path,str(candidate_id))
+            self.archive.connection.execute('DELETE FROM knowledge_items WHERE candidate_id=?',(candidate_id,))
+            self.archive.connection.execute("UPDATE candidates SET status='pending',updated_at=?,revision=revision+1 WHERE candidate_id=?",(datetime.now(timezone.utc).isoformat(),candidate_id))
+        return {'status':'pending'}

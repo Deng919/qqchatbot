@@ -10,11 +10,14 @@
 from __future__ import annotations
 
 import re
+import sqlite3
 from dataclasses import dataclass
+from datetime import datetime, timezone
 
 from .notifier import QQBotNotifier
 from ..candidates import CandidateService
-from ..knowledge import KnowledgeWriter, KnowledgeItem
+from ..knowledge import KnowledgeWriter
+from ..knowledge_library import KnowledgeLibrary
 
 
 @dataclass(frozen=True)
@@ -116,7 +119,7 @@ class BotCommandHandler:
             try:
                 self._confirm_one(candidate_id)
                 confirmed.append(candidate_id)
-            except (KeyError, ValueError, OSError) as exc:
+            except (KeyError, ValueError, OSError, sqlite3.Error) as exc:
                 failed.append((candidate_id, str(exc)))
 
         if not failed:
@@ -132,27 +135,20 @@ class BotCommandHandler:
         )
 
     def _confirm_one(self, cid: int) -> None:
-        candidate = self.candidates.get(cid)
-        group_name = self._group_name(candidate.group_id)
+        KnowledgeLibrary(self.candidates.archive, self.knowledge,
+                         group_names=self.group_names).confirm_candidate(cid)
 
-        item = KnowledgeItem(
-            item_id=str(cid),
-            date=candidate.created_date,
-            category="资源" if candidate.candidate_type == "resource" else "经验",
-            source_group=group_name,
-            title=candidate.title,
-            link=candidate.link,
-            value=candidate.reason,
-            excerpt=candidate.excerpt,
-            content=candidate.content,
-        )
-        path = self.knowledge.write(item, candidate.candidate_type)
-        self.candidates.archive.record_knowledge_item(
-            item_id=item.item_id,
-            candidate_id=cid,
-            markdown_path=str(path),
-        )
-        self.candidates.confirm(cid)
+    def _change_review_status(self, cid: int, status: str, allowed: tuple[str, ...], reason: str = "") -> None:
+        self.candidates.get(cid)
+        with self.candidates.archive.transaction():
+            placeholders = ",".join("?" for _ in allowed)
+            cursor = self.candidates.archive.connection.execute(
+                "UPDATE candidates SET status=?,ignore_reason=?,updated_at=?,revision=revision+1 "
+                f"WHERE candidate_id=? AND status IN ({placeholders})",
+                (status, reason, datetime.now(timezone.utc).isoformat(), cid, *allowed),
+            )
+            if not cursor.rowcount:
+                raise ValueError("候选状态已变化；已入库条目请先撤销入库")
 
     def _cmd_ignore(self, openid: str, args: str) -> CommandResult:
         parts = args.split(None, 1)
@@ -164,8 +160,8 @@ class BotCommandHandler:
             return CommandResult(False, "候选ID 必须是数字")
         reason = parts[1] if len(parts) > 1 else ""
         try:
-            self.candidates.ignore(cid, reason)
-        except KeyError as exc:
+            self._change_review_status(cid, "ignored", ("pending", "later"), reason)
+        except (KeyError, ValueError, sqlite3.Error) as exc:
             return CommandResult(False, str(exc))
         return CommandResult(True, f"已忽略候选 #{cid}")
 
@@ -175,8 +171,8 @@ class BotCommandHandler:
         except ValueError:
             return CommandResult(False, "用法：/later <候选ID>")
         try:
-            self.candidates.update_status(cid, "later")
-        except KeyError as exc:
+            self._change_review_status(cid, "later", ("pending",))
+        except (KeyError, ValueError, sqlite3.Error) as exc:
             return CommandResult(False, str(exc))
         return CommandResult(True, f"已标记稍后审核 #{cid}")
 

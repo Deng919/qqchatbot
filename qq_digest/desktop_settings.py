@@ -17,8 +17,9 @@ import yaml
 
 from .config import load_config
 from .backup_restore import (BACKUP_ROOT, CONFIG_PATH_FIELDS, DATA_FOLDERS,
-                             TEMP_ROOT, backup_data, inspect_backup, restore_backup)
+                             TEMP_ROOT, _backup_source_files, backup_data, inspect_backup, restore_backup)
 from .operations import OperationBusy, OperationBlocked
+from .storage_files import safe_path
 
 
 from .runtime_paths import download_root, release_root
@@ -40,13 +41,17 @@ def _atomic_json(path: Path, payload: dict) -> None:
 
 def migrate_storage(config_path: Path, install_dir: Path, destination: Path) -> dict:
     """Copy all managed data, rebase database paths, then atomically switch the launcher."""
-    config_path = Path(config_path).resolve()
-    install_dir = Path(install_dir).resolve()
-    launcher = install_dir / "launcher.json"
+    config_path = safe_path(config_path)
+    install_dir = safe_path(install_dir)
+    launcher = safe_path(install_dir / "launcher.json")
     if not launcher.is_file():
         raise ValueError("只支持已打包的桌面程序更改存储位置")
-    source = load_config(config_path).data_dir.resolve()
-    destination = Path(destination).expanduser().resolve()
+    config = load_config(config_path, create_dirs=False)
+    source = safe_path(config.data_dir)
+    safe_path(config.archive_path)
+    # Validate the complete source chain/tree before creating or copying targets.
+    _backup_source_files(config, config_path)
+    destination = safe_path(destination)
     if _inside(destination, source) or _inside(source, destination):
         raise ValueError("新位置不能位于现有数据目录内，也不能包含现有数据目录")
     if destination.exists() and (not destination.is_dir() or any(destination.iterdir())):
@@ -60,9 +65,7 @@ def migrate_storage(config_path: Path, install_dir: Path, destination: Path) -> 
             if not value:
                 continue
             old_path = Path(value).expanduser()
-            if not old_path.is_absolute():
-                continue
-            old_path = old_path.resolve()
+            old_path = safe_path(old_path if old_path.is_absolute() else source / old_path)
             if _inside(old_path, source):
                 relative = old_path.relative_to(source)
                 new_path = destination / relative
@@ -70,6 +73,9 @@ def migrate_storage(config_path: Path, install_dir: Path, destination: Path) -> 
                     new_path.parent.mkdir(parents=True, exist_ok=True)
                     shutil.copy2(old_path, new_path)
                 raw[section][key] = str(new_path)
+            else:
+                # External references keep their original identity; do not copy them.
+                raw[section][key] = str(old_path)
         new_config = destination / "config" / "config.yaml"
         new_config.write_text(yaml.safe_dump(raw, allow_unicode=True, sort_keys=False), encoding="utf-8")
         for folder in DATA_FOLDERS:
@@ -276,8 +282,10 @@ class DesktopBridge:
         registry = ReleaseRegistry(release_root(), STATE_DIR)
         registry.register(self._install_dir)
         config = load_config(self._config_path)
-        data_paths = [config.data_dir, config.archive_path, config.ntqq.db_dir,
+        data_paths = [config.data_dir, config.archive_path,
                       *config.resolve_knowledge_paths().values()]
+        if config.ntqq.db_dir:
+            data_paths.append(config.ntqq.db_dir)
         for section, field in CONFIG_PATH_FIELDS:
             value = getattr(getattr(config, section), field, '')
             if value:

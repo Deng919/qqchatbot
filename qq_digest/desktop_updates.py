@@ -135,7 +135,8 @@ def run_transaction(registry, runtime):
         atomic_json(path, transaction)
 
     try:
-        save('waiting', worker_pid=os.getpid())
+        # Recovery intent must survive another interruption at this checkpoint.
+        save('recovering' if interrupted else 'waiting', worker_pid=os.getpid())
         if not runtime.wait_parent(transaction['parent_pid']):
             raise RuntimeError('原程序尚未退出，切换已取消')
         if interrupted and transaction.get('child_pid'):

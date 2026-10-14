@@ -8,6 +8,8 @@ from zoneinfo import ZoneInfo
 from .archive import Archive
 from .search import _snippet
 from .sender_identity import sender_fields
+from .group_selection import normalize_group_selection
+from .message_search import MESSAGE_TYPES
 
 
 def _date_value(value: str | None) -> date | None:
@@ -24,6 +26,9 @@ def _date_value(value: str | None) -> date | None:
 
 def browse_messages(
     archive: Archive, *, group_id: int | None = None,
+    group_ids: list[int] | None = None,
+    sender_qq: int | None = None, message_type: str | None = None,
+    custom_dates: bool = False,
     date_from: str | None = None, date_to: str | None = None,
     page: int = 1, page_size: int = 20, timezone_name: str = "Asia/Shanghai",
 ) -> dict:
@@ -36,26 +41,35 @@ def browse_messages(
     today = datetime.now(zone).date()
     first = _date_value(date_from)
     last = _date_value(date_to)
+    clauses=[];params: list[object]=[]
     try:
-        if first is None:
-            last = last or today
-            first = last - timedelta(days=6)
-        if last is None:
-            last = max(today, first)
-        if first > last:
-            raise ValueError("开始日期不能晚于结束日期")
-        start = datetime.combine(first, time.min, zone).astimezone(timezone.utc).isoformat()
-        end = datetime.combine(last + timedelta(days=1), time.min, zone).astimezone(timezone.utc).isoformat()
+        if not custom_dates:
+            if first is None:
+                last=last or today;first=last-timedelta(days=6)
+            if last is None:last=max(today,first)
+        if first is not None and last is not None and first>last:
+            raise ValueError('开始日期不能晚于结束日期')
+        if first is not None:
+            start=datetime.combine(first,time.min,zone).astimezone(timezone.utc).isoformat()
+            clauses.append('m.timestamp>=?');params.append(start)
+        if last is not None:
+            end=datetime.combine(last+timedelta(days=1),time.min,zone).astimezone(timezone.utc).isoformat()
+            clauses.append('m.timestamp<?');params.append(end)
     except OverflowError as exc:
-        raise ValueError("日期超出支持的查询范围") from exc
+        raise ValueError('日期超出支持的查询范围') from exc
 
-    clauses = ["m.timestamp>=?", "m.timestamp<?"]
-    params: list[object] = [start, end]
-    if group_id is not None:
-        clauses.append("m.group_id=?")
-        params.append(group_id)
+    selection=normalize_group_selection(group_id,group_ids)
+    if selection:
+        clauses.append('m.group_id IN ('+','.join('?' for _ in selection)+')')
+        params.extend(selection)
+    if sender_qq is not None:
+        if type(sender_qq) is not int or not 1<=sender_qq<2**63:raise ValueError('发送人QQ号无效')
+        clauses.append('m.sender_qq=?');params.append(sender_qq)
+    if message_type is not None:
+        if message_type not in MESSAGE_TYPES:raise ValueError('消息类型无效')
+        clauses.append('m.message_type=?');params.append(message_type)
     source = " FROM messages m JOIN groups g ON g.group_id=m.group_id"
-    where = " WHERE " + " AND ".join(clauses)
+    where = " WHERE " + " AND ".join(clauses) if clauses else ""
     connection = archive.connection
     total = connection.execute("SELECT COUNT(*)" + source + where, params).fetchone()[0]
     rows = connection.execute(

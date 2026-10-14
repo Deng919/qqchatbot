@@ -37,6 +37,7 @@ class GroupConfig(BaseModel):
     collection_window_days: int = 30
     read_images: bool = False
     read_files: bool = False
+    revision: int = 0
 
 
 class SummaryCandidate(BaseModel):
@@ -54,3 +55,5 @@ class SummaryCandidate(BaseModel):
     ignore_reason: str = ""
     created_at: str = ""
     updated_at: str = ""
+    revision: int = 0
+    human_edited: bool = False

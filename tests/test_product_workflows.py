@@ -37,6 +37,7 @@ def test_global_search_finds_messages_reports_and_confirmed_knowledge(web_client
     )
     _login(client)
     assert client.patch(f"/api/candidates/{candidate_id}", json={
+        'expected_revision':client.get(f'/api/candidates/{candidate_id}').json()['revision'],
         "title": "向日葵资料", "link": "https://example.com", "content": "部署资料",
         "reason": "可供复用", "excerpt": "看这个站点", "candidate_type": "resource",
     }).status_code == 200
@@ -61,6 +62,7 @@ def test_candidate_can_be_edited_then_undone_after_confirmation(web_client):
     client, candidate_id, knowledge_dir = web_client
     _login(client)
     payload = {
+        'expected_revision':client.get(f'/api/candidates/{candidate_id}').json()['revision'],
         "title": "修订后的标题", "link": "https://example.com/new", "content": "新的正文",
         "reason": "更准确的理由", "excerpt": "对应原文", "candidate_type": "resource",
     }

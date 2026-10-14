@@ -1,5 +1,6 @@
 """Archive table creation and compatibility upgrades."""
 
+import json
 import sqlite3
 
 
@@ -348,6 +349,28 @@ def initialize_archive_schema(connection: sqlite3.Connection) -> None:
     task_columns = {row["name"] for row in connection.execute("PRAGMA table_info(tasks)")}
     if "revision" not in task_columns:
         connection.execute("ALTER TABLE tasks ADD COLUMN revision INTEGER NOT NULL DEFAULT 0")
+    for table, fields in (
+        ('groups', {'revision': 'INTEGER NOT NULL DEFAULT 0'}),
+        ('candidates', {'revision': 'INTEGER NOT NULL DEFAULT 0',
+                        'human_edited': 'INTEGER NOT NULL DEFAULT 0',
+                        'generation_key': "TEXT NOT NULL DEFAULT ''"}),
+    ):
+        columns = {row['name'] for row in connection.execute(f'PRAGMA table_info({table})')}
+        for name, definition in fields.items():
+            if name not in columns:
+                connection.execute(f'ALTER TABLE {table} ADD COLUMN {name} {definition}')
+                if table == 'candidates' and name == 'human_edited':
+                    # Older archives did not record edit provenance. Preserve
+                    # pending/later rows conservatively rather than risk erasing
+                    # edits that cannot be distinguished from generated text.
+                    connection.execute("UPDATE candidates SET human_edited=1 WHERE status IN ('pending','later')")
+    # Keep the original generation identity separate from editable fields.
+    for row in connection.execute("SELECT * FROM candidates WHERE generation_key='' ").fetchall():
+        key = json.dumps([row['group_id'], row['created_date'], row['candidate_type'],
+                          row['title'], row['link'], json.loads(row['message_ids'])], ensure_ascii=False)
+        connection.execute('UPDATE candidates SET generation_key=? WHERE candidate_id=?',
+                           (key, row['candidate_id']))
+    connection.execute('CREATE INDEX IF NOT EXISTS idx_candidates_generation_key ON candidates(generation_key)')
     # Migration: add category column for existing databases
     try:
         connection.execute(

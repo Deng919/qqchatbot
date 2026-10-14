@@ -16,7 +16,7 @@ function browse(group,from,to,view='points'){summaryView=view;summaryDetailActiv
 const settle=()=>new Promise(setImmediate);
 (async()=>{
   browse('22','2026-09-01','2026-09-07','groups');reportPage=3;
-  summaryReadRangeResults('2026-10-05','2026-10-05',[11]);
+  summaryReadRangeResults('2026-10-05','2026-10-05',[11],['daily:1']);
   assert.equal(node('report-group').value,'11');
   summaryReturnToReading();
   assert.equal(summaryView,'groups','return restores previous reading mode');

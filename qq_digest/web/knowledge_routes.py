@@ -1,5 +1,6 @@
 """Core knowledge access is independent of the optional candidate review UI."""
 from typing import Annotated, Literal
+import sqlite3
 
 from fastapi import Depends, HTTPException, Query, Request, Path
 from fastapi.responses import RedirectResponse
@@ -48,6 +49,7 @@ def add_knowledge_routes(app, *, archive, knowledge, config, templates, require_
         except ValueError as exc: raise HTTPException(422,str(exc)) from exc
         except OperationBusy as exc: raise HTTPException(409,'后台任务正在运行，请稍后重试保存') from exc
         except OSError as exc: raise HTTPException(503,'知识保存失败，请检查存储位置后重试；原数据已保留') from exc
+        except sqlite3.Error as exc:raise HTTPException(503,'知识存储暂时不可用，请稍后重试；原数据已保留') from exc
 
     @app.get('/knowledge')
     async def knowledge_page(request:Request):

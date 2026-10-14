@@ -371,7 +371,8 @@ def test_restored_real_archive_can_start_and_search(tmp_path):
     root = tmp_path / "data"
     (root / "config").mkdir(parents=True)
     config = root / "config" / "config.yaml"
-    config.write_text("security:\n  web_password_hash: test\nai:\n  model: test\n  base_url: https://example.com\n  api_key_env: TEST_KEY\n", encoding="utf-8")
+    config.write_text("security:\n  web_password_hash: test\n  session_secret_file: config/secret.txt\nai:\n  model: test\n  base_url: https://example.com\n  api_key_env: TEST_KEY\n", encoding="utf-8")
+    (root / "config" / "secret.txt").write_text("synthetic-session-secret-0123456789", encoding="utf-8")
     (root / "reports").mkdir()
     report = root / "reports" / "daily.md"
     report.write_text("# 早会摘要", encoding="utf-8")

@@ -197,9 +197,40 @@ def _publish_staged_outputs(
     staged_dir = Path(staged_dir)
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
-    for path in staged_dir.iterdir():
-        if path.is_file() and path.name.lower() in refreshed_names:
-            os.replace(path, output_dir / path.name)
+    paths = [path for path in staged_dir.iterdir()
+             if path.is_file() and path.name.lower() in refreshed_names]
+    backup_dir = Path(tempfile.mkdtemp(prefix=".refresh-backup-", dir=output_dir))
+    installed: list[Path] = []
+    cleanup = True
+    try:
+        # Copy before installing so a locked target never leaves a missing old file.
+        for path in paths:
+            target = output_dir / path.name
+            if target.exists():
+                shutil.copy2(target, backup_dir / path.name)
+        try:
+            for path in paths:
+                target = output_dir / path.name
+                os.replace(path, target)
+                installed.append(target)
+        except BaseException:
+            rollback_errors = []
+            for target in reversed(installed):
+                try:
+                    backup = backup_dir / target.name
+                    if backup.exists():
+                        os.replace(backup, target)
+                    else:
+                        target.unlink(missing_ok=True)
+                except OSError as exc:
+                    rollback_errors.append(f"{target.name}: {exc}")
+            if rollback_errors:
+                cleanup = False
+                raise SnapshotError(f"刷新回滚失败，旧文件保留于 {backup_dir}: " + "; ".join(rollback_errors))
+            raise
+    finally:
+        if cleanup:
+            shutil.rmtree(backup_dir)
     return []
 
 
@@ -523,6 +554,44 @@ def refresh_database(
     qq_number = str(qq_number)
     output_dir = Path(output_dir)
     errors: list[str] = []
+
+    if qq_number in {"", "0"}:
+        available = {path.name.lower() for path in output_dir.iterdir() if path.is_file()} if output_dir.is_dir() else set()
+        required = _required_refresh_files(available)
+        expected_tables = {"group_info.db": "group_list", "nt_msg.db": "group_msg_table",
+                           "group_msg_fts.db": "group_msg_fts"}
+        expected_columns = {
+            "group_info.db": {"60001", "60007"},
+            "nt_msg.db": {"40001", "40020", "40021", "40050", "40800"},
+            "group_msg_fts.db": {"40001", "40050", "40020", "40021", "40027",
+                                 "41701", "41702", "41703", "41704"},
+        }
+        for name in sorted(required):
+            path = output_dir / name
+            try:
+                if not path.is_file():
+                    raise FileNotFoundError(f"缺少 {name}")
+                connection = sqlite3.connect(path.resolve().as_uri() + "?mode=ro", uri=True)
+                try:
+                    tables = {row[0] for row in connection.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+                    if expected_tables[name] not in tables:
+                        raise ValueError(f"缺少表 {expected_tables[name]}")
+                    columns = {row[1] for row in connection.execute(f"PRAGMA table_info({expected_tables[name]})")}
+                    missing_columns = expected_columns[name] - columns
+                    if name == "nt_msg.db" and not columns.intersection({"40027", "40033"}):
+                        missing_columns.add("40027/40033")
+                    if missing_columns:
+                        raise ValueError("缺少采集所需列: " + ", ".join(sorted(missing_columns)))
+                    if connection.execute("PRAGMA quick_check").fetchall() != [("ok",)]:
+                        raise ValueError("完整性校验失败")
+                finally:
+                    connection.close()
+            except (OSError, sqlite3.Error, ValueError) as exc:
+                errors.append(f"{name}: {exc}")
+        return RefreshResult(
+            not errors, "已有解密数据库不可读: " + "; ".join(errors) if errors else "使用已有解密数据库（未配置 QQ 号，未提取或解密）",
+            output_dir=str(output_dir), duration_seconds=time.time() - start, errors=errors,
+        )
 
     # 1. Find QQ main process
     main_pid = pid or _find_qq_main_pid()

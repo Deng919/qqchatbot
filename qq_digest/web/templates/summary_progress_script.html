@@ -32,18 +32,19 @@
   }
   function summaryPollProgress(identifier){
     if(identifier!==summaryProgressId||summaryProgressFinished===identifier||summaryProgressPolling===identifier)return Promise.resolve();
-    summaryProgressPolling=identifier;
+    summaryProgressPolling=identifier;var authPaused=false;
     return api('GET','/api/summaries/progress?'+new URLSearchParams({generation_id:identifier})).then(function(data){
       if(identifier!==summaryProgressId||summaryProgressFinished===identifier)return;
       summaryProgressConnection('');summaryDrawProgress(data.generation);
       if(data.generation.status!=='running')summaryFinishProgress(identifier,data.generation.result,data.generation.scope,data.generation.error);
     }).catch(function(error){
       if(identifier!==summaryProgressId||summaryProgressFinished===identifier)return;
-      if(error.status===404){summaryProgressConnection('本次进度已不存在，程序可能已重启。');summaryFinishProgress(identifier,null,summaryProgressScope,error.message);}
+      if(error.status===401){authPaused=true;summaryProgressConnection('登录已过期，进度查询已暂停；任务可能仍在运行，重新登录后继续查询。');}
+      else if(error.status===404){summaryProgressConnection('本次进度已不存在，程序可能已重启。');summaryFinishProgress(identifier,null,summaryProgressScope,error.message);}
       else summaryProgressConnection('连接中断，正在重连。任务可能仍在运行。');
     }).finally(function(){
       if(summaryProgressPolling===identifier)summaryProgressPolling=null;
-      if(identifier===summaryProgressId&&summaryGenerationBusy){clearTimeout(summaryProgressTimer);summaryProgressTimer=setTimeout(function(){summaryPollProgress(identifier);},1000);}
+      if(identifier===summaryProgressId&&summaryGenerationBusy&&!authPaused){clearTimeout(summaryProgressTimer);summaryProgressTimer=setTimeout(function(){summaryPollProgress(identifier);},1000);}
     });
   }
   function summaryRestoreGeneration(){
@@ -57,4 +58,5 @@
       else summaryFinishProgress(run.generation_id,run.result,run.scope,run.error);
     }).catch(function(){summaryProgressConnection('暂时无法恢复生成状态，请刷新后重试。');});
   }
+  document.addEventListener('qq-digest-session-restored',function(){if(summaryGenerationBusy&&summaryProgressId)summaryPollProgress(summaryProgressId);});
 </script>

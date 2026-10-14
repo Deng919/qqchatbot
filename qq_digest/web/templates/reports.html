@@ -259,8 +259,8 @@
       if(token===reportSelectionToken){document.getElementById('regeneration-reason').value='';viewReport(report.kind,report.id);}
     }).catch(function(error){toast('重新生成失败：'+error.message,'error');}).finally(function(){revisionBusy=false;document.getElementById('report-regenerate').textContent='保留旧版并重新生成';revisionControls();});
   }
-  function reportParams() { var p = new URLSearchParams(); p.set('page', reportPage); p.set('kind', document.getElementById('report-kind').value);summaryGroupParams(p,document.getElementById('report-group').value); [['date_from','report-from'],['date_to','report-to']].forEach(function(row) { var value = document.getElementById(row[1]).value; if (value) p.set(row[0], value); }); return p; }
-  function filterReports() { summaryCancelDetail();reportPage = 1; summaryPointPage=1; summaryPendingScroll=null;summaryApplyView();summarySave();loadReports(); }
+  function reportParams() { var p = new URLSearchParams(); p.set('page', reportPage); p.set('kind', document.getElementById('report-kind').value);summaryGroupParams(p,document.getElementById('report-group').value); [['date_from','report-from'],['date_to','report-to']].forEach(function(row) { var value = document.getElementById(row[1]).value; if (value) p.set(row[0], value); }); summaryReportKeyParams(p);return p; }
+  function filterReports(keepGenerated) { if(!keepGenerated&&summaryGeneratedReading)summaryGeneratedReading.keys=null;summaryCancelDetail();reportPage = 1; summaryPointPage=1; summaryPendingScroll=null;summaryApplyView();summarySave();loadReports(); }
   function clearReportFilters() { summaryAllDates(); }
   function changeReportPage(step) { summaryCancelDetail();reportPage += step; loadReports(); }
   function loadReports() {

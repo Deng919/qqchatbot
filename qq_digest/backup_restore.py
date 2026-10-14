@@ -46,8 +46,17 @@ def _sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
+def _manifest_source_root(manifest: dict) -> Path:
+    value = manifest.get("source_data_dir") if isinstance(manifest, dict) else None
+    if not isinstance(value, str) or not Path(value).is_absolute():
+        raise ValueError("备份校验清单缺少有效的绝对源目录")
+    # A historical root is a lexical identity, not a path to inspect or resolve.
+    return Path(os.path.normpath(value))
+
+
 def _archive_names(archive: zipfile.ZipFile) -> list[str]:
     names: list[str] = []
+    custom_members: list[tuple[str, bool]] = []
     seen: set[str] = set()
     total = 0
     for info in archive.infolist():
@@ -61,7 +70,6 @@ def _archive_names(archive: zipfile.ZipFile) -> list[str]:
                     any(char in '<>:"|?*' for char in part) or
                     part.split(".")[0].upper() in reserved for part in parts) or
                 PurePosixPath(normalized).as_posix() != normalized or
-                parts[0] not in {"config", "archive", *DATA_FOLDERS, "manifest.json"} or
                 (parts[0] == "manifest.json" and name != "manifest.json")):
             raise ValueError(f"备份包含不安全的文件路径：{name}")
         if name.casefold() in seen:
@@ -71,6 +79,8 @@ def _archive_names(archive: zipfile.ZipFile) -> list[str]:
             raise ValueError(f"备份包含不安全的文件路径：{name}")
         if name == "manifest.json" and info.file_size > MAX_MANIFEST_BYTES:
             raise ValueError("备份校验清单过大")
+        if parts[0] not in {"config", "archive", *DATA_FOLDERS, "manifest.json"}:
+            custom_members.append((name, info.is_dir()))
         if info.is_dir():
             continue
         total += info.file_size
@@ -79,6 +89,32 @@ def _archive_names(archive: zipfile.ZipFile) -> list[str]:
             raise ValueError("备份文件数量或大小超出安全限制")
     if "config/config.yaml" not in names or "archive/archive.sqlite" not in names:
         raise ValueError("备份缺少配置或消息数据库")
+    source_root = None
+    if "manifest.json" in names:
+        try:
+            source_root = _manifest_source_root(json.loads(archive.read("manifest.json")))
+        except (UnicodeError, json.JSONDecodeError) as exc:
+            raise ValueError("备份校验清单无效") from exc
+    if custom_members:
+        if archive.getinfo("config/config.yaml").file_size > MAX_MANIFEST_BYTES:
+            raise ValueError("备份配置文件过大")
+        raw = _parse_config(archive.read("config/config.yaml"))
+        declared = set()
+        for section, key in CONFIG_PATH_FIELDS:
+            settings = raw.get(section)
+            value = settings.get(key) if isinstance(settings, dict) else None
+            if not isinstance(value, str) or not value:
+                continue
+            path = Path(os.path.normpath(os.path.expanduser(value)))
+            if path.is_absolute():
+                if source_root is None or not path.is_relative_to(source_root):
+                    continue
+                path = path.relative_to(source_root)
+            if not path.drive and ".." not in path.parts:
+                declared.add(path.as_posix())
+        for name, directory in custom_members:
+            if name not in declared and not (directory and any(value.startswith(name) for value in declared)):
+                raise ValueError(f"备份包含不安全的文件路径：{name}")
     return names
 
 
@@ -124,12 +160,15 @@ def _validate_core_schema(db: sqlite3.Connection) -> None:
 
 
 def _backup_source_files(config, config_path: Path) -> dict[str, Path]:
-    files = {"config/config.yaml": config_path}
+    safe_path(config.data_dir)
+    safe_path(config.archive_path)
+    files = {"config/config.yaml": safe_path(config_path)}
     for folder in DATA_FOLDERS:
-        root = config.data_dir / folder
+        root = safe_path(config.data_dir / folder)
         if root.is_dir():
             for path in root.rglob("*"):
-                if path.is_file() and not path.is_symlink():
+                path = safe_path(path, config.data_dir)
+                if path.is_file():
                     relative = path.relative_to(config.data_dir)
                     if relative.parts[:2] != ("work", "snapshots"):
                         files[relative.as_posix()] = path
@@ -139,8 +178,8 @@ def _backup_source_files(config, config_path: Path) -> dict[str, Path]:
         if not value:
             continue
         path = Path(value).expanduser()
-        path = (path if path.is_absolute() else config.data_dir / path).resolve()
-        if path.is_file() and not path.is_symlink() and _inside(path, config.data_dir):
+        path = safe_path(path if path.is_absolute() else config.data_dir / path)
+        if path.is_file() and _inside(path, config.data_dir):
             files[path.relative_to(config.data_dir).as_posix()] = path
     return files
 
@@ -168,8 +207,9 @@ def backup_data(config_path: Path, destination: Path = BACKUP_ROOT,
 
 def _backup_data_locked(config_path: Path, destination: Path,
                         *, temp_root: Path, kind: str) -> dict:
-    config_path = Path(config_path).resolve()
-    config = load_config(config_path)
+    config_path = safe_path(config_path)
+    config = load_config(config_path, create_dirs=False)
+    safe_path(config.archive_path)
     if not config.archive_path.is_file():
         raise ValueError("尚无消息数据库，无法生成可恢复的备份")
     destination = safe_path(destination)
@@ -264,9 +304,9 @@ def _inspect_backup_locked(path: Path, *, temp_root: Path) -> dict:
                 except (KeyError, TypeError, json.JSONDecodeError) as exc:
                     raise ValueError("备份校验清单无效") from exc
             _parse_config(archive.read("config/config.yaml"))
-            owner = manifest.get("source_data_dir") if manifest else None
+            owner = _manifest_source_root(manifest) if manifest else None
             temporary_context = (managed_temporary(temp_root, "qqdigest-check-", owner)
-                                 if isinstance(owner, str) and Path(owner).is_absolute()
+                                 if owner is not None
                                  else tempfile.TemporaryDirectory(prefix="qqdigest-check-", dir=temp_root))
             with temporary_context as temporary:
                 database = Path(temporary) / "archive.sqlite"
@@ -283,7 +323,7 @@ def _inspect_backup_locked(path: Path, *, temp_root: Path) -> dict:
                     "legacy": manifest is None, "path": str(path), "sha256": _sha256(path),
                     "size_bytes": path.stat().st_size, "file_count": len(names) - (manifest is not None),
                     "created_at": manifest.get("created_at", "") if manifest else "",
-                    "source_data_dir": manifest.get("source_data_dir", "") if manifest else "",
+                    "source_data_dir": str(owner) if owner is not None else "",
                     **counts}
     except (zipfile.BadZipFile, sqlite3.DatabaseError) as exc:
         raise ValueError(f"备份完整性校验失败：{exc}") from exc
@@ -322,11 +362,11 @@ def restore_backup(path: Path, destination: Path, current_config_path: Path, ins
     preview = inspect_backup(path, temp_root=temp_root)
     if preview["sha256"] != expected_sha256:
         raise ValueError("备份自预览后已变化，请重新预览")
-    current_config_path = Path(current_config_path).resolve()
-    current_root = load_config(current_config_path).data_dir.resolve()
-    destination = Path(destination).expanduser().resolve()
-    install_dir = Path(install_dir).resolve()
-    launcher = install_dir / "launcher.json"
+    current_config_path = safe_path(current_config_path)
+    current_root = safe_path(load_config(current_config_path, create_dirs=False).data_dir)
+    destination = safe_path(destination)
+    install_dir = safe_path(install_dir)
+    launcher = safe_path(install_dir / "launcher.json")
     if not launcher.is_file():
         raise ValueError("只支持已打包的桌面程序恢复数据")
     if _inside(destination, current_root) or _inside(current_root, destination):
@@ -350,26 +390,27 @@ def restore_backup(path: Path, destination: Path, current_config_path: Path, ins
                     else _legacy_root(staging / "archive" / "archive.sqlite",
                                       staging / "config" / "config.yaml"))
         if old_root is not None:
-            _rebase_paths_to(staging, old_root, destination)
+            _rebase_paths_to(staging, old_root, staging)
         try:
-            load_config(staging / "config" / "config.yaml", create_dirs=False)
+            staged_config = load_config(staging / "config" / "config.yaml", create_dirs=False)
+            secret_file = staged_config.security.session_secret_file
+            if secret_file:
+                secret_path = Path(secret_file).expanduser()
+                secret_path = safe_path(secret_path if secret_path.is_absolute() else staging / secret_path)
+                if not secret_path.is_file() and _inside(secret_path, staging):
+                    secret_path.parent.mkdir(parents=True, exist_ok=True)
+                    secret_path.write_text(secrets.token_urlsafe(48) + "\n", encoding="utf-8")
+            if not staged_config.resolve_session_secret():
+                raise ConfigError("Session secret 未设置")
         except ConfigError as exc:
             raise ValueError(f"备份配置无效：{exc}") from exc
+        _rebase_paths_to(staging, staging, destination)
         if _sha256(Path(path).expanduser().resolve()) != expected_sha256:
             raise ValueError("备份自预览后已变化，请重新预览")
         if destination.exists():
             destination.rmdir()
         os.replace(staging, destination)
         moved = True
-        restored_config = load_config(destination / "config" / "config.yaml")
-        secret_file = restored_config.security.session_secret_file
-        if secret_file:
-            secret_path = Path(secret_file).expanduser()
-            secret_path = (secret_path if secret_path.is_absolute() else destination / secret_path).resolve()
-            if not secret_path.is_file() and _inside(secret_path, destination):
-                secret_path.parent.mkdir(parents=True, exist_ok=True)
-                secret_path.write_text(secrets.token_urlsafe(48) + "\n", encoding="utf-8")
-            restored_config.resolve_session_secret()
         temporary = launcher.with_name(launcher.name + ".new")
         temporary.write_text(json.dumps({"config_path": str(destination / "config" / "config.yaml")}, ensure_ascii=False), encoding="utf-8")
         os.replace(temporary, launcher)
@@ -380,14 +421,19 @@ def restore_backup(path: Path, destination: Path, current_config_path: Path, ins
 
 
 def _rebase_paths_to(root: Path, old_root: Path, new_root: Path) -> None:
+    old_root = Path(os.path.normpath(old_root))
     config_path = root / "config" / "config.yaml"
     raw = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
     for section, key in CONFIG_PATH_FIELDS:
         value = (raw.get(section) or {}).get(key)
         if value:
             path = Path(value).expanduser()
-            if path.is_absolute() and _inside(path, old_root):
+            path = Path(os.path.normpath(path if path.is_absolute() else old_root / path))
+            if _inside(path, old_root):
                 raw[section][key] = str(new_root / path.relative_to(old_root))
+            else:
+                # Relative references outside the historical root retain identity.
+                raw[section][key] = str(path)
     config_path.write_text(yaml.safe_dump(raw, allow_unicode=True, sort_keys=False), encoding="utf-8")
     database = root / "archive" / "archive.sqlite"
     with closing(sqlite3.connect(database)) as db:

@@ -34,7 +34,7 @@ def attachment_listing(ar,gid):
             items.append({'msg_id':row['msg_id'],'key':ref.get('key',''),'kind':ref['kind'],'name':str(ref.get('name','附件'))[:200],
                 'at':row['timestamp'],'status':status,'text':old['text'] if current else '', 'error':old['error'] if current else ''})
     return {'items':items[:100],'counts':{state:sum(item['status']==state for item in items) for state in ('success','partial','pending','missing','unsupported','error','disabled','budget_paused')},
-        'limited':len(items)>100,'read_images':bool(group['read_images']),'read_files':bool(group['read_files'])}
+        'enabled':bool(group['enabled']),'limited':len(items)>100,'read_images':bool(group['read_images']),'read_files':bool(group['read_files'])}
 
 
 
@@ -48,6 +48,7 @@ def add_attachment_routes(app,*,archive,config,require_login,operations):
             with operations.claim('collect'):
                 ar=archive(request);group=policy(ar,gid)
                 if group is None:raise HTTPException(404,'群聊不存在')
+                if not group['enabled']:raise HTTPException(409,'这个群已停用，请先关注该群再读取附件')
                 if not (allowed(group,'image') or allowed(group,'file')):raise HTTPException(409,'请先保存并开启这个群的附件读取')
                 source=[ar._row_to_message(row) for row in attachment_messages(ar,gid)]
                 AttachmentService(ar,config(request)).prepare(source,retry=True)

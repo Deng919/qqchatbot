@@ -23,7 +23,8 @@ def runtime(tmp_path):
     source = tmp_path / 'source'
     (source / 'config').mkdir(parents=True)
     config_path = source / 'config' / 'config.yaml'
-    config_path.write_text('security:\n  web_password_hash: test\nai:\n  model: test\n'
+    (source/'config'/'session-secret.txt').write_text('synthetic-session-secret-'*3,encoding='utf-8')
+    config_path.write_text('security:\n  web_password_hash: test\n  session_secret_file: config/session-secret.txt\nai:\n  model: test\n'
                            '  base_url: https://example.com\n  api_key_env: TEST_KEY\n', encoding='utf-8')
     config = load_config(config_path)
     archive = Archive.open(config.archive_path)

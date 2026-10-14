@@ -4,16 +4,18 @@ from .worker_threads import guarded_to_thread
 
 import asyncio
 import json
+import sqlite3
 from dataclasses import asdict
 from datetime import date, datetime, timezone
 from pathlib import Path
+from urllib.parse import unquote, urlencode
 from zoneinfo import ZoneInfo
 
 from fastapi import FastAPI, Form, HTTPException, Query, Request
 from fastapi.responses import RedirectResponse
 from fastapi.templating import Jinja2Templates
 from ..distribution import is_public_distribution
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, ConfigDict, StrictBool, StrictInt
 from typing import Literal
 
 from ..archive import Archive, IngestResult
@@ -56,7 +58,7 @@ from .topic_routes import add_topic_routes
 from .reminder_routes import add_reminder_routes
 from .bookmark_routes import add_bookmark_routes
 from .background_tasks import background_lifespan
-from ..report_selection import selected_report_groups
+from ..report_selection import selected_report_groups, selected_report_keys
 
 templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"),
                            context_processors=[lambda request: {'features': getattr(request.state, 'features', {}),
@@ -76,6 +78,7 @@ class AIKeyPayload(BaseModel):
 
 
 class CandidateEditPayload(BaseModel):
+    expected_revision: int = Field(ge=0, lt=2**63, strict=True)
     candidate_type: Literal["resource", "experience"]
     title: str = Field(min_length=1, max_length=300)
     link: str = Field(default="", max_length=2000)
@@ -89,6 +92,33 @@ class CandidateEditPayload(BaseModel):
         if not value.strip():
             raise ValueError("内容不能为空")
         return value.strip()
+
+
+class GroupPatchPayload(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    enabled: StrictBool | None = None
+    daily_summary: StrictBool | None = None
+    important_candidates: StrictBool | None = None
+    read_images: StrictBool | None = None
+    read_files: StrictBool | None = None
+    category: Literal['tech','resource','project','study','general'] | None = None
+    keywords: list[str] | None = None
+    collection_window_days: StrictInt | None = Field(default=None, ge=1, le=365)
+    expected_revision: StrictInt | None = Field(default=None, ge=0, lt=2**63)
+
+    @field_validator('enabled','daily_summary','important_candidates','read_images','read_files',
+                     'category','keywords','collection_window_days','expected_revision')
+    @classmethod
+    def provided_not_null(cls,value):
+        if value is None: raise ValueError('设置不能为 null')
+        return value
+
+    @field_validator('keywords')
+    @classmethod
+    def valid_keywords(cls,value):
+        if len(value)>20 or any(not x.strip() or len(x.strip())>50 for x in value):
+            raise ValueError('keywords 必须是最多 20 个非空字符串')
+        return list(dict.fromkeys(x.strip() for x in value))
 
 
 class QATurn(BaseModel):
@@ -148,7 +178,16 @@ def require_login(request: Request):
     if not cookie.verify(request.cookies.get("qq_digest_session")):
         if request.url.path.startswith("/api/"):
             raise HTTPException(status_code=401, detail="未登录")
-        raise HTTPException(status_code=303, headers={"Location": "/login"})
+        target=request.url.path + ('?'+request.url.query if request.url.query else '')
+        raise HTTPException(status_code=303, headers={"Location": '/login?'+urlencode({'next':target})})
+
+
+def local_return_path(value: str) -> str:
+    decoded=unquote(value)
+    if (not decoded.startswith('/') or decoded.startswith('//') or '\\' in decoded
+            or any(ord(c)<32 for c in decoded) or decoded.split('?')[0] in {'/login','/logout'}):
+        return '/'
+    return value
 
 
 def _config(request: Request) -> Config:
@@ -450,15 +489,16 @@ def create_app(
     # ------------------------------------------------------------------
     @app.get("/login")
     async def login_page(request: Request):
-        return templates.TemplateResponse(request, "login.html", {})
+        return templates.TemplateResponse(request, "login.html", {'next_path':local_return_path(request.query_params.get('next','/'))})
 
     @app.post("/login")
-    async def login(request: Request, password: str = Form(...)):
+    async def login(request: Request, password: str = Form(...), next_path: str = Form('/',alias='next')):
+        target=local_return_path(next_path)
         if not PasswordHasher.verify(password, app.state.password_hash):
             return templates.TemplateResponse(
-                request, "login.html", {"error": "密码错误"}, status_code=401
+                request, "login.html", {"error": "密码错误",'next_path':target}, status_code=401
             )
-        response = RedirectResponse("/", status_code=303)
+        response = RedirectResponse(target, status_code=303)
         response.set_cookie("qq_digest_session", cookie.issue(), httponly=True)
         return response
 
@@ -889,6 +929,7 @@ def create_app(
                 "important_candidates": g.important_candidates,
                 "read_images": bool(g.read_images),
                 "read_files": bool(g.read_files),
+                "revision": g.revision,
                 "message_count": stats["message_count"],
                 "latest_message_at": _utc(latest) if latest else None,
                 "last_sync": _utc(sync["last_timestamp"]) if sync and sync["last_timestamp"] else "未同步",
@@ -980,9 +1021,11 @@ def create_app(
         return {"ok": True}
 
     @app.patch("/api/groups/{group_id}")
-    async def api_update_group(request: Request, group_id: int):
+    async def api_update_group(request: Request, group_id: int, payload: GroupPatchPayload):
         require_login(request)
-        body = await request.json()
+        body = payload.model_dump(exclude_unset=True, exclude={'expected_revision'})
+        if len(body)>1 and payload.expected_revision is None:
+            raise HTTPException(422,'保存多项群设置时必须提供原始版本，请先读取群设置')
         ar = _archive(request)
         allowed = {
             "enabled",
@@ -1034,14 +1077,23 @@ def create_app(
                     vals.append(v)
         if not sets:
             raise HTTPException(status_code=400, detail="无有效字段")
+        sets.append('revision=revision+1')
         vals.append(group_id)
+        where='group_id=?'
+        if payload.expected_revision is not None:
+            where+=' AND revision=?'
+            vals.append(payload.expected_revision)
         from contextlib import nullcontext
         try:
             with operations.claim('group_mutation') if any(key in body for key in ('read_images','read_files')) else nullcontext():
                 with ar.transaction():
-                    ar.connection.execute(f"UPDATE groups SET {', '.join(sets)} WHERE group_id=?", vals)
+                    updated=ar.connection.execute(f"UPDATE groups SET {', '.join(sets)} WHERE {where}", vals)
+                    if not updated.rowcount:
+                        if not ar.connection.execute('SELECT 1 FROM groups WHERE group_id=?',(group_id,)).fetchone():
+                            raise HTTPException(404,'群组不存在')
+                        raise HTTPException(409,'群设置已在其他窗口更新，输入已保留，请刷新后核对再保存')
         except OperationBusy as exc:raise HTTPException(409,str(exc)) from exc
-        return {"ok": True}
+        return {"ok": True, 'revision':ar.connection.execute('SELECT revision FROM groups WHERE group_id=?',(group_id,)).fetchone()[0]}
 
     @app.delete("/api/groups/{group_id}")
     async def api_delete_group(request: Request, group_id: int):
@@ -1272,6 +1324,7 @@ def create_app(
         kind: Literal["all", "daily", "range"] = "all",
         date_from: date | None = None,
         date_to: date | None = None,
+        report_keys: list[str] | None = Query(None),
     ):
         require_login(request)
         if date_from and date_to and date_from > date_to:
@@ -1295,11 +1348,15 @@ def create_app(
             params.append(kind)
         try:
             selection=selected_report_groups(group_id,group_ids)
+            keys=selected_report_keys(report_keys)
         except ValueError as exc:
             raise HTTPException(422,detail=str(exc)) from exc
         if selection:
             clauses.append('group_id IN ('+','.join('?' for _ in selection)+')')
             params.extend(selection)
+        if keys:
+            clauses.append("report_kind || ':' || report_id IN ("+','.join('?' for _ in keys)+')')
+            params.extend(keys)
         if date_from is not None:
             clauses.append("window_end_date>=?")
             params.append(date_from.isoformat())
@@ -1464,8 +1521,11 @@ def create_app(
         if row is None:
             raise HTTPException(status_code=404, detail="报告不存在")
         cfg = _config(request)
+        revisions=ReportRevisionService(ar)
+        selected_version=version if version is not None else revisions.current_version(report_kind,report_id)
+        source_payload=revisions.version(report_kind,report_id,selected_version)['payload'] if selected_version else row['json_path']
         evidence_items = load_verified_report_sources(
-            ar.connection, row["json_path"], group_id=row["group_id"],
+            ar.connection, source_payload or {}, group_id=row["group_id"],
             start_date=start_date, end_date=end_date,
             timezone_name=cfg.summary.timezone if cfg else "Asia/Shanghai",
         )
@@ -1549,10 +1609,12 @@ def create_app(
         date_from: str | None = None,
         date_to: str | None = None,
         q: str = "",
+        page: int = Query(1, ge=1),
+        page_size: int = Query(20, ge=1, le=100),
     ):
         require_login(request)
         try:
-            items = candidates.query(
+            result = candidates.query_page(
                 status=status,
                 group_id=group_id,
                 group_ids=group_ids,
@@ -1560,13 +1622,16 @@ def create_app(
                 date_from=date_from,
                 date_to=date_to,
                 q=q,
+                page=page,page_size=page_size,
             )
+            items=result['items']
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
         group_names = {
             group.group_id: group.name for group in _archive(request).all_groups()
         }
         return {
+            'total':result['total'],'page':result['page'],'page_size':result['page_size'],
             "candidates": [
                 {
                     **item.model_dump(),
@@ -1605,36 +1670,10 @@ def create_app(
 
     async def _undo_candidate(request: Request, candidate_id: int):
         require_login(request)
-        try:
-            item = candidates.get(candidate_id)
-        except KeyError as exc:
-            raise HTTPException(status_code=404, detail=str(exc)) from exc
-        if item.status != "confirmed":
-            raise HTTPException(status_code=409, detail="只有已入库的候选可以撤销")
-        ar = _archive(request)
-        row = ar.connection.execute(
-            "SELECT markdown_path FROM knowledge_items WHERE candidate_id=?", (candidate_id,)
-        ).fetchone()
-        if row is None:
-            raise HTTPException(status_code=409, detail="找不到对应的知识库条目")
-        path = Path(row["markdown_path"])
-        try:
-            original = remove_item(path, str(candidate_id))
-        except (OSError, ValueError) as exc:
-            raise HTTPException(status_code=409, detail=str(exc)) from exc
-        try:
-            with ar.transaction():
-                ar.connection.execute(
-                    "DELETE FROM knowledge_items WHERE candidate_id=?", (candidate_id,)
-                )
-                ar.connection.execute(
-                    "UPDATE candidates SET status='pending', updated_at=? WHERE candidate_id=?",
-                    (datetime.now(timezone.utc).isoformat(), candidate_id),
-                )
-        except Exception:
-            path.write_text(original, encoding="utf-8")
-            raise
-        return {"status": "pending"}
+        try:return knowledge_library.undo_candidate(candidate_id)
+        except KeyError as exc:raise HTTPException(404,str(exc)) from exc
+        except (ValueError,OSError) as exc:raise HTTPException(409,str(exc)) from exc
+        except sqlite3.Error as exc:raise HTTPException(503,'知识存储暂时不可用，请稍后重试；原数据已保留') from exc
 
     @app.post("/api/candidates/{candidate_id}/undo")
     async def api_undo_candidate(request: Request, candidate_id: int):
@@ -1695,6 +1734,10 @@ def create_app(
         try:
             with operations.claim('knowledge_mutation'):
                 knowledge_library.confirm_candidate(candidate_id)
+        except ValueError as exc:
+            raise HTTPException(409,str(exc)) from exc
+        except sqlite3.Error as exc:
+            raise HTTPException(503,'知识存储暂时不可用，请稍后重试；原数据已保留') from exc
         except KeyError as exc:
             raise HTTPException(404,'候选不存在') from exc
         except OperationBusy as exc:

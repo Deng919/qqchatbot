@@ -111,49 +111,52 @@ def extract_message_text(blob: bytes | None) -> tuple[str, str]:
         return "", "unknown"
     try:
         outer = parse_protobuf(blob)
-        inner_blob = _get_bytes(outer, 40800)
-        if not inner_blob:
+        inner_blobs = [value for wire, value in outer.get(40800, []) if wire == "bytes" and value]
+        if not inner_blobs:
             return "", "no_inner"
-        inner = parse_protobuf(inner_blob)
-        msg_type = _get_varint(inner, 45002)
-
-        if msg_type == 1:  # plain text
-            return _get_text(inner, 45101), "text"
-        if msg_type == 2:
-            return "[图片]", "image"
-        if msg_type == 3:
-            return "[文件]", "file"
-        if msg_type == 5:
-            return "[回复]", "reply"
-        if msg_type == 6:
-            return "[转发]", "forward"
-        if msg_type == 7:
-            return "[语音]", "voice"
-        if msg_type in (8, 17):  # system / pat
-            gtip = _get_text(inner, 48214)
-            if gtip:
-                return f"[系统] {gtip[:200]}", "system"
-            json_text = _get_text(inner, 48271)
-            if json_text:
-                return f"[卡片] {json_text[:200]}", "json"
-            text = _get_text(inner, 48504) + _get_text(inner, 48505)
-            if text:
-                return text, "system_text"
-            return "[系统]", "system"
-        if msg_type == 10:
-            return "[闪照]", "flash"
-        if msg_type == 11:
-            return "[表情]", "emoji"
-        if msg_type == 16:
-            return "[markdown]", "markdown"
-
-        # Fallback: try 45101 anyway
-        text = _get_text(inner, 45101)
-        if text:
-            return text, f"type_{msg_type}"
-        return "", f"type_{msg_type}"
+        elements = [_extract_element(parse_protobuf(value)) for value in inner_blobs]
+        supported = [(text, kind) for text, kind in elements if text]
+        if not supported:
+            return elements[0]
+        # Text fragments and attachment markers retain the source element order.
+        kind = "text" if any(kind == "text" for _, kind in supported) else supported[0][1]
+        return "".join(text for text, _ in supported), kind
     except Exception:
         return "", "error"
+
+
+def _extract_element(inner: dict) -> tuple[str, str]:
+    msg_type = _get_varint(inner, 45002)
+    if msg_type == 1:
+        return _get_text(inner, 45101), "text"
+    if msg_type == 2:
+        return "[图片]", "image"
+    if msg_type == 3:
+        return "[文件]", "file"
+    if msg_type == 5:
+        return "[回复]", "reply"
+    if msg_type == 6:
+        return "[转发]", "forward"
+    if msg_type == 7:
+        return "[语音]", "voice"
+    if msg_type in (8, 17):
+        gtip = _get_text(inner, 48214)
+        if gtip:
+            return f"[系统] {gtip[:200]}", "system"
+        json_text = _get_text(inner, 48271)
+        if json_text:
+            return f"[卡片] {json_text[:200]}", "json"
+        text = _get_text(inner, 48504) + _get_text(inner, 48505)
+        if text:
+            return text, "system_text"
+        return "[系统]", "system"
+    if msg_type == 10:
+        return "[闪照]", "flash"
+    if msg_type == 11:
+        return "[表情]", "emoji"
+    if msg_type == 16:
+        return "[markdown]", "markdown"
+    return _get_text(inner, 45101), f"type_{msg_type}"
 
 
 def extract_peer_uid_from_group_blob(blob: bytes | None) -> str | None:

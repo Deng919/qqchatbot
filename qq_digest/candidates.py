@@ -8,6 +8,10 @@ from .group_selection import normalize_group_selection
 from .models import SummaryCandidate
 
 
+class CandidateConflictError(ValueError):
+    """The stored candidate changed after the editor opened its draft."""
+
+
 class CandidateService:
     def __init__(self, archive: Archive):
         self.archive = archive
@@ -22,28 +26,26 @@ class CandidateService:
     def _create(self, kwargs: dict, now: str) -> int:
         if not kwargs["message_ids"]:
             raise ValueError("候选必须关联至少一条消息")
+        identity = [
+            kwargs['group_id'], kwargs['created_date'], kwargs['candidate_type'],
+            kwargs['title'], kwargs.get('link', ''), kwargs['message_ids'],
+        ]
+        manual=kwargs.get('human_edited') is True
+        generation_key = json.dumps(['manual',*identity] if manual else identity,ensure_ascii=False)
         existing = self.archive.connection.execute(
             """
-            SELECT candidate_id, status FROM candidates
-            WHERE group_id=? AND created_date=? AND candidate_type=? AND title=?
-              AND link=? AND message_ids=?
+            SELECT candidate_id, status, human_edited FROM candidates
+            WHERE generation_key=? ORDER BY candidate_id LIMIT 1
             """,
-            (
-                kwargs["group_id"],
-                kwargs["created_date"],
-                kwargs["candidate_type"],
-                kwargs["title"],
-                kwargs.get("link", ""),
-                json.dumps(kwargs["message_ids"], ensure_ascii=False),
-            ),
+            (generation_key,),
         ).fetchone()
         if existing is not None:
-            if existing["status"] == "pending":
+            if existing["status"] == "pending" and not existing['human_edited']:
                 self.archive.connection.execute(
                     """
                     UPDATE candidates
-                    SET content=?, reason=?, excerpt=?, updated_at=?
-                    WHERE candidate_id=?
+                    SET content=?, reason=?, excerpt=?, updated_at=?, revision=revision+1
+                    WHERE candidate_id=? AND human_edited=0 AND status='pending'
                     """,
                     (
                         kwargs.get("content", ""),
@@ -58,8 +60,8 @@ class CandidateService:
             """
             INSERT INTO candidates(
                 group_id, message_ids, created_date, candidate_type, title,
-                link, content, reason, excerpt, status, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)
+                link, content, reason, excerpt, status, created_at, updated_at, generation_key,human_edited
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?,?)
             """,
             (
                 kwargs["group_id"],
@@ -73,6 +75,8 @@ class CandidateService:
                 kwargs.get("excerpt", ""),
                 now,
                 now,
+                generation_key,
+                int(manual),
             ),
         )
         return int(cursor.lastrowid)
@@ -93,6 +97,7 @@ class CandidateService:
             ignore_reason=row["ignore_reason"],
             created_at=row["created_at"],
             updated_at=row["updated_at"],
+            revision=row['revision'], human_edited=bool(row['human_edited']),
         )
 
     def query(
@@ -107,6 +112,17 @@ class CandidateService:
         limit: int = 200,
         group_ids: list[int] | tuple[int, ...] | None = None,
     ) -> list[SummaryCandidate]:
+        where, params = self._filters(status=status, group_id=group_id, group_ids=group_ids,
+            candidate_type=candidate_type, date_from=date_from, date_to=date_to, q=q)
+        rows = self.archive.connection.execute(
+            f"SELECT * FROM candidates{where} ORDER BY updated_at DESC, candidate_id DESC LIMIT ?",
+            [*params, max(1, min(limit, 500))],
+        ).fetchall()
+        return [self._row_to_candidate(row) for row in rows]
+
+    @staticmethod
+    def _filters(*, status='pending', group_id=None, group_ids=None,
+                 candidate_type=None, date_from=None, date_to=None, q=''):
         if status not in {"pending", "later", "confirmed", "ignored", "all"}:
             raise ValueError("非法候选状态")
         if candidate_type not in {None, "", "resource", "experience"}:
@@ -137,12 +153,23 @@ class CandidateService:
             )
             params.extend([pattern] * 5)
         where = " WHERE " + " AND ".join(clauses) if clauses else ""
-        params.append(max(1, min(limit, 500)))
+        return where, params
+
+    def count(self, **filters) -> int:
+        where, params = self._filters(**filters)
+        return self.archive.connection.execute(f'SELECT COUNT(*) FROM candidates{where}', params).fetchone()[0]
+
+    def query_page(self, *, page=1, page_size=20, **filters) -> dict:
+        if type(page) is not int or not 1 <= page <= 2**31 or type(page_size) is not int or not 1 <= page_size <= 100:
+            raise ValueError('候选分页参数无效')
+        where, params = self._filters(**filters)
+        total = self.archive.connection.execute(f'SELECT COUNT(*) FROM candidates{where}', params).fetchone()[0]
         rows = self.archive.connection.execute(
-            f"SELECT * FROM candidates{where} ORDER BY updated_at DESC, candidate_id DESC LIMIT ?",
-            params,
+            f'SELECT * FROM candidates{where} ORDER BY updated_at DESC, candidate_id DESC LIMIT ? OFFSET ?',
+            [*params, page_size, (page - 1) * page_size],
         ).fetchall()
-        return [self._row_to_candidate(row) for row in rows]
+        return {'items': [self._row_to_candidate(row) for row in rows], 'total': total,
+                'page': page, 'page_size': page_size}
 
     def pending(self, group_id: int | None = None, *, group_ids=None) -> list[SummaryCandidate]:
         return self.query(status="pending", group_id=group_id, group_ids=group_ids)
@@ -162,7 +189,7 @@ class CandidateService:
         with self.archive.transaction():
             cursor = self.archive.connection.execute(
                 """
-                UPDATE candidates SET status=?, ignore_reason=?, updated_at=?
+                UPDATE candidates SET status=?, ignore_reason=?, updated_at=?, revision=revision+1
                 WHERE candidate_id=?
                 """,
                 (status, ignore_reason, now, candidate_id),
@@ -176,23 +203,30 @@ class CandidateService:
     def update_details(
         self, candidate_id: int, *, candidate_type: str, title: str,
         link: str, content: str, reason: str, excerpt: str,
+        expected_revision: int | None = None,
     ) -> SummaryCandidate:
         if candidate_type not in {"resource", "experience"}:
             raise ValueError("非法候选类型")
+        if expected_revision is not None and (type(expected_revision) is not int or not 0<=expected_revision<2**63):
+            raise ValueError('候选版本无效')
         with self.archive.transaction():
             cursor = self.archive.connection.execute(
                 """UPDATE candidates
                    SET candidate_type=?, title=?, link=?, content=?, reason=?, excerpt=?,
-                       updated_at=?
-                   WHERE candidate_id=? AND status IN ('pending', 'later')""",
+                       updated_at=?, human_edited=1, revision=revision+1
+                   WHERE candidate_id=? AND status IN ('pending', 'later')
+                     AND (? IS NULL OR revision=?)""",
                 (
                     candidate_type, title.strip(), link.strip(), content.strip(),
                     reason.strip(), excerpt.strip(), datetime.now(timezone.utc).isoformat(),
                     candidate_id,
+                    expected_revision, expected_revision,
                 ),
             )
             if not cursor.rowcount:
-                self.get(candidate_id)
+                current = self.get(candidate_id)
+                if expected_revision is not None and current.revision != expected_revision:
+                    raise CandidateConflictError('候选已被修改，请重新读取后核对草稿')
                 raise ValueError("只能修改待审核或稍后处理的候选")
         return self.get(candidate_id)
 

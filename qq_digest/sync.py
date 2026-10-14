@@ -29,6 +29,7 @@ def run_message_sync(
     refresh: bool = True,
     collector=None,
     retry_of_job_id: int | None = None,
+    group_id: int = 0,
 ) -> MessageSyncResult:
     """Refresh NTQQ and incrementally archive every enabled group."""
     timezone = ZoneInfo(config.summary.timezone)
@@ -59,6 +60,8 @@ def run_message_sync(
             timezone_name=config.ntqq.timezone,
         )
         groups = archive.enabled_groups()
+        if group_id:
+            groups = [group for group in groups if group.group_id == group_id]
         result.groups_attempted = len(groups)
         overlap = timedelta(minutes=config.collection.overlap_minutes)
 

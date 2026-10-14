@@ -384,8 +384,8 @@
             body: body === undefined ? undefined : JSON.stringify(body)
           }).then(function(response) {
             if (response.status === 401) {
-              window.location.href = '/login';
-              throw new Error('登录已失效');
+              SessionLogin.open();
+              var expired=new Error('登录已失效');expired.status=401;throw expired;
             }
             return response.json().catch(function() { return {}; }).then(function(data) {
               if (data.restart_required) showStorageHandoff(data.detail || data.message);
@@ -440,5 +440,48 @@
       </script>
     </div>
   </main>
+<script>
+  // Reauthenticate in place so unsaved forms and their original revisions survive.
+  var SessionLogin={dialog:null,open:function(){
+    if(!this.dialog){
+      var dialog=document.createElement('dialog');dialog.id='session-login-dialog';dialog.setAttribute('aria-labelledby','session-login-title');
+      dialog.innerHTML='<form><h2 id="session-login-title">登录已过期</h2><p>当前输入已保留。重新登录后，请重试刚才的操作。</p><label for="session-login-password">密码</label><input class="input" id="session-login-password" type="password" autocomplete="current-password" required><p role="status" id="session-login-result"></p><div class="actions"><button class="btn btn-primary" type="submit">重新登录</button><button class="btn" type="button">稍后登录</button></div></form>';
+      document.body.appendChild(dialog);this.dialog=dialog;
+      var field=dialog.querySelector('input'),button=dialog.querySelector('button[type=submit]'),result=dialog.querySelector('[role=status]');
+      dialog.querySelector('button[type=button]').onclick=function(){field.value='';dialog.close();};
+      dialog.addEventListener('cancel',function(){field.value='';});
+      dialog.addEventListener('keydown',function(event){event.stopPropagation();});
+      dialog.querySelector('form').onsubmit=function(event){event.preventDefault();if(button.disabled)return;button.disabled=true;result.textContent='正在登录…';
+        fetch('/login',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams({password:field.value}).toString()})
+        .then(function(response){if(!response.ok)throw new Error('密码错误，请重试');field.value='';dialog.close();document.dispatchEvent(new Event('qq-digest-session-restored'));toast('登录已恢复，输入已保留，请重试刚才的操作。');})
+        .catch(function(error){result.textContent=error.message;}).finally(function(){button.disabled=false;});
+      };
+    }
+    if(!this.dialog.open)this.dialog.showModal();this.dialog.querySelector('input').focus();
+  }};
+
+  // Existing overlays share only accessibility behavior; business state stays in each page.
+  (function(){
+    var selector='dialog,[role="dialog"][aria-modal="true"],#candidate-detail,#range-summary-panel,#report-qa-dialog,#summary-source-panel';
+    var stack=[],inertBefore=new Map(),overflowBefore=null,opener=null,baseOverflow=document.body.style.overflow;
+    function visible(panel){return panel.tagName==='DIALOG'?panel.open:!panel.hidden&&panel.getClientRects().length>0;}
+    function controls(panel){return Array.from(panel.querySelectorAll('button,a[href],input,textarea,select,summary,[tabindex]')).filter(function(node){return !node.disabled&&node.tabIndex>=0&&node.getClientRects().length>0;});}
+    function restoreBackground(){inertBefore.forEach(function(value,node){node.inert=value;});inertBefore.clear();}
+    function sync(){
+      var opened=Array.from(document.querySelectorAll(selector)).filter(visible),next=stack.filter(function(panel){return opened.includes(panel);});
+      opened.forEach(function(panel){if(!next.includes(panel))next.push(panel);});
+      if(!stack.length&&next.length){overflowBefore=document.body.style.overflow==='hidden'?baseOverflow:document.body.style.overflow;opener=document.activeElement;}
+      stack=next;restoreBackground();
+      if(!stack.length){if(overflowBefore!==null){document.body.style.overflow=overflowBefore;overflowBefore=null;if(opener&&opener.isConnected)opener.focus({preventScroll:true});opener=null;}return;}
+      document.body.style.overflow='hidden';var panel=stack[stack.length-1];
+      if(panel.tagName!=='DIALOG'){panel.setAttribute('role','dialog');panel.setAttribute('aria-modal','true');}
+      for(var current=panel;current&&current!==document.body;current=current.parentElement){Array.from(current.parentElement.children).forEach(function(sibling){if(sibling===current||['SCRIPT','STYLE'].includes(sibling.tagName))return;if(!inertBefore.has(sibling))inertBefore.set(sibling,sibling.inert);sibling.inert=true;});}
+      if(!panel.contains(document.activeElement)){var focus=controls(panel)[0];if(focus)focus.focus();else{panel.tabIndex=-1;panel.focus();}}
+    }
+    document.addEventListener('keydown',function(event){if(event.key!=='Tab'||!stack.length)return;var panel=stack[stack.length-1],nodes=controls(panel),first=nodes[0],last=nodes[nodes.length-1];if(!first){event.preventDefault();return;}if(event.shiftKey&&(document.activeElement===first||!panel.contains(document.activeElement))){event.preventDefault();last.focus();}else if(!event.shiftKey&&(document.activeElement===last||!panel.contains(document.activeElement))){event.preventDefault();first.focus();}},true);
+    new MutationObserver(sync).observe(document.body,{subtree:true,attributes:true,attributeFilter:['hidden','open'],childList:true});sync();
+  })();
+</script>
+<style>#session-login-dialog{width:min(420px,calc(100vw - 32px));border:1px solid var(--border);border-radius:12px;padding:24px;background:var(--surface);color:var(--text)}#session-login-dialog::backdrop{background:rgb(20 32 27 / .4)}</style>
 </body>
 </html>

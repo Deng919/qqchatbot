@@ -10,7 +10,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from .archive import Archive
-from .report_selection import selected_report_groups
+from .report_selection import selected_report_groups, selected_report_keys
 from .report_sources import extract_report_sources, load_verified_report_sources
 from .report_revisions import ReportRevisionService
 
@@ -53,7 +53,8 @@ class CatchupService:
                    page_size: int = 30, date_from: str | None = None,
                    date_to: str | None = None, group_id: int | None = None,
                    read_filter: str = "all", include_ranges: bool = False,
-                   group_ids: list[int] | None = None) -> dict:
+                   group_ids: list[int] | None = None,
+                   report_keys: list[str] | None = None) -> dict:
         if scope not in {"since", "today", "week", "custom"}:
             raise ValueError("补看范围无效")
         if read_filter not in {"all", "unread", "new"}:
@@ -100,9 +101,13 @@ class CatchupService:
             # Compare timestamps as instants below; persisted ISO offsets may differ.
             conditions.append("1=1")
         selection = selected_report_groups(group_id,group_ids)
+        keys=selected_report_keys(report_keys)
         if selection:
             conditions.append('r.group_id IN ('+','.join('?' for _ in selection)+')')
             params.extend(selection)
+        if keys:
+            conditions.append("r.report_kind || ':' || r.report_id IN ("+','.join('?' for _ in keys)+')')
+            params.extend(keys)
         report_rows = "(SELECT 'daily' AS report_kind,report_id,group_id,report_date,report_date AS start_date,json_path,created_at FROM reports"
         if include_ranges:
             report_rows += " UNION ALL SELECT 'range',manual_report_id,group_id,end_date,start_date,json_path,updated_at FROM manual_reports"

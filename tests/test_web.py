@@ -68,7 +68,7 @@ def test_candidates_requires_login(web_client):
 def test_group_attachment_flags_survive_reload_and_unrelated_edit(web_client):
     client, _, _ = web_client
     client.post('/login', data={'password': 'password123'})
-    assert client.patch('/api/groups/123', json={'read_images': True, 'read_files': True}).status_code == 200
+    assert client.patch('/api/groups/123', json={'read_images': True, 'read_files': True,'expected_revision':0}).status_code == 200
     group = client.get('/api/groups').json()['groups'][0]
     assert group['read_images'] is True
     assert group['read_files'] is True
@@ -808,6 +808,7 @@ def test_candidate_json_actions_preserve_saved_content_and_valid_transitions(web
     assert client.post(path + '/later').json() == {'status': 'later'}
     assert client.post(path + '/restore').json() == {'status': 'pending'}
     changed = client.patch(path, json={'candidate_type': 'resource', 'title': '编辑后的标题',
+                                     'expected_revision':client.get(path).json()['revision'],
                                      'reason': '编辑后的理由', 'content': '编辑后的完整内容'})
     assert changed.status_code == 200
     assert changed.json()['status'] == 'pending'
@@ -1311,7 +1312,7 @@ def test_group_api_updates_keywords_and_collection_window(web_client):
 
     response = client.patch(
         "/api/groups/123",
-        json={"keywords": ["网站", "经验"], "collection_window_days": 45},
+        json={"keywords": ["网站", "经验"], "collection_window_days": 45,'expected_revision':0},
     )
 
     assert response.status_code == 200
@@ -1341,7 +1342,7 @@ def test_group_api_rejects_invalid_keywords_and_collection_window(
 
     response = client.patch("/api/groups/123", json=payload)
 
-    assert response.status_code == 400
+    assert response.status_code == 422
 
 
 def test_delete_group_api_purges_related_messages(web_client):

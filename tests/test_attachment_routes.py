@@ -10,8 +10,8 @@ def test_group_read_switches_validation_scope_and_routes(web_client):
     assert client.get('/api/groups/123/attachments').status_code==401
     assert client.post('/api/groups/123/attachments/read',json={}).status_code==401
     client.post('/login',data={'password':'password123'})
-    assert client.patch('/api/groups/123',json={'read_files':'false'}).status_code==400
-    assert client.patch('/api/groups/123',json={'read_files':True,'read_images':False}).status_code==200
+    assert client.patch('/api/groups/123',json={'read_files':'false'}).status_code==422
+    assert client.patch('/api/groups/123',json={'read_files':True,'read_images':False,'expected_revision':0}).status_code==200
     ar=client.app.state.archive
     assert next(g for g in ar.all_groups() if g.group_id==123).read_files
     path=root.parent/'合成.txt';data='附件关键词和内容'.encode();path.write_bytes(data)

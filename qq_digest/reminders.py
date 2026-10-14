@@ -11,7 +11,7 @@ import hashlib
 import json
 import re
 import unicodedata
-from urllib.parse import urlsplit, urlunsplit
+from urllib.parse import urlencode, urlsplit, urlunsplit
 from zoneinfo import ZoneInfo
 
 from .archive import Archive
@@ -207,8 +207,9 @@ class ReminderService:
             for source in rows:
                 cursor = source["source_rowid"]
                 if self._scope(rule, source["group_id"]) and source["text"].strip() and any(_normalize(k) in _normalize(source["text"]) for k in rule["keywords"]):
-                    items.append(dict(event_key=f"message:{cursor}", source_ref=str(cursor), group_id=source["group_id"],
-                        title="关键词命中", body=source["text"][:500], source_url=f"/search?group_id={source['group_id']}"))
+                    items.append(dict(event_key=f"message:{cursor}", source_ref=json.dumps([source['group_id'], source['msg_id']], ensure_ascii=False), group_id=source["group_id"],
+                        title="关键词命中", body=source["text"][:500], source_url='/search?' + urlencode(
+                            {'group_id': source['group_id'], 'msg_id': source['msg_id']})))
         elif kind == "resource":
             rows = self.connection.execute("SELECT * FROM candidates WHERE candidate_id>? ORDER BY candidate_id LIMIT 200" if row is not None else
                 "SELECT * FROM candidates ORDER BY candidate_id DESC LIMIT 200", (row["candidate_cursor"],) if row is not None else ()).fetchall()
@@ -227,13 +228,13 @@ class ReminderService:
                     continue
                 links.add(key)
                 items.append(dict(event_key=key, source_ref=str(cursor), group_id=source["group_id"],
-                    title=source["title"][:200], body=source["content"][:500], source_url="/candidates"))
+                    title=source["title"][:200], body=source["content"][:500], source_url=f"/candidates?candidate_id={source['candidate_id']}"))
         elif kind == "task_due":
             today = now.astimezone(self.timezone).date().isoformat()
             for source in self.connection.execute("SELECT * FROM tasks WHERE status='open' AND due_date IS NOT NULL AND due_date<=? ORDER BY due_date,task_id", (today,)):
                 if self._scope(rule, source["group_id"]):
                     items.append(dict(event_key=f"task:{source['task_id']}:{source['due_date']}", source_ref=json.dumps([source["task_id"], source["due_date"]]),
-                        group_id=source["group_id"], title=source["title"][:200], body=f"截止日期：{source['due_date']}", source_url="/tasks"))
+                        group_id=source["group_id"], title=source["title"][:200], body=f"截止日期：{source['due_date']}", source_url=f"/tasks?task_id={source['task_id']}"))
         else:
             known = set(json.loads(row["failure_seen"])) if row is not None else set()
             for source in self._failures():
@@ -321,10 +322,35 @@ class ReminderService:
             self._release(now)
         return {"created": created, "queued": self._queued_count()}
 
-    @staticmethod
-    def _event_dto(row):
+    def _event_source(self, row):
+        """Resolve stable identities, including old candidate/task references."""
+        kind = row['kind']
+        if kind not in ('keyword', 'resource', 'task_due'):
+            return row['source_url'], ''
+        try:
+            ref = json.loads(row['source_ref'])
+            if kind == 'keyword':
+                if (not isinstance(ref, list) or len(ref) != 2 or type(ref[0]) is not int
+                        or not isinstance(ref[1], str) or not ref[1] or ref[0] != row['group_id']):
+                    return '', '旧提醒未保存原消息身份，无法准确打开来源。'
+                found = self.connection.execute('SELECT 1 FROM messages WHERE group_id=? AND msg_id=?', ref).fetchone()
+                url = '/search?' + urlencode({'group_id': ref[0], 'msg_id': ref[1]})
+            else:
+                ident = ref if kind == 'resource' else ref[0] if isinstance(ref, list) and len(ref) == 2 else None
+                if type(ident) is not int or not 0 < ident < 2**63:
+                    return '', '提醒来源身份不可核实。'
+                table, key, base = ('candidates', 'candidate_id', '/candidates') if kind == 'resource' else ('tasks', 'task_id', '/tasks')
+                found = self.connection.execute(f'SELECT 1 FROM {table} WHERE {key}=? AND group_id=?', (ident, row['group_id'])).fetchone()
+                url = f'{base}?{key}={ident}'
+            return (url, '') if found else ('', '提醒来源已删除或不可用。')
+        except (TypeError, ValueError, IndexError):
+            return '', '提醒来源身份不可核实。'
+
+    def _event_dto(self, row):
         fields = ("event_id", "rule_id", "rule_name", "kind", "title", "body", "group_id", "group_name", "source_url", "created_at")
-        return dict({k: row[k] for k in fields}, read=bool(row["read"]),
+        url, reason = self._event_source(row)
+        return dict({k: row[k] for k in fields}, source_url=url, source_available=bool(url),
+                    source_unavailable_reason=reason, read=bool(row["read"]),
                     delivery_status={"in_app": row["in_app_status"], "windows": row["windows_status"]}, delivery_error=row["delivery_error"])
 
     def list_events(self, page=1, page_size=20, unread_only=False):

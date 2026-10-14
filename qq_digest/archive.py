@@ -451,6 +451,7 @@ class Archive:
             collection_window_days=int(row["collection_window_days"]),
             read_images=bool(row['read_images']),read_files=bool(row['read_files']),
             category=row["category"] if "category" in row.keys() else "general",
+            revision=row['revision'],
         )
     def mark_sync(
         self, *, group_id: int, last_timestamp: datetime, status: str = "active"
@@ -549,7 +550,7 @@ class Archive:
         placeholders = ",".join("?" for _ in candidate_ids)
         with self.transaction():
             cursor = self.connection.execute(
-                f"DELETE FROM candidates WHERE status='pending' "
+                f"DELETE FROM candidates WHERE status='pending' AND human_edited=0 "
                 f"AND candidate_id IN ({placeholders})",
                 candidate_ids,
             )
@@ -563,7 +564,7 @@ class Archive:
         for candidate_id in set(candidate_ids):
             cursor = self.connection.execute(
                 """DELETE FROM candidates
-                   WHERE candidate_id=? AND status='pending'
+                   WHERE candidate_id=? AND status='pending' AND human_edited=0
                      AND NOT EXISTS (
                        SELECT 1 FROM reports, json_each(reports.candidate_ids) ref
                        WHERE CAST(ref.value AS INTEGER)=candidates.candidate_id
