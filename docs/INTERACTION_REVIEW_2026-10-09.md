@@ -1,6 +1,6 @@
 # 群聊简报交互逻辑审查
 
-日期：2026-10-09。检查基线：`dfd1729`，本机 Storage 版本。目标是找出当前交互的不合理之处，给出可复现的问题和修复顺序。以下描述保留检查时的行为；经用户确认，编号 01–06 已实施修复，验证及本机部署状态见 [验收记录](superpowers/specs/2026-10-09-interaction-integrity-verification.md)。编号 10、20、21、23 已于 2026-10-13 修复，另于 2026-10-14 修复编号 17、18、19、26，[待办草稿与重试恢复验收](superpowers/specs/2026-10-14-interaction-recovery-verification.md)记录了验证与部署边界，剩余 15 项待处理；10 月 13 日验证边界和部署见 [草稿与异步状态验收](superpowers/specs/2026-10-13-interaction-drafts-verification.md)。
+日期：2026-10-09。检查基线：`dfd1729`，本机 Storage 版本。目标是找出当前交互的不合理之处，给出可复现的问题和修复顺序。以下描述保留检查时的行为；经用户确认，编号 01–06 已实施修复，验证及本机部署状态见 [验收记录](superpowers/specs/2026-10-09-interaction-integrity-verification.md)。编号 10、20、21、23 已于 2026-10-13 修复，另于 2026-10-14 修复编号 17、18、19、26，[待办草稿与重试恢复验收](superpowers/specs/2026-10-14-interaction-recovery-verification.md)记录了验证与部署边界，同日修复编号 13、14、15，见 [待确认知识流程验收](superpowers/specs/2026-10-14-candidate-workflow-verification.md)，剩余 12 项待处理；10 月 13 日验证边界和部署见 [草稿与异步状态验收](superpowers/specs/2026-10-13-interaction-drafts-verification.md)。
 
 ## 结论与检查范围
 
@@ -90,9 +90,9 @@
 | 10 · P2〔已修复〕 | 修改 AI 月度上限／费用单价但不保存，点击“刷新用量”，草稿被旧设置覆盖。 | 统计刷新与策略重载分离，参照存储设置保留 dirty 草稿。浏览器：99 被改回 0。 | [用量渲染](D:/Desktop/AI/chatbot/qq_digest/web/templates/ai_usage_script.html:7)、[加载](D:/Desktop/AI/chatbot/qq_digest/web/templates/ai_usage_script.html:31) |
 | 11 · P2 | 首次导入成功后修改日期，不再导入而直接“继续”，向导仍认为已完成，新范围未生效。 | 日期变化作废对应导入结果；继续时核对已完成范围。源码链路。 | [继续条件](D:/Desktop/AI/chatbot/qq_digest/web/templates/first_use_script.html:34)、[预览日期](D:/Desktop/AI/chatbot/qq_digest/first_use.py:344) |
 | 12 · P3 | 打开备份设置后，“打开备份目录”一直禁用；必须本页新建一次备份才启用。 | 桌面能力初始化成功后允许打开备份目录。浏览器及源码确认。 | [按钮默认状态](D:/Desktop/AI/chatbot/qq_digest/web/templates/settings.html:62)、[唯一启用位置](D:/Desktop/AI/chatbot/qq_digest/web/templates/settings.html:266) |
-| 13 · P2 | 待确认知识点击“编辑后入库”并保存，只修改候选，仍是 pending，不出现在知识库。 | 改为“编辑候选”，或明确实现“保存并入库”。浏览器确认状态仍 pending。 | [操作文案](D:/Desktop/AI/chatbot/qq_digest/web/templates/candidates.html:90)、[仅 PATCH](D:/Desktop/AI/chatbot/qq_digest/web/templates/candidates.html:112) |
-| 14 · P2 | 候选保存请求期间关闭详情，保存成功回调读取已清空的 currentCandidate，提示“保存失败”。 | 提交时捕获 ID；数据保存与视图刷新分开，已关闭不再刷新。模拟复现。 | [保存回调](D:/Desktop/AI/chatbot/qq_digest/web/templates/candidates.html:112)、[关闭](D:/Desktop/AI/chatbot/qq_digest/web/templates/candidates.html:121) |
-| 15 · P2 | 筛选候选后入库／稍后／恢复审核，会整页提交并回默认全群筛选；忙时进入裸错误页。 | 异步提交、保留筛选，错误原地重试。源码链路。 | [HTML 表单](D:/Desktop/AI/chatbot/qq_digest/web/templates/candidates.html:48)、[固定重定向](D:/Desktop/AI/chatbot/qq_digest/web/app.py:2012) |
+| 13 · P2〔已修复〕 | 待确认知识点击“编辑后入库”并保存，只修改候选，仍是 pending，不出现在知识库。 | 改为“编辑候选”，或明确实现“保存并入库”。浏览器确认状态仍 pending。 | [操作文案](D:/Desktop/AI/chatbot/qq_digest/web/templates/candidates.html:90)、[仅 PATCH](D:/Desktop/AI/chatbot/qq_digest/web/templates/candidates.html:112) |
+| 14 · P2〔已修复〕 | 候选保存请求期间关闭详情，保存成功回调读取已清空的 currentCandidate，提示“保存失败”。 | 提交时捕获 ID；数据保存与视图刷新分开，已关闭不再刷新。模拟复现。 | [保存回调](D:/Desktop/AI/chatbot/qq_digest/web/templates/candidates.html:112)、[关闭](D:/Desktop/AI/chatbot/qq_digest/web/templates/candidates.html:121) |
+| 15 · P2〔已修复〕 | 筛选候选后入库／稍后／恢复审核，会整页提交并回默认全群筛选；忙时进入裸错误页。 | 异步提交、保留筛选，错误原地重试。源码链路。 | [HTML 表单](D:/Desktop/AI/chatbot/qq_digest/web/templates/candidates.html:48)、[固定重定向](D:/Desktop/AI/chatbot/qq_digest/web/app.py:2012) |
 | 16 · P2 | 候选超过 200 条时只显示最近 200 条，数量却像完整总数，没有分页和截断说明。 | 返回 total/page 并分页；至少注明当前上限。源码链路。 | [查询上限](D:/Desktop/AI/chatbot/qq_digest/candidates.py:106)、[数量显示](D:/Desktop/AI/chatbot/qq_digest/web/templates/candidates.html:50) |
 | 17 · P2〔已修复〕 | 同时填写多个待办建议，处理其中一个后全列表重建，其他未保存草稿消失。 | 按 key 保存草稿，或只更新变更卡片。模拟复现。 | [全列表加载](D:/Desktop/AI/chatbot/qq_digest/web/templates/tasks.html:31) |
 | 18 · P2〔已修复〕 | 快速切换待办状态筛选，较早请求迟到，会显示与筛选框不一致的结果。 | 请求 token＋提交筛选快照，忽略旧响应。源码链路。 | [无请求版本的加载](D:/Desktop/AI/chatbot/qq_digest/web/templates/tasks.html:31) |

@@ -785,6 +785,62 @@ def test_login_and_confirm_candidate(web_client):
     assert knowledge_count == 1
 
 
+@pytest.mark.parametrize('action', ['confirm', 'later', 'restore'])
+def test_candidate_json_actions_auth_busy_missing_and_review_switch(web_client, action):
+    client, candidate_id, _ = web_client
+    path = f'/api/candidates/{candidate_id}/{action}'
+    assert client.post(path).status_code == 401
+    client.post('/login', data={'password': 'password123'})
+    if action == 'restore':
+        client.app.state.candidates.update_status(candidate_id, 'later')
+    with client.app.state.operations.claim('collect'):
+        assert client.post(path).status_code == 409
+    assert client.post(f'/api/candidates/999999/{action}').status_code == 404
+    features = client.app.state.features
+    features.update({'review': False}, features.snapshot()['revision'])
+    assert client.post(path).status_code == 403
+
+
+def test_candidate_json_actions_preserve_saved_content_and_valid_transitions(web_client):
+    client, candidate_id, knowledge_dir = web_client
+    client.post('/login', data={'password': 'password123'})
+    path = f'/api/candidates/{candidate_id}'
+    assert client.post(path + '/later').json() == {'status': 'later'}
+    assert client.post(path + '/restore').json() == {'status': 'pending'}
+    changed = client.patch(path, json={'candidate_type': 'resource', 'title': '编辑后的标题',
+                                     'reason': '编辑后的理由', 'content': '编辑后的完整内容'})
+    assert changed.status_code == 200
+    assert changed.json()['status'] == 'pending'
+    assert not (knowledge_dir / 'resources.md').exists()
+    response = client.post(path + '/confirm', follow_redirects=False)
+    assert response.status_code == 200 and response.json() == {'status': 'confirmed'}
+    body = (knowledge_dir / 'resources.md').read_text(encoding='utf-8')
+    assert '编辑后的标题' in body and '编辑后的完整内容' in body
+    assert client.post(path + '/later').status_code == 409
+    assert client.post(path + '/restore').status_code == 409
+    assert client.app.state.candidates.get(candidate_id).status == 'confirmed'
+
+
+def test_candidate_json_confirm_failure_retains_candidate(web_client, monkeypatch):
+    client, candidate_id, _ = web_client
+    client.post('/login', data={'password': 'password123'})
+    def failed(*args, **kwargs):
+        raise OSError('synthetic publication failure')
+    monkeypatch.setattr(client.app.state.knowledge, 'write', failed)
+    response = client.post(f'/api/candidates/{candidate_id}/confirm')
+    assert response.status_code == 503
+    assert client.app.state.candidates.get(candidate_id).status == 'pending'
+    assert client.app.state.archive.connection.execute('SELECT COUNT(*) FROM knowledge_items').fetchone()[0] == 0
+
+
+def test_candidate_html_later_route_keeps_redirect_compatibility(web_client):
+    client, candidate_id, _ = web_client
+    client.post('/login', data={'password': 'password123'})
+    response = client.post(f'/candidates/{candidate_id}/later', follow_redirects=False)
+    assert response.status_code == 303 and response.headers['location'] == '/candidates'
+    assert client.app.state.candidates.get(candidate_id).status == 'later'
+
+
 def test_scheduler_api_returns_status(web_client):
     client, _, _ = web_client
 

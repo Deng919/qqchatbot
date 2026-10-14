@@ -17,6 +17,7 @@
     <input id="candidate-query" class="input candidate-query" type="search" placeholder="搜索标题、链接或内容">
     <button class="btn btn-primary btn-sm" type="button" onclick="loadCandidates()">筛选</button>
   </div>
+  <p id="candidate-feedback" role="status" hidden></p>
   <div class="candidate-list" id="candidate-list">
     {% for c in candidates %}
     <article class="candidate-item"><div class="candidate-title">{{ c.title }}</div><div class="candidate-reason">{{ c.reason }}</div>
@@ -44,10 +45,14 @@
 <script>
   var candidateStatusLabels={pending:'待审核',later:'稍后处理',confirmed:'已入库',ignored:'已忽略'};
   var candidateTypeLabels={resource:'资源',experience:'经验'};
+  var candidateListToken=0,candidateMutations=new Set();
+  function candidateFeedback(message,error){var host=document.getElementById('candidate-feedback');host.textContent=message;host.hidden=!message;if(message)toast(message,error?'error':'success');}
+  function candidateControls(){document.querySelectorAll('button[data-candidate-id]').forEach(function(button){button.disabled=candidateMutations.has(Number(button.dataset.candidateId));});var busy=currentCandidate&&candidateMutations.has(Number(currentCandidate.candidate_id));document.querySelectorAll('#candidate-edit-form input,#candidate-edit-form textarea,#candidate-edit-form select,#candidate-edit-form button').forEach(function(control){control.disabled=!!busy;});}
   function candidateParams(){var p=new URLSearchParams();['status','type','date-from','date-to','query'].forEach(function(n){var x=document.getElementById('candidate-'+n);if(!x||!x.value)return;var k={group:'group_id',type:'candidate_type','date-from':'date_from','date-to':'date_to',query:'q'}[n]||n;p.set(k,x.value)});GroupSelector.params(p,document.getElementById('candidate-group'));return p.toString()}
-  function actionForm(id,action,label,cls){return '<form method="post" action="/candidates/'+id+'/'+action+'"><button class="btn btn-sm '+(cls||'')+'" type="submit">'+label+'</button></form>'}
-  function renderCandidate(c){var link=c.link||'',linkHtml='';if(/^https?:\/\//i.test(link))linkHtml='<a href="'+escapeHtml(link)+'" target="_blank" rel="noopener noreferrer">'+escapeHtml(link)+'</a>';else if(link)linkHtml='<span class="header-meta">'+escapeHtml(link)+'</span>';var actions='<button class="btn btn-sm" type="button" onclick="viewCandidate('+c.candidate_id+')">详情</button>';if(c.status==='pending'||c.status==='later'){actions+=actionForm(c.candidate_id,'confirm','入库','btn-primary');if(c.status==='pending')actions+=actionForm(c.candidate_id,'later','稍后','');if(c.status==='later')actions+=actionForm(c.candidate_id,'restore','恢复审核','')}return '<article class="candidate-item"><div class="candidate-main"><div><strong>'+escapeHtml(c.title)+'</strong><div class="candidate-meta"><span class="badge badge-dim">'+escapeHtml(candidateTypeLabels[c.candidate_type]||c.candidate_type)+'</span><span>'+escapeHtml(candidateStatusLabels[c.status]||c.status)+'</span><span>'+escapeHtml(c.group_name)+'</span><span>'+escapeHtml(c.created_date)+'</span></div></div><div class="candidate-actions">'+actions+'</div></div><div class="candidate-reason">'+escapeHtml(c.reason)+'</div>'+linkHtml+'</article>'}
-  function loadCandidates(){return api('GET','/api/candidates?'+candidateParams()).then(function(d){document.getElementById('candidate-count').textContent=formatNumber(d.candidates.length)+' 条';document.getElementById('candidate-list').innerHTML=d.candidates.length?d.candidates.map(renderCandidate).join(''):'<div class="empty">当前筛选条件下没有候选</div>'}).catch(function(e){toast('加载候选失败: '+e.message,'error')})}
+  function candidateActionButton(id,action,label,cls){return '<button class="btn btn-sm '+(cls||'')+'" data-candidate-id="'+id+'" type="button" onclick="candidateAction('+id+',\''+action+'\')"'+(candidateMutations.has(Number(id))?' disabled':'')+'>'+label+'</button>'}
+  function renderCandidate(c){var link=c.link||'',linkHtml='';if(/^https?:\/\//i.test(link))linkHtml='<a href="'+escapeHtml(link)+'" target="_blank" rel="noopener noreferrer">'+escapeHtml(link)+'</a>';else if(link)linkHtml='<span class="header-meta">'+escapeHtml(link)+'</span>';var actions='<button class="btn btn-sm" type="button" onclick="viewCandidate('+c.candidate_id+')">详情</button>';if(c.status==='pending'||c.status==='later'){actions+=candidateActionButton(c.candidate_id,'confirm','入库','btn-primary');if(c.status==='pending')actions+=candidateActionButton(c.candidate_id,'later','稍后','');if(c.status==='later')actions+=candidateActionButton(c.candidate_id,'restore','恢复审核','')}return '<article class="candidate-item"><div class="candidate-main"><div><strong>'+escapeHtml(c.title)+'</strong><div class="candidate-meta"><span class="badge badge-dim">'+escapeHtml(candidateTypeLabels[c.candidate_type]||c.candidate_type)+'</span><span>'+escapeHtml(candidateStatusLabels[c.status]||c.status)+'</span><span>'+escapeHtml(c.group_name)+'</span><span>'+escapeHtml(c.created_date)+'</span></div></div><div class="candidate-actions">'+actions+'</div></div><div class="candidate-reason">'+escapeHtml(c.reason)+'</div>'+linkHtml+'</article>'}
+  function loadCandidates(){var token=++candidateListToken;return api('GET','/api/candidates?'+candidateParams()).then(function(d){if(token!==candidateListToken)return;document.getElementById('candidate-count').textContent=formatNumber(d.candidates.length)+' 条';document.getElementById('candidate-list').innerHTML=d.candidates.length?d.candidates.map(renderCandidate).join(''):'<div class="empty">当前筛选条件下没有候选</div>'}).catch(function(e){if(token===candidateListToken)candidateFeedback('加载候选失败: '+e.message,true)})}
+  function candidateAction(id,action){id=Number(id);if(candidateMutations.has(id))return Promise.resolve();var token=candidateViewToken;candidateMutations.add(id);candidateControls();candidateFeedback('');return api('POST','/api/candidates/'+id+'/'+action,{}).then(function(){candidateFeedback({confirm:'已入库',later:'已设为稍后处理',restore:'已恢复审核',undo:'已撤销入库，候选回到待审核'}[action]);if(token===candidateViewToken&&currentCandidate&&currentCandidate.candidate_id===id)viewCandidate(id);loadCandidates();}).catch(function(error){candidateFeedback('操作失败：'+error.message+'，请重试。',true);}).finally(function(){candidateMutations.delete(id);candidateControls();});}
   function renderCandidateContext(c) {
     var host = document.getElementById('candidate-source-context');
     host.textContent = '';
@@ -69,7 +74,15 @@
   var candidateViewToken = 0, currentCandidate = null;
   function viewCandidate(id) {
     var token = ++candidateViewToken;
-    api('GET', '/api/candidates/' + id).then(function(c) {
+    currentCandidate=null;
+    document.getElementById('candidate-edit-form').hidden=true;
+    document.getElementById('candidate-detail-actions').hidden=true;
+    document.getElementById('candidate-detail-content').hidden=false;
+    document.getElementById('candidate-detail-content').textContent='正在读取候选详情…';
+    document.getElementById('candidate-source-context').textContent='';
+    document.getElementById('candidate-detail').hidden=false;
+    document.getElementById('candidate-detail-backdrop').hidden=false;
+    return api('GET', '/api/candidates/' + id).then(function(c) {
       if (token !== candidateViewToken) return;
       currentCandidate = c;
       var messages = (c.message_ids || []).map(function(v) { return '<code>' + escapeHtml(v) + '</code>'; }).join(' ');
@@ -87,34 +100,37 @@
       document.getElementById('candidate-detail-actions').hidden = false;
       document.getElementById('candidate-detail-actions').innerHTML = c.status === 'confirmed'
         ? '<button class="btn btn-danger" type="button" onclick="undoCandidate()">撤销入库</button>'
-        : (c.status === 'pending' || c.status === 'later' ? '<button class="btn" type="button" onclick="editCandidate()">编辑后入库</button>' : '');
+        : (c.status === 'pending' || c.status === 'later' ? '<button class="btn" data-candidate-id="'+c.candidate_id+'" type="button" onclick="editCandidate()">编辑候选</button>'+candidateActionButton(c.candidate_id,'confirm','入库','btn-primary') : '');
       if(c.candidate_type==='resource')appendBookmarkAction(document.getElementById('candidate-detail-actions'),{kind:'resource',candidate_id:Number(c.candidate_id)});
       renderCandidateContext(c);
       document.getElementById('candidate-detail').hidden = false;
       document.getElementById('candidate-detail-backdrop').hidden = false;
-    }).catch(function(e) { if (token === candidateViewToken) toast('加载详情失败: ' + e.message, 'error'); });
+      candidateControls();
+    }).catch(function(e) { if (token === candidateViewToken) {document.getElementById('candidate-detail-content').textContent='加载详情失败：'+e.message;var actions=document.getElementById('candidate-detail-actions');actions.innerHTML='<button class="btn" type="button" onclick="viewCandidate('+Number(id)+')">重试读取</button>';actions.hidden=false;} });
   }
   function editCandidate() {
-    if (!currentCandidate) return;
+    if (!currentCandidate||candidateMutations.has(Number(currentCandidate.candidate_id))) return;
     var fields = {candidate_type:'edit-type',title:'edit-title',link:'edit-link',content:'edit-content',reason:'edit-reason',excerpt:'edit-excerpt'};
     Object.keys(fields).forEach(function(key) { document.getElementById(fields[key]).value = currentCandidate[key] || ''; });
     document.getElementById('candidate-detail-content').hidden = true;
     document.getElementById('candidate-detail-actions').hidden = true;
     document.getElementById('candidate-edit-form').hidden = false;
     document.getElementById('edit-title').focus();
+    candidateControls();
   }
   function cancelCandidateEdit() { document.getElementById('candidate-edit-form').hidden = true; document.getElementById('candidate-detail-content').hidden = false; document.getElementById('candidate-detail-actions').hidden = false; }
   function saveCandidateEdit(event) {
-    event.preventDefault(); if (!currentCandidate) return;
+    event.preventDefault(); if (!currentCandidate||candidateMutations.has(Number(currentCandidate.candidate_id))) return;
+    var id=Number(currentCandidate.candidate_id),token=candidateViewToken;
     var fields = {candidate_type:'edit-type',title:'edit-title',link:'edit-link',content:'edit-content',reason:'edit-reason',excerpt:'edit-excerpt'}, payload = {};
     Object.keys(fields).forEach(function(key) { payload[key] = document.getElementById(fields[key]).value.trim(); });
-    var button = document.querySelector('#candidate-edit-form button[type="submit"]'); button.disabled = true;
-    api('PATCH', '/api/candidates/' + currentCandidate.candidate_id, payload).then(function() { toast('已保存修改', 'success'); viewCandidate(currentCandidate.candidate_id); loadCandidates(); }).catch(function(error) { toast('保存失败：' + error.message, 'error'); }).finally(function() { button.disabled = false; });
+    candidateMutations.add(id);candidateControls();candidateFeedback('');
+    return api('PATCH', '/api/candidates/' + id, payload).then(function() { candidateFeedback('已保存修改；尚未入库，可在详情中点击入库。');if(token===candidateViewToken&&currentCandidate&&Number(currentCandidate.candidate_id)===id)viewCandidate(id);loadCandidates(); }).catch(function(error) { candidateFeedback('保存失败：' + error.message+'，输入已保留。',true); }).finally(function() { candidateMutations.delete(id);candidateControls(); });
   }
   function undoCandidate() {
     if (!currentCandidate || !confirm('撤销入库？知识条目会移除，候选回到待审核。')) return;
     var id = currentCandidate.candidate_id;
-    api('POST', '/api/candidates/' + id + '/undo').then(function() { toast('已撤销入库，候选回到待审核', 'success'); document.getElementById('candidate-status').value = 'pending'; viewCandidate(id); loadCandidates(); }).catch(function(error) { toast('撤销失败：' + error.message, 'error'); });
+    return candidateAction(id,'undo');
   }
   function closeCandidateDetail() {
     candidateViewToken += 1;

@@ -1688,6 +1688,7 @@ def create_app(
     # ------------------------------------------------------------------
     # Candidate actions (existing)
     # ------------------------------------------------------------------
+    @app.post("/api/candidates/{candidate_id}/confirm")
     @app.post("/candidates/{candidate_id}/confirm")
     async def confirm(request: Request, candidate_id: int):
         require_login(request)
@@ -1700,6 +1701,8 @@ def create_app(
             raise HTTPException(409,'后台任务正在运行，请稍后重试入库') from exc
         except OSError as exc:
             raise HTTPException(503,'知识写入失败，候选和原数据已保留') from exc
+        if request.url.path.startswith('/api/'):
+            return {"status": "confirmed"}
         return RedirectResponse("/candidates", status_code=303)
 
     @app.post("/candidates/{candidate_id}/ignore")
@@ -1708,16 +1711,38 @@ def create_app(
         candidates.ignore(candidate_id, reason)
         return RedirectResponse("/candidates", status_code=303)
 
+    @app.post("/api/candidates/{candidate_id}/later")
     @app.post("/candidates/{candidate_id}/later")
     async def later(request: Request, candidate_id: int):
         require_login(request)
-        candidates.update_status(candidate_id, "later")
+        try:
+            with operations.claim('knowledge_mutation'):
+                if candidates.get(candidate_id).status != 'pending':
+                    raise HTTPException(409, '候选状态已变化，请刷新后核对')
+                candidates.update_status(candidate_id, "later")
+        except KeyError as exc:
+            raise HTTPException(404, '候选不存在') from exc
+        except OperationBusy as exc:
+            raise HTTPException(409, '后台任务正在运行，请稍后重试') from exc
+        if request.url.path.startswith('/api/'):
+            return {"status": "later"}
         return RedirectResponse("/candidates", status_code=303)
 
+    @app.post("/api/candidates/{candidate_id}/restore")
     @app.post("/candidates/{candidate_id}/restore")
     async def restore(request: Request, candidate_id: int):
         require_login(request)
-        candidates.update_status(candidate_id, "pending")
+        try:
+            with operations.claim('knowledge_mutation'):
+                if candidates.get(candidate_id).status != 'later':
+                    raise HTTPException(409, '候选状态已变化，请刷新后核对')
+                candidates.update_status(candidate_id, "pending")
+        except KeyError as exc:
+            raise HTTPException(404, '候选不存在') from exc
+        except OperationBusy as exc:
+            raise HTTPException(409, '后台任务正在运行，请稍后重试') from exc
+        if request.url.path.startswith('/api/'):
+            return {"status": "pending"}
         return RedirectResponse("/candidates", status_code=303)
 
     from .storage_handoff import add_storage_handoff
