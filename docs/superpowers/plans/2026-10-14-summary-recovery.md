@@ -10,8 +10,10 @@
 
 - [x] 复用干净 worktree；35 项现有专项通过。
 - [x] 初次恢复 401、迟到范围控件和三个后台循环 RED。
-- [ ] `summary_progress_script.html` 最小修复与额外新输入保护回归。
-- [ ] `web/background_tasks.py` 普通失败继续、失败状态和决策阶段恢复，保留取消／操作锁；对应测试先 RED。
-- [ ] 独立复核、真实浏览器、相关 GREEN；知识保存和报告重试定点检查，只有实际新复现才扩展修复。
-- [ ] 全量 Python/CJS；构建并验证隔离 EXE、代码／模板和清单。
-- [ ] 合入主项目，验证专项、更新桌面入口／回退／路线图和验收边界。
+- [x] `summary_progress_script.html` 最小修复与额外新输入保护回归。
+- [x] `web/background_tasks.py` 普通失败继续、失败状态和决策阶段恢复，保留取消／操作锁；对应测试先 RED。
+- [x] 独立复核、真实浏览器、相关 GREEN；知识保存和报告重试定点检查，只有实际新复现才扩展修复。
+- [x] 全量 Python/CJS；构建并验证隔离 EXE、代码／模板和清单。
+- [x] 合入主项目，验证专项、更新桌面入口／回退／路线图和验收边界。
+
+修复提交 `45a7ddb`；全量1453通过、2权限跳过，37个CJS、独立审查、宽窄屏10场景与隔离EXE通过。已合入主工作区，SummaryRecovery桌面入口更新、TaskIntegrity保留回退；详见 [验收](../specs/2026-10-14-summary-recovery-verification.md)。
