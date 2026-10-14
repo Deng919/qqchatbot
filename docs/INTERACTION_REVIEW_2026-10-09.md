@@ -1,6 +1,6 @@
 # 群聊简报交互逻辑审查
 
-日期：2026-10-09。检查基线：`dfd1729`，本机 Storage 版本。目标是找出当前交互的不合理之处，给出可复现的问题和修复顺序。以下描述保留检查时的行为；经用户确认，编号 01–06 已实施修复，验证及本机部署状态见 [验收记录](superpowers/specs/2026-10-09-interaction-integrity-verification.md)。编号 10、20、21、23 已于 2026-10-13 修复，另有 19 项待处理；本轮验证边界和部署见 [草稿与异步状态验收](superpowers/specs/2026-10-13-interaction-drafts-verification.md)。
+日期：2026-10-09。检查基线：`dfd1729`，本机 Storage 版本。目标是找出当前交互的不合理之处，给出可复现的问题和修复顺序。以下描述保留检查时的行为；经用户确认，编号 01–06 已实施修复，验证及本机部署状态见 [验收记录](superpowers/specs/2026-10-09-interaction-integrity-verification.md)。编号 10、20、21、23 已于 2026-10-13 修复，另于 2026-10-14 修复编号 17、18、19、26，[待办草稿与重试恢复验收](superpowers/specs/2026-10-14-interaction-recovery-verification.md)记录了验证与部署边界，剩余 15 项待处理；10 月 13 日验证边界和部署见 [草稿与异步状态验收](superpowers/specs/2026-10-13-interaction-drafts-verification.md)。
 
 ## 结论与检查范围
 
@@ -94,16 +94,16 @@
 | 14 · P2 | 候选保存请求期间关闭详情，保存成功回调读取已清空的 currentCandidate，提示“保存失败”。 | 提交时捕获 ID；数据保存与视图刷新分开，已关闭不再刷新。模拟复现。 | [保存回调](D:/Desktop/AI/chatbot/qq_digest/web/templates/candidates.html:112)、[关闭](D:/Desktop/AI/chatbot/qq_digest/web/templates/candidates.html:121) |
 | 15 · P2 | 筛选候选后入库／稍后／恢复审核，会整页提交并回默认全群筛选；忙时进入裸错误页。 | 异步提交、保留筛选，错误原地重试。源码链路。 | [HTML 表单](D:/Desktop/AI/chatbot/qq_digest/web/templates/candidates.html:48)、[固定重定向](D:/Desktop/AI/chatbot/qq_digest/web/app.py:2012) |
 | 16 · P2 | 候选超过 200 条时只显示最近 200 条，数量却像完整总数，没有分页和截断说明。 | 返回 total/page 并分页；至少注明当前上限。源码链路。 | [查询上限](D:/Desktop/AI/chatbot/qq_digest/candidates.py:106)、[数量显示](D:/Desktop/AI/chatbot/qq_digest/web/templates/candidates.html:50) |
-| 17 · P2 | 同时填写多个待办建议，处理其中一个后全列表重建，其他未保存草稿消失。 | 按 key 保存草稿，或只更新变更卡片。模拟复现。 | [全列表加载](D:/Desktop/AI/chatbot/qq_digest/web/templates/tasks.html:31) |
-| 18 · P2 | 快速切换待办状态筛选，较早请求迟到，会显示与筛选框不一致的结果。 | 请求 token＋提交筛选快照，忽略旧响应。源码链路。 | [无请求版本的加载](D:/Desktop/AI/chatbot/qq_digest/web/templates/tasks.html:31) |
-| 19 · P2 | 保存知识时原消息读取失败，点击“重试读取”会重新初始化窗口，清空已填标题／说明／链接。 | 新建初始化和当前目标读取重试分开。源码链路。 | [初始化及重试](D:/Desktop/AI/chatbot/qq_digest/web/templates/knowledge_save.html:20) |
+| 17 · P2〔已修复〕 | 同时填写多个待办建议，处理其中一个后全列表重建，其他未保存草稿消失。 | 按 key 保存草稿，或只更新变更卡片。模拟复现。 | [全列表加载](D:/Desktop/AI/chatbot/qq_digest/web/templates/tasks.html:31) |
+| 18 · P2〔已修复〕 | 快速切换待办状态筛选，较早请求迟到，会显示与筛选框不一致的结果。 | 请求 token＋提交筛选快照，忽略旧响应。源码链路。 | [无请求版本的加载](D:/Desktop/AI/chatbot/qq_digest/web/templates/tasks.html:31) |
+| 19 · P2〔已修复〕 | 保存知识时原消息读取失败，点击“重试读取”会重新初始化窗口，清空已填标题／说明／链接。 | 新建初始化和当前目标读取重试分开。源码链路。 | [初始化及重试](D:/Desktop/AI/chatbot/qq_digest/web/templates/knowledge_save.html:20) |
 | 20 · P2〔已修复〕 | 刚打开生成面板并填写新范围，迟到的上次任务恢复响应会覆盖新日期和群偏好。 | 恢复任务状态与填表分离，用户编辑优先。模拟复现。 | [恢复条件](D:/Desktop/AI/chatbot/qq_digest/web/templates/summary_progress_script.html:51)、[覆盖字段](D:/Desktop/AI/chatbot/qq_digest/web/templates/summary_progress_script.html:53) |
 | 21 · P2〔已修复〕 | 发送问题 A 后继续写问题 B，A 返回时无条件清空输入，B 草稿消失。 | 只清空已提交内容，响应不能覆盖新输入。模拟复现。 | [清空输入](D:/Desktop/AI/chatbot/qq_digest/web/templates/reports.html:410) |
 | 22 · P2 | “阅读本次摘要”按日期／群打开全部类型，混入已有日报和其他区间报告；失败群也可能显示旧报告。 | 根据本次返回的报告标识打开结果；另设阅读整个范围的入口。源码链路。 | [结果跳转](D:/Desktop/AI/chatbot/qq_digest/web/templates/summary_generation_script.html:80)、[范围设置](D:/Desktop/AI/chatbot/qq_digest/web/templates/summary_reading_script.html:135) |
 | 23 · P2〔已修复〕 | 选择历史版本失败，只显示短暂 toast，正文一直“正在读取历史版本”。 | 正文显示错误＋重试或保留上一份成功内容。模拟复现。 | [加载及失败处理](D:/Desktop/AI/chatbot/qq_digest/web/templates/reports.html:224) |
 | 24 · P2 | 进入话题页必须先更新成功才读取已有列表；同时话题和来源 GET 占变更锁，采集／摘要期间连浏览也返回忙。 | 先读已有内容，刷新独立；区分只读与变更资源。初次更新失败模拟复现，锁链路核对。 | [初次更新](D:/Desktop/AI/chatbot/qq_digest/web/templates/topics_script.html:52)、[所有请求占变更锁](D:/Desktop/AI/chatbot/qq_digest/web/topic_routes.py:73) |
 | 25 · P2 | 到期提醒来源跳默认“待确认建议”，而非正式待办；资源跳默认 pending；关键词来源也未定位触发消息。 | 来源带 task_id/candidate_id/msg_id，目标消费参数并定位。源码链路。 | [来源地址](D:/Desktop/AI/chatbot/qq_digest/reminders.py:211)、[待办默认视图](D:/Desktop/AI/chatbot/qq_digest/web/templates/tasks.html:13) |
-| 26 · P2 | 未读提醒第 2 页只剩一条，标已读后仍取第 2 页，显示“第 2 / 1 页”和空列表。 | 列表数量缩小时退回最后有效页，参照收藏页。模拟复现。 | [修改后加载](D:/Desktop/AI/chatbot/qq_digest/web/templates/reminders_script.html:18)、[分页渲染](D:/Desktop/AI/chatbot/qq_digest/web/templates/reminders_script.html:20) |
+| 26 · P2〔已修复〕 | 未读提醒第 2 页只剩一条，标已读后仍取第 2 页，显示“第 2 / 1 页”和空列表。 | 列表数量缩小时退回最后有效页，参照收藏页。模拟复现。 | [修改后加载](D:/Desktop/AI/chatbot/qq_digest/web/templates/reminders_script.html:18)、[分页渲染](D:/Desktop/AI/chatbot/qq_digest/web/templates/reminders_script.html:20) |
 | 27 · P2 | 群已停用但仍勾选附件读取，“读取待处理”可点，后端却提示先开启附件读取，隐藏了真正的群停用原因。 | 返回有效权限和 disabled_reason，按钮状态与后端一致。源码链路。 | [权限返回](D:/Desktop/AI/chatbot/qq_digest/web/attachment_routes.py:38)、[按钮](D:/Desktop/AI/chatbot/qq_digest/web/templates/attachment_controls.html:21) |
 | 28 · P2 | 生成／摘要来源／报告问答弹层没有一致的焦点与背景滚动隔离，Tab 可逃出遮罩。 | 复用已有查找弹层的焦点约束、背景锁及关闭后焦点返回。浏览器确认生成面板末尾 Tab 进入 BODY。 | [生成面板打开](D:/Desktop/AI/chatbot/qq_digest/web/templates/summary_generation_script.html:21)、[已有查找处理](D:/Desktop/AI/chatbot/qq_digest/web/templates/find_script.html:41) |
 | 29 · P2 | 会话过期直接跳登录，未保存的表单没有统一保护，登录成功一律回摘要，而非原操作页面。 | 安全的站内 return_to＋按需草稿恢复；敏感密钥不保存草稿，原提交不自动重发。源码链路。 | [401 处理](D:/Desktop/AI/chatbot/qq_digest/web/templates/base.html:380)、[登录后跳转](D:/Desktop/AI/chatbot/qq_digest/web/app.py:774) |
