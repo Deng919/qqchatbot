@@ -2,14 +2,14 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from ..config import Config
+from ..config import AIConnectionConfig, Config, ConfigError
 from .protocol import ChatProvider
 from ..distribution import is_public_distribution, validate_public_ai
 from .client import AIClient
 from ..ai_usage import usage_for
 
 
-def _build_provider(config: Config, name: str, purpose='summary') -> ChatProvider:
+def _build_provider(config: Config, name: str, purpose='summary', connection: AIConnectionConfig | None = None) -> ChatProvider:
     if name == "chatgpt_bridge":
         from .bridge import BridgeAIClient
         return BridgeAIClient(
@@ -21,11 +21,14 @@ def _build_provider(config: Config, name: str, purpose='summary') -> ChatProvide
             request_directory=config.work_dir,
         )
     if name == "compatible":
+        source = connection or config.ai
+        base_url = config.resolve_base_url(connection) if connection is not None else config.resolve_base_url()
+        api_key = config.resolve_api_key(connection) if connection is not None else config.resolve_api_key()
         return AIClient(
-            base_url=config.resolve_base_url(),
-            api_key=config.resolve_api_key(),
-            model=config.ai.model,
-            json_mode=config.ai.json_mode,
+            base_url=base_url,
+            api_key=api_key,
+            model=source.model if connection is not None else ('deepseek-flash' if purpose == 'vision' else config.ai.model),
+            json_mode=source.json_mode,
             timeout_seconds=config.ai.timeout_seconds,
             max_retries=config.ai.max_retries,
             retry_base_seconds=config.ai.retry_base_seconds,
@@ -36,6 +39,12 @@ def _build_provider(config: Config, name: str, purpose='summary') -> ChatProvide
 
 
 def build_ai_client(config: Config, *, purpose='summary') -> ChatProvider:
+    connection_for = getattr(config.ai, "connection_for", None)
+    selected = connection_for(purpose) if connection_for is not None else None
+    if selected is not None:
+        if is_public_distribution():
+            raise ConfigError("公开版不支持自定义 AI 连接")
+        return _build_provider(config, selected.provider, purpose, selected)
     names = config.ai.provider_priority
     if is_public_distribution():
         validate_public_ai(names, config.ai.base_url)

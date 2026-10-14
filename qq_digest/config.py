@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import os
+import re
 from pathlib import Path
+from urllib.parse import urlsplit
 from zoneinfo import ZoneInfo
 
 import yaml
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from .models import GroupConfig
 from .distribution import is_public_distribution, validate_public_ai, validate_public_base_url
@@ -22,6 +24,41 @@ class SummaryConfig(BaseModel):
     timezone: str = "Asia/Shanghai"
     max_attempts: int = 3
     retry_interval_minutes: int = 15
+
+
+class AIConnectionConfig(BaseModel):
+    id: str
+    name: str
+    provider: str = "compatible"
+    base_url: str
+    model: str
+    api_key_env: str = ""
+    api_key_file: str = ""
+    ui_api_key_file: str = ""
+    json_mode: bool = True
+    supports_vision: bool = False
+
+    @model_validator(mode="after")
+    def validate_connection(self):
+        if not re.fullmatch(r"[A-Za-z0-9_-]{1,50}", self.id):
+            raise ValueError("AI 连接 id 只能包含字母、数字、下划线和短横线")
+        if not self.name.strip() or len(self.name) > 100:
+            raise ValueError("AI 连接名称不能为空且最多 100 个字符")
+        if self.provider != "compatible":
+            raise ValueError("多 AI 连接目前只支持 OpenAI 兼容接口")
+        parsed = urlsplit(self.base_url.strip())
+        if (parsed.scheme not in {"http", "https"} or not parsed.hostname
+                or parsed.username or parsed.password or parsed.query or parsed.fragment):
+            raise ValueError("AI 接口地址需为 HTTP(S) 地址，不含账号、密码、查询参数或片段")
+        if not self.model.strip() or len(self.model) > 200:
+            raise ValueError("AI 模型名称不能为空且最多 200 个字符")
+        if self.ui_api_key_file and not Path(self.ui_api_key_file).is_absolute():
+            raise ValueError("AI 连接密钥文件必须是绝对路径")
+        if self.api_key_file and not Path(self.api_key_file).is_absolute():
+            raise ValueError("AI 连接密钥文件必须是绝对路径")
+        if self.supports_vision is False and self.id.lower() == "vision":
+            raise ValueError("vision 连接必须声明支持图片")
+        return self
 
 
 class AIConfig(BaseModel):
@@ -45,6 +82,35 @@ class AIConfig(BaseModel):
     max_context_chars: int = 60000
     max_retries: int = 3
     retry_base_seconds: float = 2.0
+    connections: list[AIConnectionConfig] = Field(default_factory=list)
+    purpose_connections: dict[str, str] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def validate_connections(self):
+        ids = [item.id for item in self.connections]
+        if len(ids) != len(set(ids)):
+            raise ValueError("AI 连接 id 不能重复")
+        allowed = {"summary", "report_qa", "archive_qa", "vision", "connection_test"}
+        unknown = set(self.purpose_connections) - allowed
+        if unknown:
+            raise ValueError("AI 用途不支持: " + ", ".join(sorted(unknown)))
+        known = set(ids)
+        for purpose, connection_id in self.purpose_connections.items():
+            if connection_id not in known:
+                raise ValueError(f"AI 用途 {purpose} 指向不存在的连接")
+            if purpose == "vision" and not next(item for item in self.connections if item.id == connection_id).supports_vision:
+                raise ValueError("识图用途必须选择支持图片的连接")
+        return self
+
+    def connection_for(self, purpose: str) -> AIConnectionConfig | None:
+        connection_id = self.purpose_connections.get(purpose)
+        if not connection_id:
+            return None
+        return next(item for item in self.connections if item.id == connection_id)
+
+    def provider_for(self, purpose: str) -> str:
+        selected = self.connection_for(purpose)
+        return selected.provider if selected else self.provider_priority[0]
 
 
 class SecurityConfig(BaseModel):
@@ -122,23 +188,25 @@ class Config(BaseModel):
             "experience": resolve(self.knowledge.experience_path),
         }
 
-    def resolve_api_key(self) -> str:
-        if self.ai.ui_api_key_file:
+    def resolve_api_key(self, connection: AIConnectionConfig | None = None) -> str:
+        source = connection or self.ai
+        if source.ui_api_key_file:
             from .ai.key_store import read_ui_api_key
 
             try:
                 ui_key = self._read_key_file_with_retry(
-                    lambda: read_ui_api_key(Path(self.ai.ui_api_key_file).expanduser())
+                    lambda: read_ui_api_key(Path(source.ui_api_key_file).expanduser())
                 )
             except (OSError, UnicodeError, ValueError) as exc:
-                raise ConfigError("无法读取本地 DeepSeek API 密钥") from exc
+                label = "该 AI 连接" if connection is not None else "本地 DeepSeek"
+                raise ConfigError(f"无法读取{label} API 密钥") from exc
             if ui_key:
                 return ui_key
-        value = os.environ.get(self.ai.api_key_env, "")
+        value = os.environ.get(source.api_key_env, "")
         if value:
             return value
-        if self.ai.api_key_file:
-            path = Path(self.ai.api_key_file).expanduser()
+        if source.api_key_file:
+            path = Path(source.api_key_file).expanduser()
             if not path.is_absolute():
                 path = self.data_dir / path
             try:
@@ -150,8 +218,8 @@ class Config(BaseModel):
             if not value or any(char.isspace() for char in value):
                 raise ConfigError("API 密钥文件必须包含一行非空密钥")
             return value
-        if is_public_distribution():
-            raise ConfigError("请配置您自己的 DeepSeek API 密钥")
+        if is_public_distribution() or connection is not None:
+            raise ConfigError("请配置该 AI 连接的 API 密钥")
         return self._discover_codex_api_key()
 
     @staticmethod
@@ -214,9 +282,12 @@ class Config(BaseModel):
             f"环境变量 {self.ai.api_key_env} 未设置，且 {codex_id_dir} 中无有效 API key"
         )
 
-    def resolve_base_url(self) -> str:
+    def resolve_base_url(self, connection: AIConnectionConfig | None = None) -> str:
         """Return configured base_url, or auto-discover from codexID."""
-        url = self.ai.base_url.strip()
+        source = connection or self.ai
+        url = source.base_url.strip()
+        if connection is not None:
+            return url
         if is_public_distribution():
             validate_public_base_url(url)
             return url
@@ -263,6 +334,8 @@ def load_config(path: Path, *, create_dirs: bool = True) -> Config:
 
     if is_public_distribution():
         validate_public_ai(config.ai.provider_priority, config.ai.base_url)
+        if config.ai.connections or config.ai.purpose_connections:
+            raise ConfigError("公开版不支持自定义 AI 连接")
 
     if not 0 <= config.summary.hour <= 23:
         raise ConfigError("summary.hour 必须在 0 到 23 之间")

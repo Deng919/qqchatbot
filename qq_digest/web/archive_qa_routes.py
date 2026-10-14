@@ -80,11 +80,14 @@ def add_archive_qa_routes(app, *, archive, config, templates, require_login, ope
             def chat(self,messages):
                 cfg=request.app.state.config
                 if cfg is None:raise ConfigError('AI 配置不可用')
-                base=cfg.resolve_base_url()
-                if is_public_distribution():validate_public_ai(['compatible'],base)
-                self.client=AIClient(base_url=base,api_key=cfg.resolve_api_key(),model=cfg.ai.model,
-                    json_mode=True,timeout_seconds=cfg.ai.timeout_seconds,max_retries=2,
-                    usage_service=usage_for(cfg),purpose='archive_qa')
+                selected = getattr(cfg.ai, 'connection_for', lambda _purpose: None)('archive_qa')
+                if selected is not None:
+                    from ..ai.factory import build_ai_client
+                    self.client=build_ai_client(cfg, purpose='archive_qa')
+                else:
+                    self.client=AIClient(base_url=cfg.resolve_base_url(),api_key=cfg.resolve_api_key(),model=cfg.ai.model,
+                        json_mode=True,timeout_seconds=cfg.ai.timeout_seconds,max_retries=2,
+                        usage_service=usage_for(cfg),purpose='archive_qa')
                 return self.client.chat(messages)
             def close(self):
                 if self.client:self.client.close()
