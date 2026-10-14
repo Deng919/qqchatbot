@@ -1,5 +1,7 @@
 # 群聊简报交互逻辑审查
 
+**最终状态：2026-10-14，编号 01–29 已全部处理。** 本轮补齐剩余 12 项，并处理正式待办草稿及群设置全字段保存等新增分支；最终验证与本机版本见 [全功能修复验收](superpowers/specs/2026-10-14-full-audit-remediation-verification.md)。下文保留历史检查表现与阶段状态。
+
 日期：2026-10-09。检查基线：`dfd1729`，本机 Storage 版本。目标是找出当前交互的不合理之处，给出可复现的问题和修复顺序。以下描述保留检查时的行为；经用户确认，编号 01–06 已实施修复，验证及本机部署状态见 [验收记录](superpowers/specs/2026-10-09-interaction-integrity-verification.md)。编号 10、20、21、23 已于 2026-10-13 修复，另于 2026-10-14 修复编号 17、18、19、26，[待办草稿与重试恢复验收](superpowers/specs/2026-10-14-interaction-recovery-verification.md)记录了验证与部署边界，同日修复编号 13、14、15，见 [待确认知识流程验收](superpowers/specs/2026-10-14-candidate-workflow-verification.md)，剩余 12 项待处理；10 月 13 日验证边界和部署见 [草稿与异步状态验收](superpowers/specs/2026-10-13-interaction-drafts-verification.md)。
 
 ## 结论与检查范围
