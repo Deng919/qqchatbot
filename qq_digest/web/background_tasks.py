@@ -23,85 +23,91 @@ async def daily_scheduler_loop(
     scheduler_logger = logging.getLogger("qq_digest.scheduler")
     while True:
         await asyncio.sleep(60)
-        if (
-            not config
-            or setup_in_progress(config)
-            or not feature_service.enabled('auto_daily')
-            or scheduler_state["running"]
-            or not operations.can_start("daily")
-        ):
-            continue
+        try:
+            if (
+                not config
+                or setup_in_progress(config)
+                or not feature_service.enabled('auto_daily')
+                or scheduler_state["running"]
+                or not operations.can_start("daily")
+            ):
+                continue
 
-        tz = ZoneInfo(config.summary.timezone)
-        now = datetime.now(tz)
-        today = now.date().isoformat()
-        catchup_date = pending_catchup_date(
-            archive.connection, now,
-            mode=config.summary.window_mode,
-            max_attempts=config.summary.max_attempts,
-            retry_interval_minutes=config.summary.retry_interval_minutes,
-        )
-        if catchup_date is not None:
-            scheduler_logger.info("补生成遗漏日报: %s", catchup_date)
+            tz = ZoneInfo(config.summary.timezone)
+            now = datetime.now(tz)
+            today = now.date().isoformat()
+            catchup_date = pending_catchup_date(
+                archive.connection, now,
+                mode=config.summary.window_mode,
+                max_attempts=config.summary.max_attempts,
+                retry_interval_minutes=config.summary.retry_interval_minutes,
+            )
+            if catchup_date is not None:
+                scheduler_logger.info("补生成遗漏日报: %s", catchup_date)
+                try:
+                    with operations.claim("daily"):
+                        scheduler_state["running"] = True
+                        scheduler_state["last_attempt_date"] = catchup_date.isoformat()
+                        try:
+                            catchup_result = await guarded_to_thread(
+                                run_daily_task, config,
+                                run_at_for_report_date(
+                                    catchup_date, config.summary.window_mode, tz
+                                ),
+                            )
+                            latest_report = archive.connection.execute(
+                                """SELECT target_date FROM jobs WHERE job_type='daily_digest'
+                                       ORDER BY COALESCE(target_date, substr(started_at, 1, 10)) DESC,
+                                                job_id DESC LIMIT 1"""
+                            ).fetchone()
+                            if latest_report and latest_report["target_date"] == catchup_date.isoformat():
+                                scheduler_state["last_result"] = catchup_result
+                        finally:
+                            scheduler_state["running"] = False
+                except OperationBusy:
+                    pass
+                continue
+
+            scheduled_target = summary_window(
+                now, config.summary.window_mode, tz
+            )[0].date().isoformat()
+            retry = daily_retry_state(
+                archive.connection,
+                now,
+                target_hour=config.summary.hour,
+                target_minute=config.summary.minute,
+                max_attempts=config.summary.max_attempts,
+                retry_interval_minutes=config.summary.retry_interval_minutes,
+                target_date=scheduled_target,
+            )
+            if not retry.due:
+                continue
+
+            # Time to run
+            scheduler_logger.info(
+                "定时任务触发: %s，第 %d/%d 次",
+                today,
+                retry.attempts + 1,
+                config.summary.max_attempts,
+            )
+            scheduler_state["last_attempt_date"] = today
             try:
                 with operations.claim("daily"):
                     scheduler_state["running"] = True
-                    scheduler_state["last_attempt_date"] = catchup_date.isoformat()
                     try:
-                        catchup_result = await guarded_to_thread(
-                            run_daily_task, config,
-                            run_at_for_report_date(
-                                catchup_date, config.summary.window_mode, tz
-                            ),
-                        )
-                        latest_report = archive.connection.execute(
-                            """SELECT target_date FROM jobs WHERE job_type='daily_digest'
-                                   ORDER BY COALESCE(target_date, substr(started_at, 1, 10)) DESC,
-                                            job_id DESC LIMIT 1"""
-                        ).fetchone()
-                        if latest_report and latest_report["target_date"] == catchup_date.isoformat():
-                            scheduler_state["last_result"] = catchup_result
+                        result = await guarded_to_thread(run_daily_task, config)
+                        scheduler_state["last_result"] = result
+                        if result.get("success"):
+                            scheduler_state["last_run_date"] = today
                     finally:
                         scheduler_state["running"] = False
             except OperationBusy:
-                pass
-            continue
-
-        scheduled_target = summary_window(
-            now, config.summary.window_mode, tz
-        )[0].date().isoformat()
-        retry = daily_retry_state(
-            archive.connection,
-            now,
-            target_hour=config.summary.hour,
-            target_minute=config.summary.minute,
-            max_attempts=config.summary.max_attempts,
-            retry_interval_minutes=config.summary.retry_interval_minutes,
-            target_date=scheduled_target,
-        )
-        if not retry.due:
-            continue
-
-        # Time to run
-        scheduler_logger.info(
-            "定时任务触发: %s，第 %d/%d 次",
-            today,
-            retry.attempts + 1,
-            config.summary.max_attempts,
-        )
-        scheduler_state["last_attempt_date"] = today
-        try:
-            with operations.claim("daily"):
-                scheduler_state["running"] = True
-                try:
-                    result = await guarded_to_thread(run_daily_task, config)
-                    scheduler_state["last_result"] = result
-                    if result.get("success"):
-                        scheduler_state["last_run_date"] = today
-                finally:
-                    scheduler_state["running"] = False
-        except OperationBusy:
-            continue
+                continue
+        except Exception as exc:
+            scheduler_state["last_result"] = {
+                "success": False, "status": "failed", "error": str(exc),
+            }
+            scheduler_logger.exception("日报调度失败，将在下一周期检查")
 
 
 async def notification_queue_loop(config, operations, notifier):
@@ -119,34 +125,42 @@ async def notification_queue_loop(config, operations, notifier):
 
 
 async def message_sync_loop(config, operations, feature_service, sync_scheduler_state):
+    import logging
+    sync_logger = logging.getLogger("qq_digest.sync")
     if not config:
         return
     await asyncio.sleep(config.collection.startup_delay_seconds)
     while True:
-        if (
-            config.collection.enabled
-            and not setup_in_progress(config)
-            and feature_service.enabled('auto_collection')
-            and config.ntqq.enabled
-            and operations.can_start("sync")
-        ):
-            from ..sync import run_message_sync
+        try:
+            if (
+                config.collection.enabled
+                and not setup_in_progress(config)
+                and feature_service.enabled('auto_collection')
+                and config.ntqq.enabled
+                and operations.can_start("sync")
+            ):
+                from ..sync import run_message_sync
 
-            try:
-                with operations.claim("sync"):
-                    sync_scheduler_state["running"] = True
-                    try:
-                        result = await guarded_to_thread(
-                            run_message_sync, config=config
-                        )
-                        sync_scheduler_state["last_result"] = result.to_dict()
-                        sync_scheduler_state["last_run_at"] = datetime.now(
-                            ZoneInfo(config.summary.timezone)
-                        ).strftime("%Y-%m-%d %H:%M")
-                    finally:
-                        sync_scheduler_state["running"] = False
-            except OperationBusy:
-                pass
+                try:
+                    with operations.claim("sync"):
+                        sync_scheduler_state["running"] = True
+                        try:
+                            result = await guarded_to_thread(
+                                run_message_sync, config=config
+                            )
+                            sync_scheduler_state["last_result"] = result.to_dict()
+                            sync_scheduler_state["last_run_at"] = datetime.now(
+                                ZoneInfo(config.summary.timezone)
+                            ).strftime("%Y-%m-%d %H:%M")
+                        finally:
+                            sync_scheduler_state["running"] = False
+                except OperationBusy:
+                    pass
+        except Exception as exc:
+            sync_scheduler_state["last_result"] = {
+                "success": False, "errors": [str(exc)],
+            }
+            sync_logger.exception("自动采集失败，将在下一周期重试")
         await asyncio.sleep(config.collection.interval_minutes * 60)
 
 

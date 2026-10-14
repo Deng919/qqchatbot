@@ -23,11 +23,12 @@
     start.setDate(start.getDate() - 6);
     return {start: localDateValue(start), end: localDateValue(today)};
   }
+  function rangeTimeMode(start,end,dates){return start===dates.end&&end===dates.end?'today':start===dates.start&&end===dates.end?'week':'custom';}
   function openRangeSummary() {
     rangeOpener = document.activeElement; var dates = recentWeekDates();
     if(!rangeInitialized){rangeInitialized=true;rangePreferredGroup=document.getElementById('report-group').value;document.getElementById('range-start-date').value=document.getElementById('report-from').value||dates.start;document.getElementById('range-end-date').value=document.getElementById('report-to').value||dates.end;}
     var from=document.getElementById('range-start-date').value,to=document.getElementById('range-end-date').value;
-    document.getElementById('range-time-mode').value=from===dates.end&&to===dates.end?'today':from===dates.start&&to===dates.end?'week':'custom';
+    document.getElementById('range-time-mode').value=rangeTimeMode(from,to,dates);
     refreshDateHints();
     document.getElementById('range-summary-panel').hidden = false; document.getElementById('range-summary-backdrop').hidden = false;
     if (!rangeGroupsLoaded&&!rangeGroups.length) loadRangeGroups(); updateRangeSelectionSummary(); var firstControl=document.getElementById('range-group-list').querySelector('summary');if(firstControl)firstControl.focus();else document.querySelector('#range-summary-panel button').focus();

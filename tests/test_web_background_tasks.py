@@ -265,13 +265,13 @@ def test_worker_error_releases_running_state_and_claim(runtime, monkeypatch, kin
         monkeypatch.setattr('qq_digest.sync.run_message_sync', broken)
         loop = lambda: background.message_sync_loop(
             runtime.config, runtime.operations, runtime.features, runtime.sync)
-    with pytest.raises(ValueError, match='synthetic worker failure'):
-        run_cycles(monkeypatch, background, loop)
+    run_cycles(monkeypatch, background, loop)
     assert not getattr(runtime, kind)['running']
     assert not runtime.operations.is_active(kind)
+    assert getattr(runtime, kind)['last_result']['success'] is False
 
 
-@pytest.mark.parametrize('kind', ['daily', 'sync'])
+@pytest.mark.parametrize('kind', ['daily', 'catchup', 'sync'])
 def test_cancellation_waits_for_physical_worker(runtime, monkeypatch, kind):
     background = load_background(monkeypatch)
     original_sleep = asyncio.sleep
@@ -286,11 +286,16 @@ def test_cancellation_waits_for_physical_worker(runtime, monkeypatch, kind):
         return SimpleNamespace(to_dict=lambda: {}) if kind == 'sync' else {'success': True}
 
     monkeypatch.setattr(background.asyncio, 'sleep', tick)
+    if kind == 'catchup':
+        monkeypatch.setattr(background, 'pending_catchup_date',
+                            lambda *args, **kwargs: NOW.date() - timedelta(days=1))
     if kind == 'sync':
         monkeypatch.setattr('qq_digest.sync.run_message_sync', blocked)
+    state = runtime.sync if kind == 'sync' else runtime.daily
+    operation = 'sync' if kind == 'sync' else 'daily'
 
     async def scenario():
-        loop = daily_loop(background, runtime, blocked) if kind == 'daily' else background.message_sync_loop(
+        loop = daily_loop(background, runtime, blocked) if kind != 'sync' else background.message_sync_loop(
             runtime.config, runtime.operations, runtime.features, runtime.sync)
         task = asyncio.create_task(loop)
         try:
@@ -304,13 +309,14 @@ def test_cancellation_waits_for_physical_worker(runtime, monkeypatch, kind):
             task.cancel()
             await original_sleep(.01)
             assert not task.done()
-            assert getattr(runtime, kind)['running'] and runtime.operations.is_active(kind)
+            assert state['running'] and runtime.operations.is_active(operation)
         finally:
             release.set()
             task.cancel()
             with pytest.raises(asyncio.CancelledError):
                 await task
-        assert not getattr(runtime, kind)['running'] and not runtime.operations.is_active(kind)
+        assert not state['running'] and not runtime.operations.is_active(operation)
+        assert state['last_result'] is None
 
     asyncio.run(scenario())
 
