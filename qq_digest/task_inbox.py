@@ -181,8 +181,8 @@ class TaskInboxService:
                     now: datetime | None = None) -> dict:
         if status not in {"open", "completed", "canceled"}:
             raise ValueError("状态无效")
-        if type(expected_revision) is not int or expected_revision < 0:
-            raise ValueError("待办版本必须是非负整数")
+        if type(expected_revision) is not int or not 0 <= expected_revision < 2**63:
+            raise ValueError("待办版本必须是 0 至 2^63-1 的整数")
         title, owner, due_date = self._fields(title, owner, due_date)
         timestamp = self._now(now).isoformat()
         with self.archive.transaction():

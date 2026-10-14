@@ -1,9 +1,9 @@
 """Task page and API, sharing the existing task inbox service."""
 from pathlib import Path
 import sqlite3
-from typing import Literal
+from typing import Annotated, Literal
 
-from fastapi import HTTPException, Request
+from fastapi import HTTPException, Path as PathParameter, Request
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, ConfigDict, Field, StrictInt
 
@@ -24,14 +24,14 @@ class TaskDecisionPayload(TaskFieldsPayload):
 
 
 class MessageTaskPayload(TaskFieldsPayload):
-    group_id: int
+    group_id: int = Field(ge=-(2**63), lt=2**63)
     msg_id: str = Field(min_length=1, max_length=500)
 
 
 class TaskUpdatePayload(TaskFieldsPayload):
     model_config = ConfigDict(extra="forbid")
     status: Literal["open", "completed", "canceled"]
-    expected_revision: StrictInt = Field(ge=0)
+    expected_revision: StrictInt = Field(ge=0, lt=2**63)
 
 
 class TaskStatusPayload(BaseModel):
@@ -108,7 +108,9 @@ def add_task_routes(app, *, archive, config, templates, require_login):
         return {"task": task}
 
     @app.patch("/api/tasks/{task_id}")
-    async def api_task_update(request: Request, task_id: int, payload: TaskUpdatePayload | TaskStatusPayload):
+    async def api_task_update(request: Request,
+                              task_id: Annotated[int, PathParameter(ge=-(2**63), lt=2**63)],
+                              payload: TaskUpdatePayload | TaskStatusPayload):
         require_login(request)
         try:
             if isinstance(payload, TaskStatusPayload):
