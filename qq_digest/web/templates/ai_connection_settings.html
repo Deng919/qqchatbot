@@ -10,9 +10,10 @@
 </section>
 {% endif %}
 {% if not public_distribution() %}
-<section class="card ai-settings-card" aria-labelledby="multi-ai-title">
+<section class="card ai-settings-card" id="multi-ai-settings" aria-labelledby="multi-ai-title">
   <div class="card-header" id="multi-ai-title">其他 AI 连接</div>
   <p class="settings-note">兼容 OpenAI Chat Completions 的接口可以单独配置。密钥只保存在本机。</p>
+  <button id="multi-ai-reload" class="btn btn-sm" type="button" onclick="loadAIConnections()">重新载入连接设置</button>
   <div id="multi-ai-list" class="multi-ai-list"><p class="settings-note">加载中...</p></div>
   <form id="multi-ai-form" onsubmit="saveAIConnection(event)">
     <div class="multi-ai-fields">
@@ -22,6 +23,7 @@
       <div class="field"><label for="multi-ai-model">模型</label><input id="multi-ai-model" class="input" maxlength="200" required></div>
       <div class="field"><label for="multi-ai-key">API Key（留空保留原值）</label><input id="multi-ai-key" class="input" type="password" autocomplete="new-password" spellcheck="false"></div>
     </div>
+    <label class="multi-ai-check"><input id="multi-ai-json" type="checkbox" checked> 请求 JSON 模式（接口不支持时关闭）</label>
     <label class="multi-ai-check"><input id="multi-ai-vision" type="checkbox"> 支持图片／扫描内容</label>
     <div class="settings-actions"><button class="btn btn-primary" id="multi-ai-save" type="submit">保存连接</button><button class="btn" id="multi-ai-reset" type="button" onclick="resetAIConnectionForm()">新建连接</button></div>
   </form>
@@ -83,23 +85,8 @@
       document.getElementById('deepseek-base-url').textContent = data.base_url || '未配置';
       document.getElementById('deepseek-model').textContent = data.model || '未配置';
       document.getElementById('deepseek-key-status').textContent = data.key_configured ? '已保存到本机' : '尚未通过网页保存';
-      {% if not public_distribution() %} renderAIConnections(data); {% endif %}
     }).catch(function(error) { toast('加载 AI 设置失败：' + error.message, 'error'); });
   }
-  var aiConnections=[];
-  function aiNode(tag,text,cls){var node=document.createElement(tag);if(text!==undefined)node.textContent=text;if(cls)node.className=cls;return node;}
-  function aiConnectionResult(text,error){var node=document.getElementById('multi-ai-result');node.textContent=text;node.hidden=!text;node.style.color=error?'#9b3d2f':'';}
-  function resetAIConnectionForm(){['id','name','url','model','key'].forEach(function(key){document.getElementById('multi-ai-'+key).value='';});document.getElementById('multi-ai-vision').checked=false;document.getElementById('multi-ai-id').focus();}
-  function editAIConnection(item){document.getElementById('multi-ai-id').value=item.id;document.getElementById('multi-ai-name').value=item.name;document.getElementById('multi-ai-url').value=item.base_url;document.getElementById('multi-ai-model').value=item.model;document.getElementById('multi-ai-vision').checked=item.supports_vision;document.getElementById('multi-ai-key').value='';document.getElementById('multi-ai-id').focus();}
-  function renderAIConnections(data){
-    aiConnections=data.connections||[];var host=document.getElementById('multi-ai-list');host.textContent='';
-    if(!aiConnections.length)host.appendChild(aiNode('p','尚未配置其他连接。摘要等功能继续使用上面的默认设置。','settings-note'));
-    aiConnections.forEach(function(item){var row=aiNode('div',undefined,'multi-ai-row'),info=aiNode('div'),title=aiNode('strong',item.name+' · '+item.id),meta=aiNode('small',item.base_url+' · '+item.model+' · 密钥 '+(item.key_configured?'已配置':'未配置'));info.appendChild(title);info.appendChild(meta);var actions=aiNode('div',undefined,'settings-actions'),edit=aiNode('button','编辑','btn btn-sm'),remove=aiNode('button','删除','btn btn-sm');edit.type=remove.type='button';edit.onclick=function(){editAIConnection(item);};remove.onclick=function(){deleteAIConnection(item.id);};actions.appendChild(edit);actions.appendChild(remove);row.appendChild(info);row.appendChild(actions);host.appendChild(row);});
-    ['summary','report_qa','archive_qa','vision'].forEach(function(purpose){var select=document.getElementById('ai-purpose-'+purpose);select.textContent='';var legacy=document.createElement('option');legacy.value='';legacy.textContent='默认 AI 设置';select.appendChild(legacy);aiConnections.forEach(function(item){var option=document.createElement('option');option.value=item.id;option.textContent=item.name+' · '+item.model;option.disabled=purpose==='vision'&&!item.supports_vision;select.appendChild(option);});select.value=(data.purpose_connections||{})[purpose]||'';});
-  }
-  function saveAIConnection(event){event.preventDefault();var id=document.getElementById('multi-ai-id').value.trim(),payload={id:id,name:document.getElementById('multi-ai-name').value.trim(),base_url:document.getElementById('multi-ai-url').value.trim(),model:document.getElementById('multi-ai-model').value.trim(),supports_vision:document.getElementById('multi-ai-vision').checked,api_key:document.getElementById('multi-ai-key').value};if(!id)return;var button=document.getElementById('multi-ai-save');button.disabled=true;api('PUT','/api/ai-settings/connections',payload).then(function(){aiConnectionResult('连接已保存。');resetAIConnectionForm();loadAISettings();}).catch(function(error){aiConnectionResult('保存失败：'+error.message,true);}).finally(function(){button.disabled=false;});}
-  function deleteAIConnection(id){if(!confirm('删除连接 '+id+'？'))return;api('DELETE','/api/ai-settings/connections/'+encodeURIComponent(id)).then(function(){aiConnectionResult('连接已删除。');loadAISettings();}).catch(function(error){aiConnectionResult('删除失败：'+error.message,true);});}
-  function saveAIPurposes(event){event.preventDefault();var values={};['summary','report_qa','archive_qa','vision'].forEach(function(purpose){var value=document.getElementById('ai-purpose-'+purpose).value;if(value)values[purpose]=value;});api('PUT','/api/ai-settings/purposes',{purpose_connections:values}).then(function(){aiConnectionResult('用途选择已保存。');loadAISettings();}).catch(function(error){aiConnectionResult('保存失败：'+error.message,true);});}
   function saveDeepSeekKey(event) {
     event.preventDefault();
     var field = document.getElementById('deepseek-api-key');
@@ -123,3 +110,5 @@
   loadAISettings();
 </script>
 {% include "ai_usage_settings.html" %}
+
+{% if not public_distribution() %}{% include "ai_connections_script.html" %}{% endif %}

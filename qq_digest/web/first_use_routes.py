@@ -64,7 +64,7 @@ def add_first_use_routes(app, *, config, config_path, archive, templates, requir
 
     @app.exception_handler(RequestValidationError)
     async def validation_error(request: Request, exc: RequestValidationError):
-        if request.url.path.startswith('/api/setup/'):
+        if request.url.path.startswith(('/api/setup/', '/api/ai-settings/connections', '/api/ai-settings/purposes')):
             return JSONResponse(status_code=422, content={'detail': '输入无效，请检查账号、日期、地址、模型和数值范围'})
         return await request_validation_exception_handler(request, exc)
 

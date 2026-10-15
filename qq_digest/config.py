@@ -47,8 +47,11 @@ class AIConnectionConfig(BaseModel):
         if self.provider != "compatible":
             raise ValueError("多 AI 连接目前只支持 OpenAI 兼容接口")
         parsed = urlsplit(self.base_url.strip())
+        port = parsed.port
         if (parsed.scheme not in {"http", "https"} or not parsed.hostname
-                or parsed.username or parsed.password or parsed.query or parsed.fragment):
+                or parsed.username or parsed.password or '?' in self.base_url or '#' in self.base_url
+                or any(char.isspace() or ord(char)<32 or char=='\\' for char in self.base_url)
+                or len(self.base_url)>2000 or port == 0):
             raise ValueError("AI 接口地址需为 HTTP(S) 地址，不含账号、密码、查询参数或片段")
         if not self.model.strip() or len(self.model) > 200:
             raise ValueError("AI 模型名称不能为空且最多 200 个字符")
@@ -56,8 +59,6 @@ class AIConnectionConfig(BaseModel):
             raise ValueError("AI 连接密钥文件必须是绝对路径")
         if self.api_key_file and not Path(self.api_key_file).is_absolute():
             raise ValueError("AI 连接密钥文件必须是绝对路径")
-        if self.supports_vision is False and self.id.lower() == "vision":
-            raise ValueError("vision 连接必须声明支持图片")
         return self
 
 
@@ -106,7 +107,10 @@ class AIConfig(BaseModel):
         connection_id = self.purpose_connections.get(purpose)
         if not connection_id:
             return None
-        return next(item for item in self.connections if item.id == connection_id)
+        selected = next((item for item in self.connections if item.id == connection_id), None)
+        if selected is None or (purpose=='vision' and not selected.supports_vision):
+            raise ConfigError("AI 用途连接不存在或不支持图片，请检查用途设置")
+        return selected
 
     def provider_for(self, purpose: str) -> str:
         selected = self.connection_for(purpose)

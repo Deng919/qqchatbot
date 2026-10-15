@@ -10,7 +10,6 @@ from dataclasses import asdict
 from datetime import date, datetime, timezone
 from pathlib import Path
 from urllib.parse import unquote, urlencode
-from uuid import uuid4
 from zoneinfo import ZoneInfo
 
 from fastapi import FastAPI, Form, HTTPException, Query, Request
@@ -77,26 +76,6 @@ class ManualRangePayload(BaseModel):
 
 class AIKeyPayload(BaseModel):
     api_key: str
-
-
-class AIConnectionPayload(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    id: str = Field(pattern=r"^[A-Za-z0-9_-]{1,50}$")
-    name: str = Field(min_length=1, max_length=100)
-    base_url: str = Field(min_length=1, max_length=2000)
-    model: str = Field(min_length=1, max_length=200)
-    supports_vision: StrictBool = False
-    api_key: str = Field(default="", max_length=4096)
-
-
-class AIPurposePayload(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    purpose_connections: dict[str, str] = Field(default_factory=dict)
-
-
-class AIConnectionTestPayload(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    id: str = Field(pattern=r"^[A-Za-z0-9_-]{1,50}$")
 
 
 class CandidateEditPayload(BaseModel):
@@ -232,32 +211,6 @@ def _ai_connection_view(config: Config, connection) -> dict:
     }
 
 
-def _save_ai_patch(request: Request, patch: dict):
-    """Persist AI settings through the same atomic config writer as setup."""
-    service = getattr(request.app.state, "first_use", None)
-    if service is None or service.store.path is None:
-        raise ConfigError("当前服务未提供可写配置位置")
-    def worker():
-        with request.app.state.operations.claim("setup_mutation"):
-            with service.store.lock:
-                result = service._save(service.store.revision, service._state(), {"ai": patch})
-                if hasattr(request.app.state, "desktop_config_signature"):
-                    from ..desktop import config_signature
-                    request.app.state.desktop_config_signature = config_signature(service.store.path)
-                return result
-    return worker
-
-
-def _owned_ai_key_path(config: Config, connection_id: str, connection) -> Path | None:
-    if not connection.ui_api_key_file:
-        return None
-    path = Path(connection.ui_api_key_file).expanduser()
-    owned_root = (config.data_dir / "config" / "secrets").resolve()
-    if path.resolve().parent == owned_root and path.name == f"ai-{connection_id}.txt":
-        return path
-    return None
-
-
 def _archive(request: Request) -> Archive:
     return request.app.state.archive
 
@@ -350,6 +303,8 @@ def _test_ai_connection(config: Config, connection_id: str) -> None:
         raise ConfigError("AI 连接不存在")
     test_config = config.model_copy(deep=True)
     test_config.ai.purpose_connections = {"connection_test": connection_id}
+    test_config.ai.max_retries = 1
+    test_config.ai.timeout_seconds = min(config.ai.timeout_seconds, 30)
     client = build_ai_client(test_config, purpose="connection_test")
     try:
         response = client.chat([
@@ -523,6 +478,9 @@ def create_app(
     from .first_use_routes import add_first_use_routes
     add_first_use_routes(app, config=config, config_path=config_path, archive=archive,
                          templates=templates, require_login=require_login, operations=operations)
+    from .ai_connection_routes import add_ai_connection_routes
+    add_ai_connection_routes(app, require_login=require_login,
+        test_connection=lambda cfg, ident: _test_ai_connection(cfg, ident))
     feature_service = add_feature_routes(app, archive=archive, cookie=cookie, require_login=require_login, operations=operations)
     add_summary_reading_routes(app, archive=archive, config=config, require_login=require_login)
     add_task_routes(app, archive=archive, config=config, templates=templates, require_login=require_login)
@@ -864,109 +822,6 @@ def create_app(
                 for purpose in ("summary", "report_qa", "archive_qa", "vision")
             }
         return result
-
-    @app.put("/api/ai-settings/connections")
-    async def api_save_ai_connection(request: Request, payload: AIConnectionPayload):
-        require_login(request)
-        cfg = _config(request)
-        if is_public_distribution():
-            raise HTTPException(403, detail="公开版不支持自定义 AI 连接")
-        existing = next((item for item in cfg.ai.connections if item.id == payload.id), None)
-        old_connections = [item.model_dump() for item in cfg.ai.connections]
-        final_key_path = Path(existing.ui_api_key_file) if existing and existing.ui_api_key_file else (
-            cfg.data_dir / "config" / "secrets" / f"ai-{payload.id}.txt"
-        )
-        connection = {
-            "id": payload.id,
-            "name": payload.name.strip(),
-            "provider": "compatible",
-            "base_url": payload.base_url.strip(),
-            "model": payload.model.strip(),
-            "api_key_env": existing.api_key_env if existing else "",
-            "api_key_file": existing.api_key_file if existing else "",
-            "ui_api_key_file": str(final_key_path),
-            "json_mode": existing.json_mode if existing else True,
-            "supports_vision": payload.supports_vision,
-        }
-        pending_key_path = None
-        try:
-            if payload.api_key:
-                pending_key_path = final_key_path.with_name(final_key_path.name + ".pending-" + uuid4().hex)
-                save_ui_api_key(pending_key_path, payload.api_key)
-            connections = [item.model_dump() for item in cfg.ai.connections if item.id != payload.id]
-            connections.append(connection)
-            try:
-                await guarded_to_thread(_save_ai_patch(request, {"connections": connections}))
-            except BaseException:
-                if pending_key_path is not None:
-                    pending_key_path.unlink(missing_ok=True)
-                raise
-            if pending_key_path is not None:
-                try:
-                    os.replace(pending_key_path, final_key_path)
-                except OSError:
-                    pending_key_path.unlink(missing_ok=True)
-                    await guarded_to_thread(_save_ai_patch(request, {"connections": old_connections}))
-                    raise
-        except ConfigError as exc:
-            raise HTTPException(422, detail=str(exc)) from exc
-        except ValueError as exc:
-            raise HTTPException(422, detail=str(exc)) from exc
-        except OperationBusy as exc:
-            raise HTTPException(409, detail=str(exc)) from exc
-        except OSError as exc:
-            raise HTTPException(500, detail="AI 连接保存失败") from exc
-        saved = next(item for item in cfg.ai.connections if item.id == payload.id)
-        return {"ok": True, "connection": _ai_connection_view(cfg, saved)}
-
-    @app.delete("/api/ai-settings/connections/{connection_id}")
-    async def api_delete_ai_connection(request: Request, connection_id: str):
-        require_login(request)
-        cfg = _config(request)
-        if is_public_distribution():
-            raise HTTPException(403, detail="公开版不支持自定义 AI 连接")
-        if not any(item.id == connection_id for item in cfg.ai.connections):
-            raise HTTPException(404, detail="AI 连接不存在")
-        if connection_id in cfg.ai.purpose_connections.values():
-            raise HTTPException(409, detail="请先取消该连接的用途选择")
-        removed = next(item for item in cfg.ai.connections if item.id == connection_id)
-        connections = [item.model_dump() for item in cfg.ai.connections if item.id != connection_id]
-        try:
-            await guarded_to_thread(_save_ai_patch(request, {"connections": connections}))
-            key_path = _owned_ai_key_path(cfg, connection_id, removed)
-            if key_path is not None:
-                key_path.unlink(missing_ok=True)
-        except (ConfigError, ValueError) as exc:
-            raise HTTPException(422, detail=str(exc)) from exc
-        except OperationBusy as exc:
-            raise HTTPException(409, detail=str(exc)) from exc
-        return {"ok": True}
-
-    @app.put("/api/ai-settings/purposes")
-    async def api_save_ai_purposes(request: Request, payload: AIPurposePayload):
-        require_login(request)
-        cfg = _config(request)
-        if is_public_distribution():
-            raise HTTPException(403, detail="公开版不支持自定义 AI 连接")
-        choices = {key: value for key, value in payload.purpose_connections.items() if value}
-        try:
-            await guarded_to_thread(_save_ai_patch(request, {"purpose_connections": choices}))
-        except (ConfigError, ValueError) as exc:
-            raise HTTPException(422, detail=str(exc)) from exc
-        except OperationBusy as exc:
-            raise HTTPException(409, detail=str(exc)) from exc
-        return {"ok": True, "purpose_connections": choices}
-
-    @app.post("/api/ai-settings/connections/test")
-    async def api_test_ai_connection(request: Request, payload: AIConnectionTestPayload):
-        require_login(request)
-        try:
-            await guarded_to_thread(_test_ai_connection, _config(request), payload.id)
-        except AILimitExceeded as exc:
-            raise HTTPException(429, detail=str(exc)) from exc
-        except (AIError, ConfigError, OSError, ValueError) as exc:
-            raise HTTPException(503, detail="AI 连接失败，请检查接口、模型、密钥和网络") from exc
-        return {"ok": True}
 
     @app.put("/api/ai-settings/key")
     async def api_save_ai_key(request: Request, payload: AIKeyPayload):

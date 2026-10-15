@@ -9,3 +9,8 @@ def test_ai_settings_contains_multi_connection_controls():
     assert '/api/ai-settings/connections' in html
     assert 'ai-purpose-summary' in html
     assert 'API Key（留空保留原值）' in html
+
+
+def test_multi_ai_script_preserves_drafts_and_versions():
+    import subprocess
+    subprocess.run(['node','tests/multi_ai_ui.cjs'],check=True)

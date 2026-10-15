@@ -34,6 +34,21 @@ MAX_UNCOMPRESSED_BYTES = 50 * 1024**3
 MAX_MANIFEST_BYTES = 16 * 1024**2
 
 
+def _config_path_fields(raw: dict):
+    """Yield the mappings and keys holding managed config file references."""
+    for section, key in CONFIG_PATH_FIELDS:
+        settings = raw.get(section)
+        if isinstance(settings, dict):
+            yield settings, key
+    ai = raw.get("ai")
+    connections = ai.get("connections") if isinstance(ai, dict) else None
+    if isinstance(connections, list):
+        for connection in connections:
+            if isinstance(connection, dict):
+                for key in ("api_key_file", "ui_api_key_file"):
+                    yield connection, key
+
+
 def _inside(path: Path, root: Path) -> bool:
     return path == root or path.is_relative_to(root)
 
@@ -100,9 +115,8 @@ def _archive_names(archive: zipfile.ZipFile) -> list[str]:
             raise ValueError("备份配置文件过大")
         raw = _parse_config(archive.read("config/config.yaml"))
         declared = set()
-        for section, key in CONFIG_PATH_FIELDS:
-            settings = raw.get(section)
-            value = settings.get(key) if isinstance(settings, dict) else None
+        for settings, key in _config_path_fields(raw):
+            value = settings.get(key)
             if not isinstance(value, str) or not value:
                 continue
             path = Path(os.path.normpath(os.path.expanduser(value)))
@@ -173,8 +187,8 @@ def _backup_source_files(config, config_path: Path) -> dict[str, Path]:
                     if relative.parts[:2] != ("work", "snapshots"):
                         files[relative.as_posix()] = path
     raw = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
-    for section, key in CONFIG_PATH_FIELDS:
-        value = (raw.get(section) or {}).get(key)
+    for settings, key in _config_path_fields(raw):
+        value = settings.get(key)
         if not value:
             continue
         path = Path(value).expanduser()
@@ -424,16 +438,16 @@ def _rebase_paths_to(root: Path, old_root: Path, new_root: Path) -> None:
     old_root = Path(os.path.normpath(old_root))
     config_path = root / "config" / "config.yaml"
     raw = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
-    for section, key in CONFIG_PATH_FIELDS:
-        value = (raw.get(section) or {}).get(key)
+    for settings, key in _config_path_fields(raw):
+        value = settings.get(key)
         if value:
             path = Path(value).expanduser()
             path = Path(os.path.normpath(path if path.is_absolute() else old_root / path))
             if _inside(path, old_root):
-                raw[section][key] = str(new_root / path.relative_to(old_root))
+                settings[key] = str(new_root / path.relative_to(old_root))
             else:
                 # Relative references outside the historical root retain identity.
-                raw[section][key] = str(path)
+                settings[key] = str(path)
     config_path.write_text(yaml.safe_dump(raw, allow_unicode=True, sort_keys=False), encoding="utf-8")
     database = root / "archive" / "archive.sqlite"
     with closing(sqlite3.connect(database)) as db:

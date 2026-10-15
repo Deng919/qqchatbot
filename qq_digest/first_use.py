@@ -89,11 +89,13 @@ class ConfigFileStore:
                 validated = load_config(temporary, create_dirs=False)
                 self.check(expected)
                 os.replace(temporary, self.path)
+                temporary = None
                 self.revision = sha256(content).hexdigest()
                 # Existing schedulers/routes capture this Config object.
                 for section in patch:
                     setattr(self.config, section, getattr(validated, section))
                 self.config.first_use = deepcopy(state)
+                return content
             finally:
                 if temporary:
                     temporary.unlink(missing_ok=True)

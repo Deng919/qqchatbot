@@ -73,3 +73,19 @@ def test_vision_requires_vision_capable_profile(tmp_path):
             'id': 'text', 'name': '文字', 'provider': 'compatible',
             'base_url': 'https://text.example/v1', 'model': 'text-model',
         }], purpose_connections={'vision': 'text'})
+@pytest.mark.parametrize('url',['https://x.example:bad/v1','https://x.example:99999/v1','https://x.example/v1?','https://x.example/v1#','https://x.example/\npath'])
+def test_connection_url_rejects_malformed_endpoints(tmp_path,url):
+    from pydantic import ValidationError
+    with pytest.raises(ValidationError):
+        config(tmp_path,connections=[dict(id='endpoint',name='Endpoint',base_url=url,model='model')])
+
+
+def test_connection_named_vision_can_be_text_only(tmp_path):
+    cfg=config(tmp_path,connections=[dict(id='vision',name='Text',base_url='https://x.example/v1',model='text')])
+    assert cfg.ai.connections[0].supports_vision is False
+
+
+def test_invalid_runtime_binding_fails_with_config_error(tmp_path):
+    cfg=config(tmp_path)
+    cfg.ai.purpose_connections={'summary':'missing'}
+    with pytest.raises(ConfigError):cfg.ai.connection_for('summary')

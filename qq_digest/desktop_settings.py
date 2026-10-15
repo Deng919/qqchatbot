@@ -16,8 +16,9 @@ from threading import Lock
 import yaml
 
 from .config import load_config
-from .backup_restore import (BACKUP_ROOT, CONFIG_PATH_FIELDS, DATA_FOLDERS,
-                             TEMP_ROOT, _backup_source_files, backup_data, inspect_backup, restore_backup)
+from .backup_restore import (BACKUP_ROOT, DATA_FOLDERS,
+                             TEMP_ROOT, _backup_source_files, _config_path_fields,
+                             backup_data, inspect_backup, restore_backup)
 from .operations import OperationBusy, OperationBlocked
 from .storage_files import safe_path
 
@@ -60,8 +61,8 @@ def migrate_storage(config_path: Path, install_dir: Path, destination: Path) -> 
     try:
         (destination / "config").mkdir()
         raw = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
-        for section, key in CONFIG_PATH_FIELDS:
-            value = (raw.get(section) or {}).get(key)
+        for settings, key in _config_path_fields(raw):
+            value = settings.get(key)
             if not value:
                 continue
             old_path = Path(value).expanduser()
@@ -72,10 +73,10 @@ def migrate_storage(config_path: Path, install_dir: Path, destination: Path) -> 
                 if old_path.is_file():
                     new_path.parent.mkdir(parents=True, exist_ok=True)
                     shutil.copy2(old_path, new_path)
-                raw[section][key] = str(new_path)
+                settings[key] = str(new_path)
             else:
                 # External references keep their original identity; do not copy them.
-                raw[section][key] = str(old_path)
+                settings[key] = str(old_path)
         new_config = destination / "config" / "config.yaml"
         new_config.write_text(yaml.safe_dump(raw, allow_unicode=True, sort_keys=False), encoding="utf-8")
         for folder in DATA_FOLDERS:
@@ -286,8 +287,8 @@ class DesktopBridge:
                       *config.resolve_knowledge_paths().values()]
         if config.ntqq.db_dir:
             data_paths.append(config.ntqq.db_dir)
-        for section, field in CONFIG_PATH_FIELDS:
-            value = getattr(getattr(config, section), field, '')
+        for settings, field in _config_path_fields(config.model_dump()):
+            value = settings.get(field, '')
             if value:
                 path = Path(value).expanduser()
                 data_paths.append(path if path.is_absolute() else config.data_dir / path)
