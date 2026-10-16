@@ -109,14 +109,14 @@ class KnowledgeLibrary:
             for row in rows:
                 if json.loads(row['message_ids']) == [msg_id]:
                     return {'item_id':row['candidate_id'],'reused':True}
-            remember(self.writer.path_for(item_type))
             candidate_id=self.candidates.create_in_transaction(
                 group_id=group_id,created_date=source['date'],candidate_type=item_type,
                 title=title,link=link,reason=reason,content=source['text'],
                 excerpt=source['text'][:200],message_ids=[msg_id],human_edited=True)
+            candidate=self.candidates.get(candidate_id)
+            remember(self.writer.path_for(candidate.candidate_type))
             self.archive.connection.execute(
-                'UPDATE candidates SET content=?,reason=?,excerpt=?,ignore_reason=?,revision=revision+1,human_edited=1 WHERE candidate_id=?',
-                (source['text'],reason,source['text'][:200],'',candidate_id))
+                "UPDATE candidates SET ignore_reason='' WHERE candidate_id=?", (candidate_id,))
             self._publish(candidate_id)
             return {'item_id':candidate_id,'reused':False}
 

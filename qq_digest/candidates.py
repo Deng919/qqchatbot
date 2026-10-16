@@ -32,12 +32,19 @@ class CandidateService:
         ]
         manual=kwargs.get('human_edited') is True
         generation_key = json.dumps(['manual',*identity] if manual else identity,ensure_ascii=False)
+        where, params = 'generation_key=?', [generation_key]
+        if manual:
+            # The key stays immutable for AI deduplication. Explicit manual saves
+            # may only reuse a row whose current editable fields still match.
+            for field in ('candidate_type', 'title', 'link', 'content', 'reason', 'excerpt'):
+                where += f' AND {field}=?'
+                params.append(kwargs.get(field, ''))
         existing = self.archive.connection.execute(
-            """
+            f"""
             SELECT candidate_id, status, human_edited FROM candidates
-            WHERE generation_key=? ORDER BY candidate_id LIMIT 1
+            WHERE {where} ORDER BY candidate_id LIMIT 1
             """,
-            (generation_key,),
+            params,
         ).fetchone()
         if existing is not None:
             if existing["status"] == "pending" and not existing['human_edited']:
@@ -231,4 +238,13 @@ class CandidateService:
         return self.get(candidate_id)
 
     def ignore(self, candidate_id: int, reason: str = "") -> None:
-        self.update_status(candidate_id, "ignored", reason)
+        with self.archive.transaction():
+            cursor = self.archive.connection.execute(
+                """UPDATE candidates
+                   SET status='ignored', ignore_reason=?, updated_at=?, revision=revision+1
+                   WHERE candidate_id=? AND status IN ('pending', 'later')""",
+                (reason, datetime.now(timezone.utc).isoformat(), candidate_id),
+            )
+            if not cursor.rowcount:
+                self.get(candidate_id)  # Keep missing IDs distinct from status conflicts.
+                raise ValueError('只有待审核或稍后的候选可以忽略')

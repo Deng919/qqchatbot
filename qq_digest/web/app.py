@@ -1801,7 +1801,17 @@ def create_app(
     @app.post("/candidates/{candidate_id}/ignore")
     async def ignore(request: Request, candidate_id: int, reason: str = Form("")):
         require_login(request)
-        candidates.ignore(candidate_id, reason)
+        try:
+            with operations.claim('knowledge_mutation'):
+                candidates.ignore(candidate_id, reason)
+        except KeyError as exc:
+            raise HTTPException(404, '候选不存在') from exc
+        except ValueError as exc:
+            raise HTTPException(409, str(exc)) from exc
+        except OperationBusy as exc:
+            raise HTTPException(409, '后台任务正在运行，请稍后重试') from exc
+        except sqlite3.Error as exc:
+            raise HTTPException(503, '知识存储暂时不可用，请稍后重试；原数据已保留') from exc
         return RedirectResponse("/candidates", status_code=303)
 
     @app.post("/api/candidates/{candidate_id}/later")
