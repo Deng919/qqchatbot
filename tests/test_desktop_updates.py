@@ -56,6 +56,24 @@ def prepare(service, target):
                            url='http://127.0.0.1:7654/')
 
 
+@pytest.mark.parametrize('change', ['modified', 'extra', 'missing'])
+def test_listed_target_is_fully_checked_before_backup(tmp_path, change):
+    registry, records, _, service, backups = env(tmp_path)
+    target = Path(records[1]['path'])
+    if change == 'modified':
+        (target / 'QQDigestDesktop.exe').write_bytes(b'changed')
+    elif change == 'extra':
+        (target / 'unexpected.dll').write_bytes(b'extra')
+    else:
+        (target / 'QQDigestDesktop.exe').unlink()
+    listed = next(row for row in service.snapshot()['versions'] if row['version'] == 'new')
+    assert listed['valid']
+    with pytest.raises(ValueError):
+        prepare(service, listed)
+    assert backups == []
+    assert not (registry.state_dir / 'transaction.json').exists()
+
+
 def test_success_keeps_data_and_commits_program_pointers(tmp_path):
     registry, records, config, service, backups = env(tmp_path)
     content = config.read_bytes()

@@ -278,6 +278,17 @@ class ReleaseRegistry:
             paths.extend(_windows_process_paths())
         return {version for version, record in self.read_state()['versions'].items() if any(Path(os.path.abspath(path)).is_relative_to(Path(record['path'])) for path in paths)}
 
+    def _verify_listing(self, record):
+        """Check registered metadata only; actions must still call verify()."""
+        directory = self._directory(record['path'])
+        path = directory / 'release.json'
+        manifest = _read(path)
+        fields = ('version', 'backend_id', 'compatibility', 'worker_protocol')
+        if (not isinstance(manifest, dict) or manifest.get('product') != PRODUCT
+                or any(manifest.get(key) != record[key] for key in fields)
+                or _hash_file(path) != record['digest']):
+            raise ValueError('版本登记清单已变化，请重新核对版本')
+
     def snapshot(self, current=None, data_paths=()):
         state = self.read_state()
         running = self.running_versions()
@@ -287,8 +298,8 @@ class ReleaseRegistry:
             reasons = []
             valid = True
             try:
-                self.verify(version, record['digest'])
-            except ValueError as exc:
+                self._verify_listing(record)
+            except (ValueError, OSError) as exc:
                 valid = False
                 reasons.append(str(exc))
             if version in {current, state['current'], state['rollback']}:

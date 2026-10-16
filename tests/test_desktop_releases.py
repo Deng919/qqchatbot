@@ -22,6 +22,63 @@ def test_register_verify_snapshot(tmp_path):
     assert record['size_bytes'] == 7
 
 
+def test_listing_does_not_read_program_contents(tmp_path, monkeypatch):
+    registry, directory, _ = package(tmp_path)
+    original = Path.open
+    def open_metadata_only(path, *args, **kwargs):
+        if path == directory / 'QQDigest.exe':
+            raise AssertionError('Listing must not scan program payloads')
+        return original(path, *args, **kwargs)
+    monkeypatch.setattr(Path, 'open', open_metadata_only)
+    item = registry.snapshot()['versions'][0]
+    assert item['valid'] and item['cleanable']
+
+
+@pytest.mark.parametrize('change', ['modified', 'extra', 'missing'])
+def test_listing_never_authorizes_changed_program_operations(tmp_path, change):
+    registry, directory, record = package(tmp_path)
+    if change == 'modified':
+        (directory / 'QQDigest.exe').write_bytes(b'changed')
+    elif change == 'extra':
+        (directory / 'extra.dll').write_bytes(b'extra')
+    else:
+        (directory / 'QQDigest.exe').unlink()
+    assert registry.snapshot()['versions'][0]['valid']
+    with pytest.raises(ValueError):
+        registry.verify('v1', record['digest'])
+    with pytest.raises(ValueError):
+        registry.clean('v1', record['digest'])
+    assert directory.exists()
+
+
+def test_listing_rejects_changed_manifest_but_keeps_other_versions(tmp_path):
+    registry, directory, _ = package(tmp_path)
+    other = registry.root / 'v2'
+    other.mkdir()
+    (other / 'QQDigest.exe').write_bytes(b'program2')
+    write_release(other, 'v2', 'backend')
+    registry.register(other)
+    path = directory / 'release.json'
+    manifest = json.loads(path.read_text())
+    manifest['built_at'] = 'changed'
+    path.write_text(json.dumps(manifest))
+    items = {item['version']: item for item in registry.snapshot()['versions']}
+    assert not items['v1']['valid'] and not items['v1']['cleanable']
+    assert items['v2']['valid']
+
+
+def test_listing_unreadable_manifest_is_an_invalid_row(tmp_path, monkeypatch):
+    registry, directory, _ = package(tmp_path)
+    original = Path.open
+    def inaccessible_manifest(path, *args, **kwargs):
+        if path == directory / 'release.json':
+            raise PermissionError('synthetic denied manifest')
+        return original(path, *args, **kwargs)
+    monkeypatch.setattr(Path, 'open', inaccessible_manifest)
+    item = registry.snapshot()['versions'][0]
+    assert not item['valid'] and not item['cleanable']
+
+
 @pytest.mark.parametrize('change', ['modified', 'extra', 'missing'])
 def test_payload_changes_rejected(tmp_path, change):
     registry, directory, record = package(tmp_path)
