@@ -12,7 +12,7 @@ from ..operations import OperationBusy
 class ModelRate(BaseModel):
     model_config={'extra':'forbid'}
     provider: StrictStr=Field(max_length=300)
-    model: StrictStr=Field(min_length=1,max_length=100)
+    model: StrictStr=Field(min_length=1,max_length=200)
     input_hit: StrictStr | None=Field(default=None,max_length=14)
     input_miss: StrictStr | None=Field(default=None,max_length=14)
     output: StrictStr | None=Field(default=None,max_length=14)

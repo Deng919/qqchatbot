@@ -22,6 +22,7 @@ from qq_digest.notify.notifier import SendResult
 from tests.test_backup_restore import _data
 from tests.test_ntqq_collector import ntqq_dbs, ntqq_fts_dbs
 from tests.test_pipeline import SuccessfulNotifier, make_pipeline
+from tests.test_web import web_client
 
 
 @pytest.fixture
@@ -310,3 +311,21 @@ def test_model_length_201_rejected_at_config_rates_and_attempt_boundaries(tmp_pa
 def test_rate_model_whitespace_validation_preserved(model):
     with pytest.raises(ValueError):
         normalize_rates([_rate(model)])
+
+
+@pytest.mark.parametrize("length,status", [(100, 200), (101, 200), (200, 200), (201, 422)])
+def test_usage_settings_api_model_length_boundaries(web_client, length, status):
+    client, _, _ = web_client
+    assert client.post("/login", data={"password": "password123"}, follow_redirects=False).status_code == 303
+    before = client.get("/api/ai-usage").json()["settings"]
+    rate = _rate("m" * length)
+    response = client.put("/api/ai-usage/settings", json={
+        "monthly_limit": 7, "rates": [rate], "expected_revision": before["revision"],
+    })
+    assert response.status_code == status, response.text
+    saved = client.get("/api/ai-usage").json()["settings"]
+    if status == 200:
+        assert saved["revision"] == before["revision"] + 1
+        assert saved["monthly_limit"] == 7 and saved["rates"] == [rate]
+    else:
+        assert saved == before
