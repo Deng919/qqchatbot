@@ -18,6 +18,7 @@ from pathlib import Path, PurePosixPath
 import yaml
 
 from .config import ConfigError, load_config
+from .ai.key_store import _private_permissions
 
 
 from .runtime_paths import cache_root, download_root
@@ -231,9 +232,12 @@ def _backup_data_locked(config_path: Path, destination: Path,
     temp_root.mkdir(parents=True, exist_ok=True)
     backup = destination / ("QQDigest-" + kind + "-" + datetime.now().strftime("%Y%m%d-%H%M%S-%f") + ".zip")
     partial = backup.with_suffix(".partial")
+    partial_created = False
+    backup_created = False
     try:
         with managed_temporary(temp_root, "qqdigest-backup-", config.data_dir) as temporary, \
                 closing(sqlite3.connect(f"file:{config.archive_path.as_posix()}?mode=ro", uri=True)) as source:
+            _private_permissions(temporary, directory=True)
             source_version = source.execute("PRAGMA data_version").fetchone()[0]
             files = _backup_source_files(config, config_path)
             file_versions = _source_file_versions(files)
@@ -264,19 +268,27 @@ def _backup_data_locked(config_path: Path, destination: Path,
                 "files": {name: {"sha256": _sha256(path), "size": path.stat().st_size}
                           for name, path in sorted(files.items())},
             }
-            with zipfile.ZipFile(partial, "w", compression=zipfile.ZIP_DEFLATED) as archive:
-                for name, path in files.items():
-                    archive.write(path, name)
-                archive.writestr("manifest.json", json.dumps(manifest, ensure_ascii=False, indent=2))
+            # Secure the empty file before ZipFile writes headers or secret members.
+            # Replacing its name on the same volume retains this private DACL.
+            with partial.open("xb") as output:
+                partial_created = True
+                _private_permissions(partial, directory=False)
+                with zipfile.ZipFile(output, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+                    for name, path in files.items():
+                        archive.write(path, name)
+                    archive.writestr("manifest.json", json.dumps(manifest, ensure_ascii=False, indent=2))
             with zipfile.ZipFile(partial) as completed:
                 _archive_names(completed)
                 if completed.testzip() is not None:
                     raise ValueError("新备份 ZIP 校验失败")
             os.replace(partial, backup)
+            backup_created = True
         return {"path": str(backup), "size_bytes": backup.stat().st_size}
     except Exception:
-        partial.unlink(missing_ok=True)
-        backup.unlink(missing_ok=True)
+        if partial_created:
+            partial.unlink(missing_ok=True)
+        if backup_created:
+            backup.unlink(missing_ok=True)
         raise
 
 
@@ -319,7 +331,8 @@ def _inspect_backup_locked(path: Path, *, temp_root: Path) -> dict:
                     raise ValueError("备份校验清单无效") from exc
             _parse_config(archive.read("config/config.yaml"))
             owner = _manifest_source_root(manifest) if manifest else None
-            temporary_context = (managed_temporary(temp_root, "qqdigest-check-", owner)
+            temporary_context = (managed_temporary(temp_root, "qqdigest-check-", owner,
+                                                   historical_owner=True)
                                  if owner is not None
                                  else tempfile.TemporaryDirectory(prefix="qqdigest-check-", dir=temp_root))
             with temporary_context as temporary:

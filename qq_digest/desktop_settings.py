@@ -16,6 +16,7 @@ from threading import Lock
 import yaml
 
 from .config import load_config
+from .ai.key_store import _private_permissions
 from .backup_restore import (BACKUP_ROOT, DATA_FOLDERS,
                              TEMP_ROOT, _backup_source_files, _config_path_fields,
                              backup_data, inspect_backup, restore_backup)
@@ -59,6 +60,9 @@ def migrate_storage(config_path: Path, install_dir: Path, destination: Path) -> 
         raise ValueError("请选择一个空文件夹或尚不存在的文件夹")
     destination.mkdir(parents=True, exist_ok=True)
     try:
+        # All copied data inherits private access before any secret is written.
+        # The user-selected shared parent keeps its existing permissions.
+        _private_permissions(destination, directory=True)
         (destination / "config").mkdir()
         raw = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
         for settings, key in _config_path_fields(raw):

@@ -227,11 +227,19 @@ def _remove_temporary(path: Path, root: Path, identity: tuple[int, int]) -> None
 
 
 @contextmanager
-def managed_temporary(root: str | Path, prefix: str, owner: str | Path):
+def managed_temporary(root: str | Path, prefix: str, owner: str | Path,
+                      *, historical_owner: bool = False):
     """Create a recognized cache, lease its whole lifecycle, and clean on exit."""
     if prefix not in CACHE_PREFIXES:
         raise ValueError("不支持的缓存前缀")
-    owner_name = _normalized_owner(owner)
+    if historical_owner:
+        # Archive provenance is only a lexical identity; never inspect its old
+        # location. Actual cache paths and live owners retain link checks.
+        if not Path(owner).is_absolute():
+            raise ValueError("历史缓存归属必须使用绝对目录")
+        owner_name = os.path.normcase(os.path.normpath(owner))
+    else:
+        owner_name = _normalized_owner(owner)
     root = safe_path(root)
     root.mkdir(parents=True, exist_ok=True)
     path = safe_path(tempfile.mkdtemp(prefix=prefix, dir=root), root)
