@@ -41,6 +41,7 @@ def test_legacy_source_endpoint_uses_immutable_current_snapshot(reading_client,t
 
 def test_message_browse_keeps_explicit_multiple_group_selection(reading_client):
     from datetime import datetime,timezone
+    from zoneinfo import ZoneInfo
     from qq_digest.models import NormalizedMessage
     client,ar,_=reading_client;now=datetime.now(timezone.utc)
     ar.ingest([NormalizedMessage(group_id=gid,msg_id=str(gid),sender_qq=gid,message_type='text' if gid==11 else 'link',timestamp=now,collected_at=now,text='message') for gid in (11,22)])
@@ -53,4 +54,5 @@ def test_message_browse_keeps_explicit_multiple_group_selection(reading_client):
     old=datetime(2020,1,1,tzinfo=timezone.utc)
     ar.ingest([NormalizedMessage(group_id=11,msg_id='old',timestamp=old,collected_at=now,text='old source')])
     assert client.get('/api/messages',params={'group_ids':11,'custom_dates':True}).json()['total']==2
-    assert client.get('/api/messages',params={'group_ids':11,'date_to':'2026-10-15','custom_dates':True}).json()['total']==2
+    end_date=now.astimezone(ZoneInfo(client.app.state.config.summary.timezone)).date().isoformat()
+    assert client.get('/api/messages',params={'group_ids':11,'date_to':end_date,'custom_dates':True}).json()['total']==2
