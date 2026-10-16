@@ -58,7 +58,7 @@ def normalize_rates(rates):
         source=provider_key(rate['provider'])
         if source != rate['provider']:raise ValueError('接口来源只填写协议与主机')
         model=rate['model']
-        if not isinstance(model,str) or not model.strip() or model!=model.strip() or len(model)>100:
+        if not isinstance(model,str) or not model.strip() or model!=model.strip() or len(model)>200:
             raise ValueError('模型名称无效')
         if (source,model) in seen:raise ValueError('模型单价重复')
         seen.add((source,model));entry={'provider':source,'model':model}
@@ -142,7 +142,7 @@ class UsageService:
 
     def reserve(self,provider,model,purpose,timeout_seconds):
         provider=provider_key(provider)
-        if not isinstance(model,str) or len(model)>100 or not model.strip():raise ValueError('模型名称无效')
+        if not isinstance(model,str) or len(model)>200 or not model.strip():raise ValueError('模型名称无效')
         if purpose not in ('summary','report_qa','archive_qa','vision','connection_test'):raise ValueError('调用用途无效')
         with self._db() as db:
             db.execute('BEGIN IMMEDIATE');settings=self._settings(db)

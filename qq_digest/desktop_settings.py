@@ -91,7 +91,7 @@ def migrate_storage(config_path: Path, install_dir: Path, destination: Path) -> 
         if old_db.is_file():
             new_db = destination / "archive" / "archive.sqlite"
             new_db.parent.mkdir(parents=True, exist_ok=True)
-            with closing(sqlite3.connect(f"file:{old_db.as_posix()}?mode=ro", uri=True)) as original:
+            with closing(sqlite3.connect(f"{old_db.resolve().as_uri()}?mode=ro", uri=True)) as original:
                 with closing(sqlite3.connect(new_db)) as copied:
                     original.backup(copied)
                     for table in ("reports", "manual_reports", "knowledge_items"):
@@ -128,7 +128,7 @@ def export_reports(archive_path: Path, destination: Path, format: str = "both") 
     folder.mkdir()
     exported = missing = reports = 0
     try:
-        with closing(sqlite3.connect(f"file:{archive_path.as_posix()}?mode=ro", uri=True)) as db:
+        with closing(sqlite3.connect(f"{archive_path.resolve().as_uri()}?mode=ro", uri=True)) as db:
             for table, id_column, label in (("reports", "report_id", "daily"),
                                             ("manual_reports", "manual_report_id", "range")):
                 for report_id, markdown, report_json in db.execute(

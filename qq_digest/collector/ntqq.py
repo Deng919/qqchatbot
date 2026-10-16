@@ -357,7 +357,7 @@ class NTQQCollector(Collector):
         if not group_info_path.exists():
             raise FileNotFoundError(f"group_info.db not found at {group_info_path}")
 
-        conn = sqlite3.connect(f"file:{group_info_path}?mode=ro", uri=True)
+        conn = sqlite3.connect(f"{group_info_path.resolve().as_uri()}?mode=ro", uri=True)
         conn.row_factory = sqlite3.Row
         cur = conn.cursor()
         cur.execute('SELECT "60001","60007" FROM group_list')
@@ -371,10 +371,10 @@ class NTQQCollector(Collector):
         msg_db_path = self.db_dir / "nt_msg.db"
         if not msg_db_path.exists():
             raise FileNotFoundError(f"nt_msg.db not found at {msg_db_path}")
-        return sqlite3.connect(f"file:{msg_db_path}?mode=ro", uri=True)
+        return sqlite3.connect(f"{msg_db_path.resolve().as_uri()}?mode=ro", uri=True)
 
     def _open_fts_db(self) -> sqlite3.Connection:
         path = self.db_dir / "group_msg_fts.db"
         if not path.exists():
             raise FileNotFoundError(f"group_msg_fts.db not found at {path}")
-        return sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+        return sqlite3.connect(f"{path.resolve().as_uri()}?mode=ro", uri=True)

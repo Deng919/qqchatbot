@@ -106,11 +106,20 @@ class DailyPipeline:
         report_date: str,
         candidate_count: int,
         group_name: str,
+        *,
+        only_missing: bool = False,
     ) -> None:
         """Persist QQ Bot notifications and attempt currently due items."""
         if not self.notifier or not self.notifier.config.app_id:
             return
         for openid in self.notifier.config.allowed_openids:
+            # Reusing a report repairs missing intents without resetting a
+            # previous send's retry budget, delay, lease or terminal status.
+            if only_missing and self.archive.connection.execute(
+                "SELECT 1 FROM send_log WHERE report_id=? AND channel=? AND recipient=? LIMIT 1",
+                (report_id, "qq_bot_private", openid),
+            ).fetchone() is not None:
+                continue
             self.archive.enqueue_notification(
                 report_id=report_id,
                 channel="qq_bot_private",
@@ -229,9 +238,23 @@ class DailyPipeline:
                     existing_report["markdown_path"], existing_report["json_path"]
                 )
             ):
-                result.candidate_ids.extend(
-                    self.archive.candidates_for_report(existing_report["candidate_ids"])
+                existing_candidate_ids = self.archive.candidates_for_report(
+                    existing_report["candidate_ids"]
                 )
+                if send_notifications:
+                    try:
+                        self._send_notifications(
+                            existing_report["report_id"],
+                            report_date,
+                            len(existing_candidate_ids),
+                            group.name,
+                            only_missing=True,
+                        )
+                    except Exception as exc:
+                        logger.error("群 %s 报告通知处理失败: %s", group.name, exc, exc_info=True)
+                        result.failed_groups.append(_group_failure(group, "notification", exc))
+                        continue
+                result.candidate_ids.extend(existing_candidate_ids)
                 result.groups_processed += 1
                 result.skipped_groups.append(group.group_id)
                 continue

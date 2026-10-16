@@ -88,6 +88,8 @@ class AIConfig(BaseModel):
 
     @model_validator(mode="after")
     def validate_connections(self):
+        if not self.model.strip() or len(self.model) > 200:
+            raise ValueError("AI 模型名称不能为空且最多 200 个字符")
         ids = [item.id for item in self.connections]
         if len(ids) != len(set(ids)):
             raise ValueError("AI 连接 id 不能重复")

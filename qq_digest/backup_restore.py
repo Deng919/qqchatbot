@@ -236,7 +236,7 @@ def _backup_data_locked(config_path: Path, destination: Path,
     backup_created = False
     try:
         with managed_temporary(temp_root, "qqdigest-backup-", config.data_dir) as temporary, \
-                closing(sqlite3.connect(f"file:{config.archive_path.as_posix()}?mode=ro", uri=True)) as source:
+                closing(sqlite3.connect(f"{config.archive_path.resolve().as_uri()}?mode=ro", uri=True)) as source:
             _private_permissions(temporary, directory=True)
             source_version = source.execute("PRAGMA data_version").fetchone()[0]
             files = _backup_source_files(config, config_path)
@@ -339,7 +339,7 @@ def _inspect_backup_locked(path: Path, *, temp_root: Path) -> dict:
                 database = Path(temporary) / "archive.sqlite"
                 with archive.open("archive/archive.sqlite") as source, database.open("wb") as target:
                     shutil.copyfileobj(source, target)
-                with closing(sqlite3.connect(f"file:{database.as_posix()}?mode=ro", uri=True)) as db:
+                with closing(sqlite3.connect(f"{database.resolve().as_uri()}?mode=ro", uri=True)) as db:
                     if db.execute("PRAGMA integrity_check").fetchone()[0] != "ok":
                         raise ValueError("消息数据库完整性校验失败")
                     _validate_core_schema(db)
