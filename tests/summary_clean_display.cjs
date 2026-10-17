@@ -18,4 +18,12 @@ assert.equal(summaryCleanText('计算 2*3=6，**结论**'), '计算 2*3=6，结�
 assert.equal(summaryCleanText('讨论原消息：内容本身'), '讨论原消息：内容本身');
 summaryRenderMarkdown('## 主要话题\n- **公司“夏休”与年假调休**：每年八月中旬放九天假。 〔原消息：7693506880749127285、7693506971074568292〕');
 assert.equal(host.children[1].children[0].textContent,'公司“夏休”与年假调休：每年八月中旬放九天假。');
-console.log('Summary display: citations hidden, paired bold markers removed, code preserved');
+assert.equal(summaryCleanText('[**中文😀文档**](https://example.com/a_(b)?x=1&y=2#说明)'),
+  '中文😀文档 (https://example.com/a_(b)?x=1&y=2#说明)');
+assert.equal(summaryCleanText('计算 2*3=6，a_b [参考](https://example.com/a_b?q=x_y)'),
+  '计算 2*3=6，a_b 参考 (https://example.com/a_b?q=x_y)');
+summaryRenderMarkdown('[<img src=x onerror=alert(1)>](javascript:alert(1))\n\n```\n[**代码**](https://example.com)\n```');
+assert.equal(host.children[0].textContent,'<img src=x onerror=alert(1)> (javascript:alert(1))');
+assert.equal(host.children[0].children.length,0,'links and HTML remain text, with no injected elements');
+assert.equal(host.children[1].textContent,'[**代码**](https://example.com)\n','code links are preserved');
+console.log('Summary display: citations hidden, readable text links, no HTML injection, code preserved');

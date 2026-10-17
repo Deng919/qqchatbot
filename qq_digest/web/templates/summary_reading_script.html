@@ -5,7 +5,7 @@
   var summaryPreviousReading=null,summaryGeneratedReading=null,summaryNavigationToken=0,summarySinceRevision=0;
   function summaryNode(tag,cls,text) { var n=document.createElement(tag); if(cls)n.className=cls; if(text!==undefined)n.textContent=text; return n; }
   function summaryCleanText(text) {
-    return String(text||'').replace(/\s*(?:〔原消息\s*[：:][^〕]*〕|\[原消息\s*[：:][^\]]*\]|【原消息\s*[：:][^】]*】)/g,'').replace(/\*\*([^\n]+?)\*\*/g,'$1').trim();
+    return String(text||'').replace(/\s*(?:〔原消息\s*[：:][^〕]*〕|\[原消息\s*[：:][^\]]*\]|【原消息\s*[：:][^】]*】)/g,'').replace(/\*\*([^\n]+?)\*\*/g,'$1').replace(/\[([^\]\n]+)\]\(((?:[^()\s]|\([^()\s]*\))+)\)/g,'$1 ($2)').trim();
   }
   function summaryButton(text,action,cls) { var b=summaryNode('button',cls||'btn btn-sm',text); b.type='button'; b.onclick=action; return b; }
   function summarySelectGroups(ids){var value=ids.join(','),select=document.getElementById('report-group');if(value&&!Array.from(select.options).some(function(option){return option.value===value;})){var option=summaryNode('option','',ids.length>1?'已选 '+ids.length+' 个群':'群 '+value);option.value=value;select.appendChild(option);}select.value=value;}

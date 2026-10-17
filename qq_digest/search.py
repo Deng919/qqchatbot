@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import date, datetime, time, timedelta, timezone
 from pathlib import Path
+import re
 from zoneinfo import ZoneInfo
 
 from .archive import Archive
@@ -25,6 +26,66 @@ def _snippet(text: str, query: str, *, length: int = 210) -> str:
     start = max(0, index - 65)
     end = min(len(compact), start + length)
     return ("…" if start else "") + compact[start:end] + ("…" if end < len(compact) else "")
+
+
+def _report_display_text(markdown: str) -> str:
+    """Clean common report markup for snippets, keeping code and URLs literal."""
+    def plain(text: str) -> str:
+        text = re.sub(r'〔原消息\s*[：:][^〕]*〕|\[原消息\s*[：:][^\]]*\]|【原消息\s*[：:][^】]*】', '', text)
+        text = re.sub(r'(\*{2,3})(?=\S)(.+?)(?<=\S)\1', r'\2', text)
+        text = re.sub(r'(?<![\w*])\*(?=\S)([^*]+?)(?<=\S)\*(?![\w*])', r'\1', text)
+        return re.sub(r'(?<!\w)(_{1,3})(?=\S)(.+?)(?<=\S)\1(?!\w)', r'\2', text)
+
+    # Keep these spans out of emphasis/citation cleanup. URLs may contain a
+    # parenthesized path segment; they are readable text, never HTML links.
+    spans = re.compile(
+        r'(?P<ticks>`+)(?P<code>.+?)(?P=ticks)(?!`)'
+        r'|\[(?P<label>[^\]\n]+)\]\((?P<url>(?:[^()\s]|\([^()\s]*\))+)\)'
+        r'|(?P<bare>https?://\S+)|(?P<nul>\x00)'
+    )
+    # Protect raw NULs too, so cleanup cannot create a literal placeholder.
+    # Restore once: replacement contents must never be interpreted as tokens.
+    sentinel = '\x00'
+    lines = []
+    fence = ''
+    for line in markdown.splitlines():
+        marker = re.match(r'^ {0,3}(`{3,}|~{3,})(.*)$', line)
+        if fence:
+            if marker and marker[1][0] == fence[0] and len(marker[1]) >= len(fence) and not marker[2].strip():
+                fence = ''
+            else:
+                lines.append(line)
+            continue
+        if marker and (marker[1][0] == '~' or '`' not in marker[2]):
+            fence = marker[1]
+            continue
+        if re.match(r'^ {0,3}#{1,6}\s+', line):
+            line = re.sub(r'^ {0,3}#{1,6}\s+|\s+#+\s*$', '', line)
+        line = re.sub(r'^\s*(?:[-+*]|\d+[.)])\s+', '', line)
+        parts, protected, start = [], [], 0
+        for span in spans.finditer(line):
+            parts.append(line[start:span.start()])
+            suffix = ''
+            if span['code'] is not None:
+                value = span['code']
+            elif span['label'] is not None:
+                value = f"{plain(span['label'])} ({span['url']})"
+            elif span['bare'] is not None:
+                value = span['bare']
+                emphasis = re.search(r'(\*{1,3}|_{1,3})$', value)
+                if emphasis and emphasis[1] in plain(''.join(parts)):
+                    suffix = emphasis[1]
+                    value = value[:-len(suffix)]
+            else:
+                value = span['nul']
+            parts.append(f'{sentinel}{len(protected)}{sentinel}' + suffix)
+            protected.append(value)
+            start = span.end()
+        parts.append(line[start:])
+        cleaned = plain(''.join(parts))
+        lines.append(re.sub(sentinel + r'(\d+)' + sentinel,
+                            lambda match: protected[int(match[1])], cleaned))
+    return '\n'.join(lines)
 
 
 def _message_bounds(date_from: date | None, date_to: date | None, zone: ZoneInfo):
@@ -173,7 +234,7 @@ def search_archive(
                 "group_id": row["group_id"], "group_name": row["group_name"],
                 "date": row["end_date"], "sort_at": row["sort_at"],
                 "title": f"{row['group_name']} · {row['start_date']}" + (f" 至 {row['end_date']}" if row["start_date"] != row["end_date"] else ""),
-                "snippet": _snippet(body, query), "text": "",
+                "snippet": _snippet(_report_display_text(body), query), "text": "",
                 "url": f"/reports?kind={row['kind']}&id={row['id']}",
             })
         total += len(matched_reports)
