@@ -161,6 +161,33 @@ def test_manual_summary_generates_per_group_and_reuses_same_input(tmp_path):
     } == {"adaptive"}
 
 
+def test_progress_callback_failure_does_not_fail_report_generation(tmp_path):
+    service, archive, _ = make_service(
+        tmp_path, [GroupConfig(group_id=123, name="群一")]
+    )
+    add_message(archive, 123, "m1")
+
+    def broken_progress(**_event):
+        raise TypeError("progress sink failure")
+
+    result = service.run(
+        ManualSummaryRequest(
+            group_ids=(123,),
+            start_date=date(2026, 9, 1),
+            end_date=date(2026, 9, 7),
+        ),
+        on_progress=broken_progress,
+    )
+
+    assert result.status == "success"
+    assert [item.group_id for item in result.created_reports] == [123]
+    job = archive.connection.execute(
+        "SELECT status, error FROM jobs WHERE job_type='manual_summary'"
+    ).fetchone()
+    assert job["status"] == "success"
+    assert job["error"] == ""
+
+
 def test_manual_summary_ignores_legacy_group_template(tmp_path):
     service, archive, ai = make_service(
         tmp_path, [GroupConfig(group_id=123, name="群一", template="detailed")]

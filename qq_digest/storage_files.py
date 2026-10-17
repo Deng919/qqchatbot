@@ -13,6 +13,7 @@ import shutil
 import stat
 import tempfile
 import threading
+import time
 
 
 CACHE_MARKER = ".qqdigest-cache.json"
@@ -223,7 +224,16 @@ def _remove_temporary(path: Path, root: Path, identity: tuple[int, int]) -> None
     for folder, directories, files in os.walk(path, followlinks=False):
         for name in (*directories, *files):
             safe_path(Path(folder) / name, path)
-    shutil.rmtree(safe_path(path, root))
+    for attempt in range(4):
+        try:
+            shutil.rmtree(safe_path(path, root))
+            return
+        except PermissionError:
+            if attempt == 3:
+                raise
+            # Windows security scanners and SQLite handles can hold a cache
+            # directory briefly after the refresh has finished.
+            time.sleep(0.1 * (attempt + 1))
 
 
 @contextmanager

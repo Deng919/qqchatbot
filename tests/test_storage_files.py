@@ -44,6 +44,25 @@ def test_managed_temporary_cleans_on_exception(tmp_path):
     assert not path.exists()
 
 
+def test_managed_temporary_retries_transient_permission_error(tmp_path, monkeypatch):
+    files = storage()
+    original = files.shutil.rmtree
+    calls = 0
+
+    def flaky_rmtree(path, *args, **kwargs):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise PermissionError(5, "Access is denied")
+        return original(path, *args, **kwargs)
+
+    monkeypatch.setattr(files.shutil, "rmtree", flaky_rmtree)
+    with files.managed_temporary(tmp_path / "cache", "refresh-", tmp_path / "data") as path:
+        assert path.is_dir()
+    assert calls == 2
+    assert not path.exists()
+
+
 @pytest.mark.parametrize("prefix", ["anything-", "qqdigest-restore-", "../refresh-"])
 def test_managed_temporary_rejects_unknown_prefix(tmp_path, prefix):
     with pytest.raises(ValueError):

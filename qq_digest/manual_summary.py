@@ -144,7 +144,17 @@ class ManualSummaryService:
 
         def progress(group, stage):
             if on_progress is not None:
-                on_progress(group_id=group.group_id, group_name=group.name, stage=stage)
+                try:
+                    on_progress(
+                        group_id=group.group_id,
+                        group_name=group.name,
+                        stage=stage,
+                    )
+                except Exception as exc:
+                    # Progress is an observability hook. A broken UI/reporting
+                    # sink must never turn a successfully generated report into
+                    # a failed job.
+                    logger.warning("手动摘要进度回调失败: %s", exc)
 
         for group in groups:
             progress(group, 'scanning')
