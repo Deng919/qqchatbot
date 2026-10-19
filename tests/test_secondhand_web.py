@@ -41,3 +41,18 @@ def test_market_context_hides_blocked_neighbors(web_client):
     response=client.get('/api/secondhand/source?group_id=123&msg_id=allowed')
     assert response.status_code==200
     assert all(row['sender_qq']!=200 for row in response.json()['messages'])
+
+
+def test_market_grouped_feed_is_opt_in_and_validates_lane(web_client):
+    from qq_digest.secondhand import SecondhandService
+    from tests.test_secondhand import message,offer,ingest
+    client,_,_=web_client;client.post('/login',data={'password':'password123'})
+    service=SecondhandService(client.app.state.archive);service.add_groups([123])
+    units=ingest(service,[message(gid=123,mid=str(n),text=f'出戴尔U2720显示器，第{n}次发布，价格800元') for n in range(3)])
+    service.accept_units(units,{'items':[dict(offer(unit),condition='') for unit in units]})
+    params='date_from=2026-10-13&date_to=2026-10-19'
+    assert client.get('/api/secondhand?'+params).json()['total']==3
+    data=client.get('/api/secondhand?grouped=true&'+params).json()
+    assert data['total']==1 and data['items'][0]['publication_count']==3
+    assert data['lane_counts']=={'sale':1,'want':0,'promotion':0}
+    assert client.get('/api/secondhand?grouped=true&lane=invalid').status_code==422

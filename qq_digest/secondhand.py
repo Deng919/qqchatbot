@@ -247,10 +247,40 @@ class SecondhandService:
               'favorite':key in favorites,'possible_duplicate':False}
         return item
 
-    def list_items(self,*,date_from=None,date_to=None,q='',group_id=None,direction='all',status='all',min_price=None,max_price=None,favorite=False,page=1,page_size=30):
+    def _feed_groups(self,items,all_rows,start,end,group_id):
+        """Presentation groups only: every publication retains its original item ID."""
+        buckets={}
+        for item in items:
+            lane='promotion' if '疑似推广' in item['behavior_flags'] else item['direction']
+            identity=[item['seller_qq'],lane]
+            if lane!='promotion':identity.extend([normalized(item['title']),item['bundle_mode']])
+            if item['seller_qq'] is None or item['original_time_unknown']:identity.append(item['item_id'])
+            buckets.setdefault(digest(identity),[]).append((lane,item))
+        rows_by_item={}
+        for row in all_rows:
+            if start<=row['published_at']<end and (group_id is None or row['group_id']==group_id):
+                rows_by_item.setdefault(row['item_key'],[]).append(row)
+        result=[];counts={'sale':0,'want':0,'promotion':0}
+        fields=('group_id','msg_id','group_name','published_at','price','price_text','title','evidence','status','seller_qq','original_time_unknown')
+        for key,entries in buckets.items():
+            lane,latest=entries[0];members=[entry[1] for entry in entries]
+            sources=[row for member in members for row in rows_by_item.get(member['item_id'],[])]
+            sources.sort(key=lambda row:(row['published_at'],row['msg_id'],row['post_key']),reverse=True)
+            publications=[{**{field:row[field] for field in fields},'item_id':row['item_key']} for row in sources]
+            days={datetime.fromisoformat(row['published_at']).astimezone(ZoneInfo(self.timezone_name)).date() for row in sources if not row['original_time_unknown']}
+            source_count=len({row['source_key'] for row in sources})
+            group={**latest,'feed_id':key,'lane':lane,'member_count':len(members),'publication_count':source_count,
+                   'publications':publications,'group_count':len({row['group_id'] for row in sources}),
+                   'active_days':len(days),'span_days':(max(days)-min(days)).days+1 if days else 0}
+            if lane=='promotion':group.update(price=None,price_text='')
+            counts[lane]+=1;result.append(group)
+        return result,counts
+
+    def list_items(self,*,date_from=None,date_to=None,q='',group_id=None,direction='all',status='all',min_price=None,max_price=None,favorite=False,page=1,page_size=30,grouped=False,lane='sale'):
         start,end=date_window(date_from,date_to,self.timezone_name)
         if type(page) is not int or page<1 or type(page_size) is not int or not 1<=page_size<=100:raise ValueError('分页无效')
         if direction not in {'all','sale','want'} or status not in {'all','unknown','sold','fulfilled'}:raise ValueError('筛选无效')
+        if grouped and lane not in {'sale','want','promotion'}:raise ValueError('交易分区无效')
         for price in (min_price,max_price):
             if price is not None and (not math.isfinite(price) or price<0):raise ValueError('价格范围无效')
         if min_price is not None and max_price is not None and min_price>max_price:raise ValueError('价格范围无效')
@@ -279,9 +309,13 @@ class SecondhandService:
         for item in items:
             item['possible_duplicate']=any(other['item_key']!=item['item_key'] and item['seller_qq'] and item['seller_qq']==other['seller_qq'] and normalized(item['title'])==normalized(other['title']) for other in items)
         items.sort(key=lambda row:(row['published_at'],row['item_key']),reverse=True)
+        lane_counts={};ungrouped_total=len(items)
+        if grouped:
+            items,lane_counts=self._feed_groups(items,all_rows,start,end,group_id)
+            items=[item for item in items if item['lane']==lane]
         total=len(items);page=min(page,max(1,(total+page_size-1)//page_size))
         coverage=[dict(row) for row in self.db.execute('SELECT state,count(*) AS count FROM market_scans WHERE group_id IN (SELECT group_id FROM market_groups) GROUP BY state')]
-        return {'items':items[(page-1)*page_size:page*page_size],'total':total,'page':page,'page_size':page_size,'date_from':date_from or recent_window(self.timezone_name)[0],'date_to':date_to or recent_window(self.timezone_name)[1],'coverage':coverage}
+        return {'items':items[(page-1)*page_size:page*page_size],'total':total,'page':page,'page_size':page_size,'date_from':date_from or recent_window(self.timezone_name)[0],'date_to':date_to or recent_window(self.timezone_name)[1],'coverage':coverage,'grouped':grouped,'lane':lane,'lane_counts':lane_counts,'ungrouped_total':ungrouped_total}
 
     def detail(self,item_id):
         all_rows=self._rows();rows=[row for row in all_rows if row['item_key']==item_id]

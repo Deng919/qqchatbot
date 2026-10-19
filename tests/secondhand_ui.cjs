@@ -5,12 +5,17 @@ global.window={addEventListener(){}};global.location={search:''};global.history=
 global.destroyMessageContext=()=>{};global.mountMessageContext=()=>{};global.setTimeout=()=>1;global.clearTimeout=()=>{};
 const requests=[];global.api=(method,url,body)=>new Promise((resolve,reject)=>requests.push({method,url,body,resolve,reject}));
 vm.runInThisContext(fs.readFileSync('qq_digest/web/templates/secondhand_script.html','utf8').replace(/<\/?script>/g,'').replace('marketInit();',''));
-const settle=()=>new Promise(setImmediate);const item=(key,title)=>({item_id:key,title,price_text:'800元',seller_qq:100,source_count:1,group_count:1,active_days:3,repeat_count:4,behavior_flags:['重复发布'],bundle_mode:'collection',bundle_count:3,components:[{title:'<script>component</script>',evidence:'literal'}],group_name:'群',direction:'sale',status:'unknown',published_at:'2026-10-19',description:'<img src=x>',favorite:false});
+const settle=()=>new Promise(setImmediate);const item=(key,title)=>({item_id:key,title,price_text:'800元',seller_qq:100,source_count:2,group_count:1,active_days:3,repeat_count:2,publication_count:2,member_count:2,lane:'sale',publications:[{item_id:key,title,group_name:'群',group_id:11,msg_id:'first',published_at:'2026-10-18',price_text:'800元',evidence:'first original'},{item_id:key+'2',title,group_name:'群',group_id:11,msg_id:'second',published_at:'2026-10-19',price_text:'700元',evidence:'second original'}],behavior_flags:['重复发布'],bundle_mode:'collection',bundle_count:3,components:[{title:'<script>component</script>',evidence:'literal'}],group_name:'群',direction:'sale',status:'unknown',published_at:'2026-10-19',description:'<img src=x>',favorite:false});
 const allText=n=>(n.textContent||'')+(n.children||[]).map(allText).join(' ');
+const findNode=(n,predicate)=>predicate(n)?n:(n.children||[]).map(child=>findNode(child,predicate)).find(Boolean);
 (async()=>{
  node('market-direction').value='all';node('market-status').value='all';
  marketLoad();const old=requests.at(-1);marketLoad();requests.at(-1).resolve({items:[item('b','新商品')],total:1,page:1,page_size:30,date_from:'2026-10-13',date_to:'2026-10-19',coverage:[]});await settle();
  assert.match(allText(node('market-list')),/同帖清单 · 3项/);assert.match(allText(node('market-list')),/重复发布/);
+ const history=findNode(node('market-list'),n=>n.className==='market-history');assert.ok(history,'repeat publications are an inline disclosure, not badges');
+ assert.match(allText(history),/first original/);assert.match(allText(history),/700元/);
+ assert.ok(findNode(node('market-list'),n=>n.textContent==='屏蔽此人'),'block action belongs on the card');
+ const bundle=findNode(node('market-list'),n=>n.className==='market-bundle');assert.ok(bundle,'bundle components expand inside list');
  const length=node('market-list').children.length;old.resolve({items:[item('a','旧商品')],total:1,page:1,page_size:30,coverage:[]});await settle();assert.equal(node('market-list').children.length,length,'old list cannot append stale results');
  marketOpen('a');const detail=requests.at(-1);marketClose();detail.resolve({item:item('a','旧商品'),sources:[]});await settle();assert.notEqual(node('market-title').textContent,'旧商品','closed detail ignores late response');
  marketOpen('b');requests.at(-1).resolve({item:item('b','<script>literal</script>'),sources:[],favorite:false});await settle();assert.equal(node('market-title').textContent,'<script>literal</script>');
@@ -20,5 +25,6 @@ const allText=n=>(n.textContent||'')+(n.children||[]).map(allText).join(' ');
  marketSource({group_id:11,msg_id:'a'},node('market-context'));const attachment=requests.at(-1),sourceToken=node('market-context')._marketSourceToken;
  marketClose();marketOpen('c');attachment.resolve({items:[{name:'stale A',status:'success',text:'A attachments'}]});await settle();
  assert.ok(node('market-context')._marketSourceToken>sourceToken,'closing or opening detail invalidates source callbacks');
+ marketPageNumber=3;marketSwitchLane('promotion');assert.match(requests.at(-1).url,/lane=promotion/);assert.match(requests.at(-1).url,/grouped=true/);assert.equal(marketPageNumber,1);
  console.log('Secondhand stale list/detail, literal text, duplicate saves and failed retry verified');
 })().catch(error=>{console.error(error);process.exitCode=1;});

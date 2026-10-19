@@ -38,3 +38,20 @@
 通过应用自带版本更新流程切换到 `D:\Apps\QQDigestDesktop-2026-10-19-SecondhandQuality-Release`，原程序退出、新程序启动和握手均由既有更新器完成；未操作 Codex 的窗口或内置浏览器。切换前备份：`D:\Downloads\QQDigestBackups\QQDigest-before-update-20261019-194642-773865.zip`。发布等待本地消息同步释放协调锁后，核对生产派生表未变化，再事务性替换 market_posts、迁移关联收藏。发布前数据库快照：`D:\Cache\QQDigestSecondhand-20261019\quality-repair\production-before-publish.sqlite`。未修改原始消息、扫描记录或本地配置。
 
 真实生产页面只读复查通过：新 backend_id、256 条列表、8 条清单、30/3/73 行为标签与副本一致；组件数量、原消息上下文和手机布局正常，脚本错误为 0。验收材料：`D:\Cache\QQDigestSecondhand-20261019\quality-publish-result.json`、`quality-final-tests.log`、`quality-package-verification.json` 和 `quality-browser\production-browser-verification.json`。
+
+
+## 2026-10-19：从标记列表改为可操作的整理界面
+
+用户指出仅增加标签不能改善浏览，因此将实际列表改为三个入口：“闲置出售”（默认）、“求购”、“推广与服务”。同发布人、同标准化标题的相关信息在分页前折叠成一张卡片；疑似推广按发布人收在一个服务清单内。此分组只影响展示，不认定这些记录一定是同一件实物，也不修改存档或物品 ID。未知原作者或未知原时间仍分别展示。
+
+重复记录使用列表内原生 details 展开，每次发布的价格、证据、群与时间均保留，并可直接打开对应原文。打包和同帖清单在卡片内展开组件名称及各项价格，避免重复铺陈整段证据；独立服务不冒充整体总价。卡片直接提供“查看详情”和“屏蔽此人”，仍通过原有屏蔽名单确认流程保存。筛选先于分组，收藏、价格和历史范围不会把不匹配的成员带进组。
+
+相同的 256 条原始列表信息现在显示为 103 个闲置卡片、55 个求购卡片和 11 个发布人推广清单；73 条疑似推广不再占据默认闲置列表。没有重建、删除或重新识别 market_posts。
+
+六项聚合测试先 RED 后 GREEN，覆盖分页前折叠、每次价格和物品 ID、推广分区、求购分区、未知作者隔离、日期/群/价格筛选；补充 API 兼容及分区验证和前端真实 disclosure/卡片操作回归。相关测试 57 passed，最终全量 **1663 passed、2 skipped**（符号链接权限限制），一项上游 Starlette/httpx 弃用警告。40 个 CJS 文件全部通过。新上下文审查未发现可复现的重要问题，并额外核对了收藏/价格筛选及未知原时间的隔离。
+
+真实数据副本上的独立 Chromium 与实际隔离 EXE 均通过：三个分区、重复历史、原消息上下文、从历史记录收藏、逐项服务报价、卡片屏蔽/解除、行内组件、搜索与分页；320/390/768/900/1024/1440 宽度无横向溢出，页面错误为零。副本列表接口八次测量中位数 42.8ms、最大 60.9ms。包内 117 个运行时模块、55 个模板、2177 项文件清单与最终源码一致。
+
+测试配置的会话密钥长度和副本自动清理设置已纠正后重新验证 EXE；未将这些测试设置写入生产配置。原程序当时未运行，因此核实端口无服务后，备份桌面入口和版本清单，再将快捷方式及已启用的自启入口切换至 `D:\Apps\QQDigestDesktop-2026-10-19-SecondhandFeed-Release` 并启动。生产配置哈希保持一致，`SecondhandQuality-Release` 保留回退。没有操作 Codex 或其内置浏览器。
+
+生产页面只读复查通过，103/55/11 分区数量与副本一致，真实重复记录、对应原文、推广清单与逐项报价、390px 布局均正常，页面脚本错误为零。验证输出：`D:\Cache\QQDigestSecondhandFeed-20261019`。当前实际界面截图：`production-idle.png`、`production-services.png`、`production-mobile.png`；入口备份位于该目录的 `activation-backup`。
