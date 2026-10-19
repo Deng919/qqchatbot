@@ -4,7 +4,7 @@
   function inboxMobile(){return window.matchMedia('(max-width: 900px)').matches;}
   function inboxTextParts(item){var text=summaryCleanText(item.text),match=text.match(/^([^\n：。！？]{1,48})[：。！？\n]/);return {title:match?match[1]:text.slice(0,48),body:match?text.slice(match[0].length)||text:text};}
   function inboxApplyView(){
-    inboxN('summary-reading-controls').hidden=false;
+    inboxN('summary-reading-controls').hidden=inboxMobile()&&(summaryDetailActive||inboxMobileOpen);
     inboxN('summary-reading-section').hidden=summaryView==='manage';
     inboxN('summary-points').hidden=summaryView!=='points';inboxN('summary-groups').hidden=summaryView!=='groups';
     inboxN('inbox-page-query').parentElement && (inboxN('inbox-page-query').parentElement.hidden=summaryView!=='points');
@@ -60,4 +60,6 @@
       host.appendChild(button);inboxGroupButtons.push({value:value,button:button});
     });inboxApplyView();
   }
+  var inboxViewport=window.matchMedia('(max-width: 900px)');
+  if(inboxViewport.addEventListener)inboxViewport.addEventListener('change',inboxApplyView);
 </script>

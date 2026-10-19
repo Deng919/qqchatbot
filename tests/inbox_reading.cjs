@@ -30,6 +30,7 @@ const settle=()=>new Promise(setImmediate);
  window.matchMedia=()=>({matches:true});inboxRenderPoints([item('a','标题：第一条')]);
  assert.equal(inboxSelectedKey,null,'mobile starts at the list');inboxSelectPoint('a',true);
  assert.equal(node('inbox-workspace').classList.contains('inbox-detail-open'),true);
+ assert.equal(node('summary-reading-controls').hidden,true,'mobile reading gives its space to the article');
  inboxRenderPoints([item('a','更新后的第一条')]);assert.equal(node('inbox-workspace').classList.contains('inbox-detail-open'),true,'refresh preserves mobile detail');
  inboxBackToList();assert.equal(node('inbox-workspace').classList.contains('inbox-detail-open'),false);
  node('report-group').value='__empty__';inboxRenderGroups([{group_id:11,name:'群 <img>',enabled:true}]);

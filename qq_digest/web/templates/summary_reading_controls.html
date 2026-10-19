@@ -5,7 +5,7 @@
     <button class="btn btn-sm" id="summary-all-dates" type="button" onclick="summaryAllDates()">历史摘要</button>
     <button class="btn btn-sm" id="summary-return-reading" type="button" onclick="summaryReturnToReading()" hidden>返回之前阅读</button>
   </div>
-  <details class="inbox-filter-details"><summary>群聊与日期筛选</summary>
+  <details class="inbox-filter-details"><summary>群聊与日期</summary>
   <div class="filter-toolbar report-filters" aria-label="筛选摘要">
     <div class="field"><label for="report-group">群聊</label><select id="report-group" data-group-selector="filter" onchange="filterReports()"><option value="">全部群聊</option></select></div>
     <div class="field"><label for="report-from">开始日期</label><input class="input" id="report-from" type="date" onchange="filterReports()"></div>
@@ -18,8 +18,8 @@
     <div class="summary-view-tabs" role="group" aria-label="阅读方式">
       <button class="btn" id="summary-points-tab" type="button" aria-pressed="true" onclick="summarySetView('points')">要点阅读</button>
       <button class="btn" id="summary-groups-tab" type="button" aria-pressed="false" onclick="summarySetView('groups')">按群阅读</button>
+      <button class="btn" id="summary-manage-tab" type="button" aria-pressed="false" onclick="summarySetView('manage')">管理报告</button>
     </div>
-    <details class="summary-more" id="summary-more"><summary class="btn btn-sm">更多</summary><button class="btn btn-sm" type="button" onclick="summarySetView('manage')">管理报告</button></details>
   </div>
   <div class="summary-feed-tools" id="summary-feed-tools">
     <div class="field"><label for="summary-read-filter">要点范围</label><select id="summary-read-filter" onchange="summaryFilterPoints()"><option value="all">全部要点</option><option value="unread">未读要点</option><option value="new">上次打开后新增</option></select></div>
@@ -34,11 +34,4 @@
     <div class="generation-progress-meta"><span id="summary-progress-counts"></span><span id="summary-progress-time"></span></div>
     <p id="summary-progress-connection" class="generation-progress-connection" aria-live="polite"></p>
   </div><div id="summary-run-actions" class="actions"></div>
-</section>
-<section id="summary-reading-section" aria-label="摘要内容">
-  <p id="summary-reading-count" class="header-meta" aria-live="polite"></p>
-  <p id="summary-reading-warning" class="summary-warning" role="status" hidden></p>
-  <div id="summary-points" class="summary-cards" aria-live="polite" tabindex="-1"><div class="empty">正在读取摘要要点…</div></div>
-  <div id="summary-groups" class="summary-cards" hidden aria-live="polite"></div>
-  <div id="summary-reading-pages" class="summary-pages" hidden><button class="btn btn-sm" id="summary-reading-prev" type="button" onclick="summaryChangePage(-1)">上一页</button><span id="summary-reading-page-label"></span><button class="btn btn-sm" id="summary-reading-next" type="button" onclick="summaryChangePage(1)">下一页</button></div>
 </section>

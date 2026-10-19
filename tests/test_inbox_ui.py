@@ -30,6 +30,8 @@ def test_inbox_home_has_real_list_and_detail_regions(web_client):
             attributes = dict(attrs)
             if tag == 'div':
                 self.divs.append(attributes.get('id'))
+            if attributes.get('id') == 'summary-reading-controls':
+                assert 'inbox-workspace' not in self.divs, 'shared filters must not consume the narrow discussion column'
             if attributes.get('id') in ('summary-source-panel', 'summary-source-backdrop'):
                 assert 'inbox-workspace' not in self.divs, 'source overlays must survive mobile list hiding'
                 self.overlays.append(attributes['id'])
@@ -41,6 +43,7 @@ def test_inbox_home_has_real_list_and_detail_regions(web_client):
     placement = OverlayPlacement()
     placement.feed(page)
     assert len(placement.overlays) == 2
+    assert 'id="summary-manage-tab"' in page
 
 
 def test_inbox_templates_are_packaged():

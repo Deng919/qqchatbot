@@ -1,15 +1,23 @@
 {% extends "base.html" %}
 {% block title %}摘要报告 - QQ Digest{% endblock %}
-{% block page_title %}群聊收件箱{% endblock %}
-{% block page_description %}<p class="page-subtitle">浏览讨论，选一条慢慢读。</p>{% endblock %}
+{% block page_title %}群聊阅读{% endblock %}
+{% block page_description %}<p class="page-subtitle">选择群聊和日期，浏览讨论与报告。</p>{% endblock %}
 {% block actions %}
   <button class="btn btn-primary" id="range-open-btn" type="button" onclick="openRangeSummary()">生成摘要</button>
 {% endblock %}
 {% block content %}
 {% include "message_context_script.html" %}
+{% include "summary_reading_controls.html" %}
 <div id="inbox-workspace" class="inbox-workspace">
 <div class="inbox-list-column">
-{% include "summary_reading_controls.html" %}
+<section id="summary-reading-section" aria-label="摘要内容">
+  <p id="summary-reading-count" class="header-meta" aria-live="polite"></p>
+  <p id="summary-reading-warning" class="summary-warning" role="status" hidden></p>
+  <div id="summary-points" class="summary-cards" aria-live="polite" tabindex="-1"><div class="empty">正在读取摘要要点…</div></div>
+  <div id="summary-groups" class="summary-cards" hidden aria-live="polite"></div>
+  <div id="summary-reading-pages" class="summary-pages" hidden><button class="btn btn-sm" id="summary-reading-prev" type="button" onclick="summaryChangePage(-1)">上一页</button><span id="summary-reading-page-label"></span><button class="btn btn-sm" id="summary-reading-next" type="button" onclick="summaryChangePage(1)">下一页</button></div>
+</section>
+
 </div>
 <div class="inbox-reading-column">
   <section id="inbox-placeholder" class="inbox-placeholder"><span class="inbox-placeholder-mark" aria-hidden="true">≡</span><h2>从左侧选一条讨论</h2><p>在这里阅读要点，按需查看原消息或完整摘要。</p></section>
