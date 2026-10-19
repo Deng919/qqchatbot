@@ -38,5 +38,5 @@ Interfaces: runner.refresh(config,archive,date_from,date_to,collect=True,on_prog
 ### Task3: Real import, full review and delivery
 - [x] Inspect real source completeness; add8groups and collect recentweek under coordinator lock. Run real extraction using configured AI; save aggregate results without chats in QA logs.
 - [x] Run whole suite, all CJS, fresh final review and independent synthetic browser/EXE verification; fix demonstrated issues.
-- [ ] Package new immutable D:\Apps release, verify modules/templates, merge working checkout, rerun related checks, update recoverable desktop entry and push GitHub branches with remote SHA verification.
-- [ ] Update roadmap and verification record with actual imported/processed/unavailable counts and remaining external-data limits.
+- [x] Package new immutable D:\Apps release, verify modules/templates, merge working checkout, rerun related checks, update recoverable desktop entry and push GitHub branches with remote SHA verification.
+- [x] Update roadmap and verification record with actual imported/processed/unavailable counts and remaining external-data limits.
