@@ -324,8 +324,9 @@
       *, *::before, *::after { scroll-behavior: auto !important; transition: none !important; }
     }
   </style>
+  {% include "inbox_workspace_style.html" %}
 </head>
-<body>
+<body class="workspace-app{% if request.url.path in ['/','/reports'] %} workspace-reading{% endif %}">
   {% set storage_handoff = storage_handoff | default({}) %}
   {% set workspace_links = [('reading','阅读摘要','/reports?view=points',true),('knowledge','知识库','/knowledge',true),('bookmarks','收藏','/bookmarks',true),('tasks','待办','/tasks',true),('topics','话题跟踪','/topics',false),('reminders','提醒','/reminders',false),('features','功能开关','/settings?section=features',true)] %}
   <style>[data-feature-off] { display: none !important; }</style>
@@ -340,7 +341,7 @@
       {% set reading_key, reading_label, reading_url, reading_default = workspace_links[0] %}
       <a href="{{ reading_url }}" data-summary-home onclick="navigateSummaryReading(event)" {% if request.url.path in ['/', '/reports'] %}aria-current="page" class="active"{% endif %}>{{ reading_label }}</a>
       {% set more_active = request.url.path in ['/knowledge','/candidates','/bookmarks','/tasks','/topics','/reminders'] or (request.url.path == '/settings' and (request.query_params.get('section') == 'features' or request.query_params.get('feature') or request.query_params.get('saved') == 'features')) %}
-      <details id="workspace-more" class="workspace-more{% if more_active %} has-active{% endif %}"{% if more_active %} open{% endif %}>
+      <details id="workspace-more" class="workspace-more{% if more_active %} has-active{% endif %}" open>
         <summary class="workspace-more-summary">更多</summary>
         <div class="workspace-more-menu">
           {% for key,label,url,default in workspace_links[1:] %}
@@ -352,6 +353,14 @@
         </div>
       </details>
     </nav>
+    {% if request.url.path in ['/','/reports'] %}
+    <section class="inbox-sidebar-groups" aria-label="按群查看摘要">
+      <div class="inbox-sidebar-label">关注的群聊</div>
+      <div id="inbox-group-list"><span class="header-meta">正在读取群聊…</span></div>
+      <a class="inbox-manage-groups" href="/groups">＋ 管理群聊</a>
+    </section>
+    {% endif %}
+    <a class="inbox-sidebar-footer" href="/overview">本地工作区 <span>运行记录 ↗</span></a>
   </header>
   <main id="main-content">
     <div id="storage-handoff-banner" role="status" aria-live="polite" {% if not storage_handoff.get('read_only') %}hidden{% endif %}

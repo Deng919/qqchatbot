@@ -63,7 +63,7 @@
       var summary=document.createElement('summary');summary.className='workspace-more-summary';summary.textContent='更多';details.appendChild(summary);
       var menu=document.createElement('div');menu.className='workspace-more-menu';var active=false;
       secondary.forEach(function(item){var result=makeLink(item);active=active||result.selected;menu.appendChild(result.link);});
-      details.appendChild(menu);if(active){details.open=true;details.classList.add('has-active');}host.appendChild(details);
+      details.appendChild(menu);details.open=true;if(active)details.classList.add('has-active');host.appendChild(details);
     }
   }
   function loadWorkspaceStatus() {

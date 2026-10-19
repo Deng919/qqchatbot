@@ -1,13 +1,26 @@
 {% extends "base.html" %}
 {% block title %}摘要报告 - QQ Digest{% endblock %}
-{% block page_title %}阅读摘要{% endblock %}
-{% block page_description %}<p class="page-subtitle">先看今天的要点；需要补生成时，再点右上角“生成摘要”。</p>{% endblock %}
+{% block page_title %}群聊收件箱{% endblock %}
+{% block page_description %}<p class="page-subtitle">浏览讨论，选一条慢慢读。</p>{% endblock %}
 {% block actions %}
   <button class="btn btn-primary" id="range-open-btn" type="button" onclick="openRangeSummary()">生成摘要</button>
 {% endblock %}
 {% block content %}
 {% include "message_context_script.html" %}
+<div id="inbox-workspace" class="inbox-workspace">
+<div class="inbox-list-column">
 {% include "summary_reading_controls.html" %}
+</div>
+<div class="inbox-reading-column">
+  <section id="inbox-placeholder" class="inbox-placeholder"><span class="inbox-placeholder-mark" aria-hidden="true">≡</span><h2>从左侧选一条讨论</h2><p>在这里阅读要点，按需查看原消息或完整摘要。</p></section>
+  <article id="inbox-point-detail" class="inbox-point-detail" aria-label="当前讨论" hidden>
+    <div class="inbox-detail-bar"><button class="btn btn-sm" id="inbox-back" type="button" onclick="inboxBackToList()">← 返回列表</button><span id="inbox-detail-section"></span></div>
+    <div id="inbox-detail-meta" class="inbox-detail-meta"></div>
+    <h2 id="inbox-detail-title" tabindex="-1"></h2>
+    <p id="inbox-detail-body" class="inbox-detail-body"></p>
+    <div id="inbox-detail-actions" class="inbox-detail-actions"></div>
+    <p class="inbox-detail-hint">摘要供快速了解讨论；需要核实时，请查看关联的原消息。</p>
+  </article>
 <div class="report-layout" id="report-layout">
   <section class="card" id="report-table-card" hidden>
     <div class="card-header">管理报告 <span class="header-meta" id="report-count"></span></div>
@@ -20,7 +33,7 @@
     <div class="report-pages" id="report-pages" hidden><button class="btn btn-sm" id="report-prev" type="button" onclick="changeReportPage(-1)">上一页</button><span id="report-page-label"></span><button class="btn btn-sm" id="report-next" type="button" onclick="changeReportPage(1)">下一页</button></div>
   </section>
   <section class="card report-detail" id="report-detail" hidden>
-    <div class="card-header"><span id="summary-report-title" class="summary-report-title">完整摘要</span><button class="btn btn-sm" aria-label="返回摘要阅读" type="button" onclick="closeReport()">返回阅读</button></div>
+    <div class="card-header"><span id="summary-report-title" class="summary-report-title">完整摘要</span><button class="btn btn-sm" aria-label="返回摘要阅读" type="button" onclick="closeReport();inboxBackToList()">返回阅读</button></div>
     <div class="report-detail-scroll">
       <div id="report-content" class="report-content"></div>
       <details class="summary-report-tools"><summary id="summary-coverage-label">消息范围与统计</summary>
@@ -52,6 +65,14 @@
     </div>
   </section>
 </div>
+</div>
+</div>
+
+<div id="summary-source-backdrop" class="range-summary-backdrop" hidden onclick="summaryCloseSource()"></div>
+<aside id="summary-source-panel" class="range-summary-panel" role="dialog" aria-modal="true" aria-labelledby="summary-source-title" hidden>
+  <div class="range-panel-header"><div><h2 id="summary-source-title">关联的消息</h2><p id="summary-source-scope"></p></div><button id="summary-source-close" class="btn btn-sm" type="button" onclick="summaryCloseSource()">关闭</button></div>
+  <div id="summary-source-choices" class="actions"></div><div id="summary-source-messages" aria-live="polite"></div>
+</aside>
 
 <div id="range-summary-backdrop" class="range-summary-backdrop" hidden onclick="closeRangeSummary()"></div>
 <aside id="range-summary-panel" class="range-summary-panel" hidden aria-labelledby="range-summary-title" aria-modal="true" role="dialog">
@@ -415,6 +436,7 @@
 </script>
 {% include "summary_progress_script.html" %}
 {% include "summary_generation_script.html" %}
+{% include "inbox_reading_script.html" %}
 {% include "summary_reading_script.html" %}
 <script>summaryRestoreGeneration();</script>
 {% endblock %}

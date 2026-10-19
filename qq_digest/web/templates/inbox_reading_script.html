@@ -1,0 +1,63 @@
+<script>
+  var inboxItems=[],inboxSelectedKey=null,inboxQuery='',inboxMobileOpen=false,inboxGroupButtons=[],inboxReadRevision=0;
+  function inboxN(id){return document.getElementById(id);}
+  function inboxMobile(){return window.matchMedia('(max-width: 900px)').matches;}
+  function inboxTextParts(item){var text=summaryCleanText(item.text),match=text.match(/^([^\n：。！？]{1,48})[：。！？\n]/);return {title:match?match[1]:text.slice(0,48),body:match?text.slice(match[0].length)||text:text};}
+  function inboxApplyView(){
+    inboxN('summary-reading-controls').hidden=false;
+    inboxN('summary-reading-section').hidden=summaryView==='manage';
+    inboxN('summary-points').hidden=summaryView!=='points';inboxN('summary-groups').hidden=summaryView!=='groups';
+    inboxN('inbox-page-query').parentElement && (inboxN('inbox-page-query').parentElement.hidden=summaryView!=='points');
+    inboxN('inbox-point-detail').hidden=summaryDetailActive||summaryView!=='points'||!inboxSelectedKey;
+    inboxN('inbox-placeholder').hidden=summaryDetailActive||summaryView==='manage'||!!inboxSelectedKey;
+    inboxN('inbox-workspace').classList.toggle('inbox-detail-open',summaryDetailActive||inboxMobileOpen);
+    inboxN('inbox-workspace').classList.toggle('inbox-manage-open',summaryView==='manage');
+    inboxGroupButtons.forEach(function(entry){entry.button.setAttribute('aria-pressed',String(inboxN('report-group').value===entry.value));});
+  }
+  function inboxClearSelection(){inboxReadRevision++;inboxSelectedKey=null;inboxItems=[];inboxQuery='';inboxMobileOpen=false;inboxN('inbox-page-query').value='';inboxN('summary-points').textContent='正在读取讨论…';inboxApplyView();}
+  function inboxBackToList(){inboxMobileOpen=false;inboxApplyView();if(inboxMobile())inboxN('summary-points').focus();}
+  function inboxSelectPoint(key,explicit){
+    var item=inboxItems.find(function(point){return point.key===key;});if(!item)return;
+    if(explicit){closeReport();inboxMobileOpen=true;}inboxSelectedKey=key;
+    var parts=inboxTextParts(item);inboxN('inbox-detail-section').textContent=item.section;
+    inboxN('inbox-detail-meta').textContent=item.group_name+' · '+(item.date_label||item.report_date)+' · '+(item.read?'已读':'未读');
+    inboxN('inbox-detail-title').textContent=parts.title;inboxN('inbox-detail-body').textContent=parts.body;
+    var actions=inboxN('inbox-detail-actions');actions.textContent='';
+    if(item.status==='cited'&&item.source_ids.length)actions.appendChild(summaryButton('查看原消息',function(){summaryOpenSource(item,this);}));
+    else actions.appendChild(summaryNode('span','header-meta',item.status==='legacy'?'旧报告未记录逐条来源':'这条要点未提供有效来源'));
+    actions.appendChild(summaryButton('完整摘要',function(){viewReport(item.report_kind||'daily',Number(item.report_id));}));
+    appendBookmarkAction(actions,{kind:'report',report_kind:item.report_kind||'daily',report_id:Number(item.report_id),point_key:item.key});
+    var read=summaryButton(item.read?'标为未读':'标为已读',function(){
+      var revision=inboxReadRevision;read.disabled=true;
+      api('POST','/api/summary-reading/read',{key:item.key,read:!item.read}).then(function(){
+        if(revision!==inboxReadRevision)return;
+        item.read=!item.read;
+        if(inboxSelectedKey===item.key)summaryLoadPoints(true);
+      }).catch(function(e){read.disabled=false;summaryShowResult('已读状态保存失败：'+e.message,'failed');});
+    });actions.appendChild(read);
+    inboxRenderRows();inboxApplyView();if(explicit){var mobile=inboxMobile();inboxN('inbox-detail-title').focus({preventScroll:!mobile});if(!mobile)inboxN('inbox-point-detail').parentElement.scrollTop=0;}
+  }
+  function inboxVisibleItems(){var query=inboxQuery.trim().toLocaleLowerCase();return inboxItems.filter(function(item){return !query||(item.group_name+' '+item.section+' '+summaryCleanText(item.text)).toLocaleLowerCase().includes(query);});}
+  function inboxRenderRows(){
+    var host=inboxN('summary-points');host.textContent='';var visible=inboxVisibleItems();
+    if(!visible.length){if(inboxItems.length)host.appendChild(summaryNode('p','summary-empty','本页没有匹配的讨论'));else summaryEmpty(host,inboxN('summary-read-filter').value!=='all');}
+    visible.forEach(function(item){var parts=inboxTextParts(item),row=summaryButton('',function(){inboxSelectPoint(item.key,true);},'inbox-row'+(item.read?'':' is-unread'));
+      row.dataset.key=item.key;row.setAttribute('aria-pressed',String(item.key===inboxSelectedKey));
+      row.appendChild(summaryNode('span','inbox-row-meta',item.group_name+' · '+(item.date_label||item.report_date)));
+      row.appendChild(summaryNode('strong','inbox-row-title',parts.title));row.appendChild(summaryNode('span','inbox-row-preview',parts.body));row.appendChild(summaryNode('span','inbox-row-section',item.section));host.appendChild(row);
+    });return visible;
+  }
+  function inboxRenderPoints(items){
+    inboxItems=items;var visible=inboxVisibleItems();
+    if(!visible.some(function(item){return item.key===inboxSelectedKey;})){inboxSelectedKey=null;inboxMobileOpen=false;}
+    if(!inboxSelectedKey&&!inboxMobile()&&visible.length)inboxSelectedKey=visible[0].key;
+    if(inboxSelectedKey)inboxSelectPoint(inboxSelectedKey,false);else{inboxRenderRows();inboxApplyView();}
+  }
+  function inboxFilterPage(value){inboxQuery=value;var visible=inboxVisibleItems();if(!visible.some(function(item){return item.key===inboxSelectedKey;})){inboxSelectedKey=null;inboxMobileOpen=false;}inboxRenderRows();inboxApplyView();}
+  function inboxRenderGroups(groups){
+    var host=inboxN('inbox-group-list');host.textContent='';inboxGroupButtons=[];
+    [{group_id:'',name:'全部群聊'}].concat(groups).forEach(function(group){var value=String(group.group_id),button=summaryButton(group.name+(group.enabled===false?' · 已停用':''),function(){summarySelectGroups(value?[value]:[]);filterReports();},'inbox-group-button');
+      host.appendChild(button);inboxGroupButtons.push({value:value,button:button});
+    });inboxApplyView();
+  }
+</script>
