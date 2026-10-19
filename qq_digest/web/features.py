@@ -22,7 +22,7 @@ def path_feature(path):
     # the old switch. New summary-reading endpoints are always available.
     if path == '/api/catchup' or path.startswith('/api/catchup/'):
         return 'catchup'
-    for key, prefix in (('topics', 'topics'), ('topics', 'topic-discussions'),
+    for key, prefix in (('secondhand','secondhand'),('topics', 'topics'), ('topics', 'topic-discussions'),
                         ('archive_qa', 'archive-qa'),
                         ('bookmarks', 'bookmarks'),
                         ('reminders', 'reminders'), ('reminders', 'reminder-rules'),

@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block title %}二手信息 - QQ Digest{% endblock %}
+{% block page_title %}二手信息{% endblock %}
+{% block page_description %}<p class="page-subtitle">按物品整理，保留每个群的原始来源。默认最近七天。</p>{% endblock %}
+{% block actions %}<button class="btn" type="button" onclick="marketShowBlocks()">屏蔽名单</button><button class="btn btn-primary" type="button" id="market-refresh" onclick="marketRefresh()">更新交易信息</button>{% endblock %}
+{% block content %}
+<p class="market-notice" id="market-progress" role="status" hidden></p>
+<form class="market-filters" onsubmit="marketFilter(event)" aria-label="交易筛选">
+  <div class="field"><label for="market-q">搜索物品</label><input class="input" id="market-q" type="search" placeholder="物品名称、型号或描述" maxlength="100"></div>
+  <div class="field"><label for="market-direction">交易类型</label><select id="market-direction"><option value="all">全部交易</option><option value="sale">出售</option><option value="want">求购</option></select></div>
+  <div class="field"><label for="market-group">来源群</label><select id="market-group"><option value="">全部二手群</option></select></div>
+  <button class="btn btn-primary" type="submit">查找</button>
+  <label class="market-check"><input id="market-favorites" type="checkbox" onchange="marketFilter()"> 只看收藏</label>
+  <details class="market-advanced"><summary>日期、价格与状态</summary><div class="market-filter-details">
+    <div class="field"><label for="market-from">开始日期</label><input class="input" id="market-from" type="date"></div>
+    <div class="field"><label for="market-to">结束日期</label><input class="input" id="market-to" type="date"></div>
+    <div class="field"><label for="market-min">最低价格</label><input class="input" id="market-min" type="number" min="0" max="1000000000" step="any" placeholder="不限"></div>
+    <div class="field"><label for="market-max">最高价格</label><input class="input" id="market-max" type="number" min="0" max="1000000000" step="any" placeholder="不限"></div>
+    <div class="field"><label for="market-status">交易状态</label><select id="market-status"><option value="all">全部状态</option><option value="unknown">状态未确认</option><option value="sold">已出</option><option value="fulfilled">已收</option></select></div>
+    <button class="btn" type="button" onclick="marketRecent()">重置为近七天</button>
+  </div></details>
+</form>
+<details class="market-groups"><summary id="market-groups-title">接入的二手群</summary><p id="market-groups-description"></p><div id="market-group-settings"></div><p class="header-meta">更新时从本地群列表识别二手／闲置／跳蚤／交易／集市群。新群不加入普通日报；图片读取遵守各群已有开关。</p></details>
+<div class="market-list-heading"><p class="header-meta" id="market-count" role="status">正在读取…</p><button class="btn btn-sm" type="button" onclick="marketUnavailable()">未解析来源</button></div>
+<div id="market-list" class="market-list" aria-live="polite"></div>
+<div id="market-pages" class="market-pages" hidden><button id="market-prev" class="btn btn-sm" type="button" onclick="marketPage(-1)">上一页</button><span id="market-page-label"></span><button id="market-next" class="btn btn-sm" type="button" onclick="marketPage(1)">下一页</button></div>
+<p class="market-footnote">交易信息由群消息整理，价格和状态以原消息为准。没有明确“已出／已收”依据的条目显示“状态未确认”。</p>
+<dialog id="market-dialog" class="market-dialog" aria-labelledby="market-title">
+  <div class="market-dialog-heading"><h2 id="market-title">商品详情</h2><button class="btn btn-sm" type="button" onclick="marketClose()">关闭</button></div>
+  <p id="market-detail-note" role="status"></p><div id="market-meta" class="header-meta"></div><p id="market-description" class="market-text"></p>
+  <div class="actions"><button id="market-favorite" class="btn" type="button" onclick="marketFavorite()">收藏</button><button id="market-block-seller" class="btn" type="button" onclick="marketBlockSeller()">屏蔽原发布人</button></div>
+  <h3>发布来源与价格记录</h3><div id="market-sources"></div><div id="market-context"></div>
+</dialog>
+<dialog id="market-blocks-dialog" class="market-dialog" aria-labelledby="market-blocks-title">
+  <div class="market-dialog-heading"><h2 id="market-blocks-title">屏蔽名单</h2><button class="btn btn-sm" type="button" onclick="marketN('market-blocks-dialog').close()">关闭</button></div>
+  <p>按 QQ 号在二手板块跨群生效。已有商品会隐藏，后续识别前先过滤；聊天原记录保留。</p>
+  <form class="market-block-form" onsubmit="marketBlock(event)"><label for="market-block-qq">QQ 号</label><input id="market-block-qq" class="input" inputmode="numeric" pattern="[0-9]+" required maxlength="19"><button id="market-block-submit" class="btn btn-primary" type="submit">屏蔽此人</button></form>
+  <p id="market-block-note" role="status"></p><div id="market-block-list"></div>
+</dialog>
+<dialog id="market-unavailable-dialog" class="market-dialog" aria-labelledby="market-unavailable-title"><div class="market-dialog-heading"><h2 id="market-unavailable-title">未解析来源</h2><button class="btn btn-sm" type="button" onclick="marketN('market-unavailable-dialog').close()">关闭</button></div><div id="market-unavailable-list"></div><div id="market-unavailable-context"></div></dialog>
+<style>.market-original-image{display:block;max-width:100%;max-height:420px;object-fit:contain;margin:12px 0;border:1px solid var(--border)}
+.market-filters{display:grid;grid-template-columns:minmax(180px,2fr) minmax(110px,1fr) minmax(150px,1.3fr) auto;gap:14px;align-items:end;margin:0 0 20px}.market-filters input,.market-filters select{width:100%;min-width:0}.market-filters .field{min-width:0}.market-check{font-size:12px;display:flex;align-items:center;gap:6px}.market-check input{width:auto}.market-advanced{grid-column:2/-1;font-size:12px}.market-advanced>summary{padding:9px 0;cursor:pointer}.market-filter-details{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;padding:15px;margin-top:10px;background:var(--surface-subtle);border:1px solid var(--border);border-radius:6px;align-items:end}.market-advanced[open]{grid-column:1/-1}.market-groups{font-size:12px;margin:0 0 18px;color:var(--text-soft)}.market-groups summary{cursor:pointer}.market-groups p{line-height:1.8}.market-group-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:8px 0;border-bottom:1px solid var(--border);overflow-wrap:anywhere}.market-group-row a{flex-shrink:0}.market-list-heading{display:flex;align-items:center;justify-content:space-between;gap:14px;margin:20px 0 10px}.market-list-heading p{margin:0;line-height:1.8}.market-list{border-top:1px solid var(--border)}.market-item{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px 24px;padding:23px 4px;border-bottom:1px solid var(--border)}.market-item-title{display:block;background:none;border:0;padding:0;color:var(--text);text-align:left;font-size:17px;font-weight:650;cursor:pointer;overflow-wrap:anywhere}.market-item-title:hover{color:var(--primary)}.market-item-price{font-size:16px;font-weight:650;color:var(--primary-dark);text-align:right;max-width:220px;overflow-wrap:anywhere}.market-item-description{grid-column:1/-1;color:var(--text-soft);font-size:13px;line-height:1.8;overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;margin:3px 0}.market-item-meta{grid-column:1/-1;color:var(--text-dim);font-size:11px;line-height:1.9;overflow-wrap:anywhere}.market-pages{display:flex;justify-content:center;align-items:center;gap:16px;margin:24px 0;font-size:12px}.market-notice{padding:13px 16px;background:var(--primary-soft);font-size:13px;line-height:1.9;white-space:pre-wrap;overflow-wrap:anywhere}.market-footnote{font-size:11px;line-height:1.9;color:var(--text-dim);margin:25px 0}.market-dialog{width:min(800px,calc(100vw - 32px));max-height:calc(100dvh - 32px);overflow:auto;border:1px solid var(--border);border-radius:8px;padding:26px;color:var(--text);background:var(--surface)}.market-dialog::backdrop{background:rgb(25 38 55 / .32)}.market-dialog-heading{display:flex;align-items:start;justify-content:space-between;gap:15px}.market-dialog h2{font-size:21px;line-height:1.6;overflow-wrap:anywhere;margin:0 0 16px}.market-dialog h3{font-size:14px;margin:27px 0 12px}.market-dialog p{line-height:1.9;overflow-wrap:anywhere}.market-text{white-space:pre-wrap}.market-source{padding:15px 0;border-top:1px solid var(--border)}.market-source .actions{margin-top:12px;gap:8px}.market-source p{font-size:13px;margin:8px 0;white-space:pre-wrap}.market-block-form{display:flex;align-items:center;flex-wrap:wrap;gap:10px;margin:20px 0}.market-block-form input{min-width:100px;flex:1}.market-block-row{display:flex;align-items:center;justify-content:space-between;border-top:1px solid var(--border);padding:12px 0}.market-empty{padding:45px 20px;text-align:center;color:var(--text-soft);font-size:14px;line-height:1.9}
+@media(max-width:900px){.market-filters{grid-template-columns:repeat(2,minmax(0,1fr))}.market-filters>.field:first-child{grid-column:1/-1}.market-advanced{grid-column:1/-1}.market-filter-details{grid-template-columns:repeat(2,minmax(0,1fr))}.market-item{gap:8px 14px}.market-item-title{font-size:16px}.market-item-price{max-width:120px;font-size:14px}.market-dialog{padding:18px}.market-dialog-heading{flex-wrap:wrap}.market-dialog .actions{width:auto;flex-wrap:wrap}.market-list-heading{align-items:start}}
+</style>
+{% include "message_context_script.html" %}
+{% include "secondhand_script.html" %}
+{% endblock %}

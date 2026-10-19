@@ -42,26 +42,31 @@ def canonical_sources(archive,messages):
     return result
 
 
-def cached_messages(archive,messages):
+def cached_messages(archive,messages,*,canonicalize=True):
     """Virtual evidence text; the original message body stays intact."""
     groups={gid:policy(archive,gid) for gid in {message.group_id for message in messages}}
     if not any(row and row['enabled'] and (row['read_images'] or row['read_files']) for row in groups.values()):
         return [m.model_copy(update={'text':m.content_json.get('_attachment_original_text',m.text)}) for m in messages]
     result=[]
-    for message in canonical_sources(archive,messages):
+    for message in canonical_sources(archive,messages) if canonicalize else messages:
         group=groups[message.group_id]
         if not group or not group['enabled'] or not (group['read_images'] or group['read_files']):result.append(message.model_copy(update={'text':message.content_json.get('_attachment_original_text',message.text)}));continue
         rows=archive.connection.execute('SELECT * FROM message_attachments WHERE group_id=? AND msg_id=? AND version=? ORDER BY attachment_key',
             (message.group_id,message.msg_id,VERSION)).fetchall()
         parts=[]
-        keys={str(ref.get('key') or '') for ref in message.content_json.get('attachments',[]) if isinstance(ref,dict)}
+        refs={str(ref.get('key') or ''):ref for ref in message.content_json.get('attachments',[]) if isinstance(ref,dict)}
+        available=set()
         for row in rows:
-            if row['attachment_key'] not in keys or not allowed(group,row['kind']):continue
+            ref=refs.get(row['attachment_key'])
+            if not ref or row['source_md5']!=str(ref.get('md5','')).lower() or not allowed(group,row['kind']):continue
             if row['status'] in ('success','partial') and row['text']:
+                available.add(row['attachment_key'])
                 parts.append(f"[附件内容：{row['name']}"+('，已截断' if row['status']=='partial' else '')+f"]\n{row['text']}")
             elif row['status'] not in ('success','partial'):parts.append(f"[附件 {row['name']}：{row['error'] or '等待读取'}]")
         original=message.content_json.get('_attachment_original_text',message.text)
-        result.append(message.model_copy(update={'text':original+'\n'+'\n'.join(parts),'content_json':{**message.content_json,'_attachment_original_text':original}}) if parts else message.model_copy(update={'text':original}))
+        unavailable=any(ref.get('kind') in ('image','file') and allowed(group,ref['kind']) and key not in available for key,ref in refs.items())
+        metadata={**message.content_json,'_attachment_original_text':original,'_attachment_unavailable':unavailable}
+        result.append(message.model_copy(update={'text':original+'\n'+'\n'.join(parts) if parts else original,'content_json':metadata}))
     return result
 
 
@@ -112,6 +117,23 @@ class AttachmentService:
     def _read(self,ref):
         name=ref['name'];kind=ref['kind']
         if kind=='file' and Path(name).suffix.lower() not in FILE_TYPES:raise NotImplementedError('暂不支持此文件格式')
+        data=self._verified_data(ref)
+        if kind=='image':return self._vision([data],name)
+        text,partial,images=read_document(data,name)
+        if images:
+            visible,cut=self._vision(images,name);text+='\n[扫描页面]\n'+visible;partial=partial or cut
+        if not text.strip():raise ValueError('附件没有可读正文')
+        return text[:MAX_CHARS],partial or len(text)>MAX_CHARS
+
+    def original_image(self,ref):
+        if ref.get('kind')!='image':raise ValueError('不是图片附件')
+        data=self._verified_data(ref)
+        block=image_block(data)
+        mime=block['image_url']['url'].split(';',1)[0].removeprefix('data:')
+        return data,mime
+
+    def _verified_data(self,ref):
+        kind=ref['kind']
         value=str(ref.get('path') or '')
         if value.startswith(('\\\\','//')):raise ValueError('附件路径不可用')
         path=Path(value) if value else None
@@ -128,12 +150,7 @@ class AttachmentService:
         with path.open('rb') as stream:data=stream.read(MAX_BYTES+1)
         if len(data)>MAX_BYTES:raise ValueError('附件超过 16 MB')
         if hashlib.md5(data).hexdigest()!=expected:raise ValueError('附件与原消息不匹配')
-        if kind=='image':return self._vision([data],name)
-        text,partial,images=read_document(data,name)
-        if images:
-            visible,cut=self._vision(images,name);text+='\n[扫描页面]\n'+visible;partial=partial or cut
-        if not text.strip():raise ValueError('附件没有可读正文')
-        return text[:MAX_CHARS],partial or len(text)>MAX_CHARS
+        return data
 
     def _image_cache(self,ref):
         """Only original images named by the message digest in this QQ account."""
@@ -148,10 +165,10 @@ class AttachmentService:
                 if candidate.is_file():return candidate
         return None
 
-    def prepare(self,messages,*,retry=False):
+    def prepare(self,messages,*,retry=False,canonicalize=True):
         groups={gid:policy(self.archive,gid) for gid in {message.group_id for message in messages}}
         if not any(row and row['enabled'] and (row['read_images'] or row['read_files']) for row in groups.values()):return cached_messages(self.archive,messages)
-        messages=self._hydrate(canonical_sources(self.archive,messages),groups)
+        messages=self._hydrate(canonical_sources(self.archive,messages),groups) if canonicalize else messages
         pending=[];retries=[]
         for message in messages:
             group=policy(self.archive,message.group_id);refs=message.content_json.get('attachments',[])
@@ -179,7 +196,7 @@ class AttachmentService:
                         VALUES(?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(group_id,msg_id,attachment_key) DO UPDATE SET kind=excluded.kind,name=excluded.name,
                         source_md5=excluded.source_md5,version=excluded.version,status=excluded.status,text=excluded.text,error=excluded.error,updated_at=excluded.updated_at''',
                         (message.group_id,message.msg_id,key,ref['kind'],name,md5,VERSION,status,text,error,datetime.now(timezone.utc).isoformat()))
-        return cached_messages(self.archive,messages)
+        return cached_messages(self.archive,messages,canonicalize=canonicalize)
 
     def _hydrate(self,messages,groups):
         """Fill old metadata only from the exact same scoped source message."""

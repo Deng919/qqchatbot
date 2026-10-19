@@ -415,3 +415,5 @@ def initialize_archive_schema(connection: sqlite3.Connection) -> None:
                    ON send_log(send_id DESC)
                    WHERE status='success' AND (retry_count>0 OR manual_retry_count>0)"""
     )
+    from .secondhand_schema import initialize
+    initialize(connection)

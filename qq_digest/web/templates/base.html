@@ -328,7 +328,7 @@
 </head>
 <body class="workspace-app{% if request.url.path in ['/','/reports'] %} workspace-reading{% endif %}">
   {% set storage_handoff = storage_handoff | default({}) %}
-  {% set workspace_links = [('reading','阅读摘要','/reports?view=points',true),('knowledge','知识库','/knowledge',true),('bookmarks','收藏','/bookmarks',true),('tasks','待办','/tasks',true),('topics','话题跟踪','/topics',false),('reminders','提醒','/reminders',false),('features','功能开关','/settings?section=features',true)] %}
+  {% set workspace_links = [('reading','阅读摘要','/reports?view=points',true),('secondhand','二手信息','/secondhand',true),('knowledge','知识库','/knowledge',true),('bookmarks','收藏','/bookmarks',true),('tasks','待办','/tasks',true),('topics','话题跟踪','/topics',false),('reminders','提醒','/reminders',false),('features','功能开关','/settings?section=features',true)] %}
   <style>[data-feature-off] { display: none !important; }</style>
   <script>var featureFlags = {{ features | tojson }}, workspaceLinks = {{ workspace_links | tojson }};</script>
   <a class="skip-link" href="#main-content">跳到主要内容</a>

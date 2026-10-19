@@ -482,6 +482,8 @@ def create_app(
     add_ai_connection_routes(app, require_login=require_login,
         test_connection=lambda cfg, ident: _test_ai_connection(cfg, ident))
     feature_service = add_feature_routes(app, archive=archive, cookie=cookie, require_login=require_login, operations=operations)
+    from .secondhand_routes import add_secondhand_routes
+    add_secondhand_routes(app,archive=archive,config=config,templates=templates,require_login=require_login,operations=operations)
     add_summary_reading_routes(app, archive=archive, config=config, require_login=require_login)
     add_task_routes(app, archive=archive, config=config, templates=templates, require_login=require_login)
     add_message_routes(app, archive=archive, config=config, require_login=require_login)

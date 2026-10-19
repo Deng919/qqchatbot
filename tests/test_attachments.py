@@ -36,6 +36,16 @@ def test_selected_group_files_are_cached_without_changing_original(tmp_path):
     assert cached_messages(ar,[msg])[0].text==msg.text
 
 
+def test_changed_source_digest_never_reuses_cached_text(tmp_path):
+    ar,msg,path=setup_message(tmp_path)
+    AttachmentService(ar).prepare([msg])
+    ref={**msg.content_json['attachments'][0],'md5':'1'*32}
+    changed=msg.model_copy(update={'content_json':{'attachments':[ref]}})
+    result=cached_messages(ar,[changed],canonicalize=False)[0]
+    assert 'hello attachment' not in result.text
+    assert result.content_json['_attachment_unavailable']
+
+
 def test_closed_group_never_opens_source(tmp_path):
     ar,msg,path=setup_message(tmp_path,enabled=False)
     result=AttachmentService(ar).prepare([msg])

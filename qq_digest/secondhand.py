@@ -1,0 +1,166 @@
+"""Conservative cross-group listings with source snapshots, blocks and favorites."""
+from __future__ import annotations
+
+import json
+import math
+import re
+import unicodedata
+from datetime import date, datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
+
+from .secondhand_evidence import digest, qq_number
+
+
+def recent_window(timezone_name='Asia/Shanghai',now=None):
+    day=(now or datetime.now(timezone.utc)).astimezone(ZoneInfo(timezone_name)).date()
+    return (day-timedelta(days=6)).isoformat(),day.isoformat()
+
+
+def date_window(start,end,timezone_name='Asia/Shanghai'):
+    fallback=recent_window(timezone_name)
+    start=start or fallback[0];end=end or fallback[1]
+    a=date.fromisoformat(start);b=date.fromisoformat(end)
+    if a.isoformat()!=start or b.isoformat()!=end or a>b or (b-a).days>365:raise ValueError('请选择有效日期范围，最多366天')
+    tz=ZoneInfo(timezone_name)
+    return datetime.combine(a,datetime.min.time(),tz).astimezone(timezone.utc).isoformat(),datetime.combine(b+timedelta(days=1),datetime.min.time(),tz).astimezone(timezone.utc).isoformat()
+
+
+def normalized(value):
+    return ''.join(c for c in unicodedata.normalize('NFKC',value).casefold() if c.isalnum())
+
+
+def identity_body(value):
+    value=re.sub(r'(?:价格|降价|现价|售价|到手价|现|降至|降到|￥|¥)\s*[:：]?\s*\d+(?:\.\d+)?\s*(?:元|块|rmb|r)?','',value,flags=re.I)
+    value=re.sub(r'\d+(?:\.\d+)?\s*(?:元|块|rmb)','',value,flags=re.I)
+    return normalized(value)
+
+
+class SecondhandService:
+    def __init__(self,archive,timezone_name='Asia/Shanghai'):
+        self.archive=archive;self.db=archive.connection;self.timezone_name=timezone_name
+
+    def add_groups(self,ids):
+        with self.archive.transaction():
+            for gid in ids:
+                if not self.db.execute('SELECT 1 FROM groups WHERE group_id=?',(gid,)).fetchone():raise LookupError('群聊不存在')
+                self.db.execute('INSERT OR IGNORE INTO market_groups VALUES(?)',(gid,))
+
+    def groups(self):
+        return [dict(row) for row in self.db.execute('SELECT g.group_id,g.name,g.enabled,g.read_images FROM groups g JOIN market_groups m USING(group_id) ORDER BY g.name')]
+
+    def blocked_ids(self):return {row[0] for row in self.db.execute('SELECT qq FROM market_blocks')}
+
+    def blocked(self):return [dict(row) for row in self.db.execute('SELECT * FROM market_blocks ORDER BY created_at DESC')]
+
+    def block(self,qq):
+        qq=qq_number(qq)
+        if qq is None:raise ValueError('请输入有效 QQ 号')
+        with self.archive.transaction():self.db.execute('INSERT OR IGNORE INTO market_blocks VALUES(?,?)',(qq,datetime.now(timezone.utc).isoformat()))
+
+    def unblock(self,qq):
+        if qq_number(qq) is None:raise ValueError('请输入有效 QQ 号')
+        with self.archive.transaction():self.db.execute('DELETE FROM market_blocks WHERE qq=?',(qq,))
+
+    def set_favorite(self,item_id,value):
+        self.detail(item_id)
+        if type(value) is not bool:raise ValueError('收藏状态无效')
+        with self.archive.transaction():
+            if value:self.db.execute('INSERT OR IGNORE INTO market_favorites VALUES(?)',(item_id,))
+            else:self.db.execute('DELETE FROM market_favorites WHERE item_key=?',(item_id,))
+
+    def pending_units(self,units):
+        return [unit for unit in units if not self.db.execute('SELECT 1 FROM market_scans WHERE source_key=? AND fingerprint=? AND state IN (\'done\',\'forward_unavailable\',\'image_unavailable\')',(unit['key'],unit['fingerprint'])).fetchone()]
+
+    def record_scans(self,units,state='done',note=''):
+        now=datetime.now(timezone.utc).isoformat()
+        for unit in units:
+            if state=='done' and not unit.get('images_unavailable'):
+                self.db.execute("DELETE FROM market_scans WHERE source_key IN (?,?) AND state='image_unavailable'",
+                    (digest([unit['key'],'image']),digest([unit['group_id'],unit['msg_id'],unit['path']+'.image'])))
+            self.db.execute('INSERT INTO market_scans VALUES(?,?,?,?,?,?,?) ON CONFLICT(source_key) DO UPDATE SET fingerprint=excluded.fingerprint,state=excluded.state,note=excluded.note,updated_at=excluded.updated_at',
+                (unit['key'],unit['group_id'],unit['msg_id'],unit['fingerprint'],state,note[:500],now))
+
+    def accept_units(self,units,payload,*,validate_only=False):
+        if not isinstance(payload,dict) or not isinstance(payload.get('items'),list) or len(payload['items'])>500:raise ValueError('交易识别格式无效')
+        sources={unit['key']:unit for unit in units};prepared=[];blocked=self.blocked_ids()
+        for item in payload['items']:
+            if not isinstance(item,dict):raise ValueError('商品格式无效')
+            unit=sources.get(item.get('source_key'))
+            if unit is None or unit['state']!='ready':raise ValueError('商品引用了无效来源')
+            if unit['seller_qq'] in blocked or unit['forwarder_qq'] in blocked:continue
+            if not self.db.execute('SELECT 1 FROM market_groups WHERE group_id=?',(unit['group_id'],)).fetchone():raise ValueError('商品来源不在二手群范围')
+            text=unit['text'];title=item.get('title');evidence=item.get('evidence')
+            if not isinstance(title,str) or not 2<=len(title.strip())<=160 or title.strip() in {'商品','物品','二手','已出','出了','求购'}:raise ValueError('缺少明确物品名称')
+            if not isinstance(evidence,str) or not evidence.strip() or evidence not in text:raise ValueError('商品缺少原文证据')
+            terms=re.findall(r'[a-zA-Z0-9]{3,}|[\u4e00-\u9fff]{2,}',title)
+            if not any(term.casefold() in evidence.casefold() for term in terms):raise ValueError('物品名称无法核对原文')
+            direction=item.get('direction');status=item.get('status','unknown')
+            if direction not in {'sale','want'} or status not in {'unknown','sold','fulfilled'}:raise ValueError('交易类型或状态无效')
+            markers=r'已出|已售|售出|已卖|已收|已购|收到'
+            if status!='unknown' and (not re.search(markers,evidence) or re.search(r'(?:未|没|不).{0,2}(?:'+markers+r')',evidence)):raise ValueError('成交状态缺少证据')
+            if status=='sold' and direction!='sale' or status=='fulfilled' and direction!='want':raise ValueError('交易状态不匹配')
+            price=item.get('price');price_text=item.get('price_text','')
+            if not isinstance(price_text,str) or len(price_text)>100 or (price_text and price_text not in evidence):raise ValueError('价格原文无法核对')
+            if price is not None:
+                if type(price) not in (int,float) or not math.isfinite(price) or not 0<=price<=1e9:raise ValueError('价格无效')
+                quoted=re.findall(r'(?<!\d)\d+(?:\.\d+)?(?!\d)',price_text)
+                if not any(float(value)==float(price) for value in quoted):raise ValueError('价格缺少原文证据')
+            description=item.get('description','');condition=item.get('condition','')
+            if not isinstance(description,str) or len(description)>12000 or not isinstance(condition,str) or len(condition)>100:raise ValueError('商品说明过长或无效')
+            # Full source text is retained; extraction cannot supply the identity or source dates.
+            body=identity_body(evidence);identity=[unit['seller_qq'],direction,normalized(title),body]
+            if unit['seller_qq'] is None or unit.get('original_time_unknown') or len(body)<8:identity.append(unit['key'])
+            item_key=digest(identity);post_key=digest([unit['key'],normalized(title),direction])
+            if status!='unknown' and unit['seller_qq'] and not unit.get('original_time_unknown'):
+                candidates={row['item_key'] for row in self.db.execute('SELECT item_key,title FROM market_posts WHERE seller_qq=? AND direction=? AND original_time_unknown=0',(unit['seller_qq'],direction)) if normalized(row['title'])==normalized(title)}
+                candidates.update(row[1] for row in prepared if row[6]==unit['seller_qq'] and row[10]==direction and not row[20] and normalized(row[9])==normalized(title))
+                if len(candidates)==1:item_key=next(iter(candidates))
+                elif candidates:status='unknown'
+            prepared.append((post_key,item_key,unit['group_id'],unit['msg_id'],unit['key'],unit['path'],unit['seller_qq'],unit['seller_name'],unit['forwarder_qq'],title.strip(),direction,
+                description,condition,price,price_text,status,evidence,unit['published_at'],unit['forwarded_at'],int(unit['incomplete']),int(bool(unit.get('original_time_unknown')))))
+        if validate_only:return len(prepared)
+        with self.archive.transaction():
+            for unit in units:self.db.execute('DELETE FROM market_posts WHERE source_key=?',(unit['key'],))
+            self.db.executemany('INSERT INTO market_posts VALUES('+','.join('?' for _ in range(21))+')',prepared)
+            self.record_scans(units)
+        return len(prepared)
+
+    def _rows(self):
+        return [dict(row) for row in self.db.execute('''SELECT p.*,g.name AS group_name FROM market_posts p
+            JOIN groups g ON g.group_id=p.group_id JOIN market_groups m ON m.group_id=p.group_id
+            WHERE g.enabled=1 AND NOT EXISTS(SELECT 1 FROM market_blocks b WHERE b.qq=p.seller_qq OR b.qq=p.forwarder_qq)
+            ORDER BY p.published_at DESC,p.msg_id DESC,p.post_key DESC''')]
+
+    def list_items(self,*,date_from=None,date_to=None,q='',group_id=None,direction='all',status='all',min_price=None,max_price=None,favorite=False,page=1,page_size=30):
+        start,end=date_window(date_from,date_to,self.timezone_name)
+        if type(page) is not int or page<1 or type(page_size) is not int or not 1<=page_size<=100:raise ValueError('分页无效')
+        if direction not in {'all','sale','want'} or status not in {'all','unknown','sold','fulfilled'}:raise ValueError('筛选无效')
+        for price in (min_price,max_price):
+            if price is not None and (not math.isfinite(price) or price<0):raise ValueError('价格范围无效')
+        if min_price is not None and max_price is not None and min_price>max_price:raise ValueError('价格范围无效')
+        favorites={row[0] for row in self.db.execute('SELECT item_key FROM market_favorites')};clusters={}
+        for row in self._rows():clusters.setdefault(row['item_key'],[]).append(row)
+        items=[]
+        for key,rows in clusters.items():
+            selected=[row for row in rows if start<=row['published_at']<end and (group_id is None or row['group_id']==group_id)]
+            if not selected:continue
+            latest=selected[0]
+            if latest['price'] is None:
+                previous=next((row for row in rows if row['price'] is not None and row['published_at']<=latest['published_at']),None)
+                if previous:latest={**latest,'price':previous['price'],'price_text':previous['price_text']+'（最近已知价格）'}
+            if direction!='all' and latest['direction']!=direction or status!='all' and latest['status']!=status:continue
+            if q and q.casefold() not in (latest['title']+' '+latest['description']+' '+latest['evidence']).casefold():continue
+            if favorite and key not in favorites:continue
+            if min_price is not None and (latest['price'] is None or latest['price']<min_price) or max_price is not None and (latest['price'] is None or latest['price']>max_price):continue
+            items.append({**latest,'item_id':key,'source_count':len(rows),'group_count':len({row['group_id'] for row in rows}),'favorite':key in favorites,'possible_duplicate':False})
+        for item in items:
+            item['possible_duplicate']=any(other['item_key']!=item['item_key'] and item['seller_qq'] and item['seller_qq']==other['seller_qq'] and normalized(item['title'])==normalized(other['title']) for other in items)
+        items.sort(key=lambda row:(row['published_at'],row['item_key']),reverse=True)
+        total=len(items);page=min(page,max(1,(total+page_size-1)//page_size))
+        coverage=[dict(row) for row in self.db.execute('SELECT state,count(*) AS count FROM market_scans WHERE group_id IN (SELECT group_id FROM market_groups) GROUP BY state')]
+        return {'items':items[(page-1)*page_size:page*page_size],'total':total,'page':page,'page_size':page_size,'date_from':date_from or recent_window(self.timezone_name)[0],'date_to':date_to or recent_window(self.timezone_name)[1],'coverage':coverage}
+
+    def detail(self,item_id):
+        rows=[row for row in self._rows() if row['item_key']==item_id]
+        if not rows:raise LookupError('商品不存在或已屏蔽')
+        return {'item_id':item_id,'item':rows[0],'sources':rows,'favorite':bool(self.db.execute('SELECT 1 FROM market_favorites WHERE item_key=?',(item_id,)).fetchone())}

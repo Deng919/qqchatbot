@@ -352,6 +352,8 @@ class Archive:
                     skipped += 1
                     from .attachment_sources import refresh_attachment_metadata
                     refresh_attachment_metadata(self.connection,message)
+                    from .forward_sources import refresh_forward_metadata
+                    refresh_forward_metadata(self.connection,message)
                     refresh_message_sender(self.connection,message)
         return IngestResult(inserted=inserted, skipped=skipped)
 

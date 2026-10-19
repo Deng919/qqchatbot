@@ -21,6 +21,7 @@ TEMPLATES = (
     "settings.html", "summary_reading_controls.html", "summary_reading_style.html",
     "summary_reading_script.html",
     "inbox_workspace_style.html", "inbox_reading_script.html",
+    "secondhand.html", "secondhand_script.html",
     "summary_generation_script.html",
     "summary_progress_script.html",
     "primary_navigation.html", "section_navigation.html", "group_details.html",

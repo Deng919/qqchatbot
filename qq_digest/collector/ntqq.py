@@ -152,11 +152,11 @@ class NTQQCollector(Collector):
                     try:rows=self._scan_metadata(connection,group_id,int(start.timestamp()),int(end.timestamp()))
                     finally:connection.close()
                     for message in self._fetch_blobs(rows,group_id,datetime.now(self.timezone)):
-                        if not message.content_json.get('attachments'):continue
+                        if not message.content_json.get('attachments') and not message.content_json.get('forward_messages'):continue
                         previous=by_id.get(message.msg_id)
                         if previous is not None:
                             if previous.timestamp==message.timestamp:
-                                by_id[message.msg_id]=previous.model_copy(update={'content_json':{**previous.content_json,'attachments':message.content_json['attachments']}})
+                                by_id[message.msg_id]=previous.model_copy(update={'content_json':{**previous.content_json,**{key:value for key,value in message.content_json.items() if key in ('attachments','forward_messages')}}})
                         else:by_id[message.msg_id]=message
                 except (sqlite3.Error,CollectionIncompleteError):
                     for message in messages:message.content_json['attachment_source_unavailable']=True
@@ -315,6 +315,9 @@ class NTQQCollector(Collector):
                     refs=attachment_refs(blob)
                     metadata={'sender_uid':sender_uid} if sender_uid else {}
                     if refs:metadata['attachments']=refs
+                    from ..forward_sources import forward_records
+                    forwards=forward_records(blob)
+                    if forwards:metadata['forward_messages']=forwards
                     yield self._resolve_sender(NormalizedMessage(
                         msg_id=str(msg_id),
                         group_id=group_id,

@@ -23,20 +23,20 @@
 ### Task1: Evidence extraction and persistence
 Files: new secondhand_schema.py, secondhand_evidence.py, secondhand.py; archive_schema.py. Tests test_secondhand.py.
 Interfaces: SecondhandService(archive,timezone_name).add_groups(groups), list_items(...), detail(item_id), set_favorite(item_id,bool), block(qq), unblock(qq), blocked(), accept_units(units,AI_result), pending_units(messages), import_local(config,start,end).
-- [ ] Write failing tests for7day bounds, quoted price validation,8group discovery, duplicate source idempotence, different sellers, price chronology, explicit sold, unknown forward author, blocks and foreign-key cleanup.
-- [ ] Implement strict structured extraction with bounded source units, evidence checks and conservative merge; transactions only for persistence. Store scan receipts and coverage.
-- [ ] Verify related tests then commit.
+- [x] Write failing tests for7day bounds, quoted price validation,8group discovery, duplicate source idempotence, different sellers, price chronology, explicit sold, unknown forward author, blocks and foreign-key cleanup.
+- [x] Implement strict structured extraction with bounded source units, evidence checks and conservative merge; transactions only for persistence. Store scan receipts and coverage.
+- [x] Verify related tests then commit.
 
 ### Task2: Import/update workflow and page
 Files: new secondhand_runner.py, web/secondhand_routes.py, templates/secondhand.html and secondhand_script.html; feature/nav/package integrations. Tests test_secondhand_web.py and secondhand_ui.cjs.
 Interfaces: runner.refresh(config,archive,date_from,date_to,collect=True,on_progress=None), get/list/detail/blocks, POSTrefresh, PATCHfavorite, POST/DELETEblock. Default dates today-6days..today. Page loads groups/blocked/items, update explicit and asynchronous via a bounded existing coordinator claim.
-- [ ] Add failing auth/validation/defaultwindow/featureoff tests and CJS stale/duplicate/failure scenarios.
-- [ ] Implement imports, fingerprint cache and configured AI batches; metadata-only unavailable forwards explicit. Add membership controls with discovery action and existing group links.
-- [ ] Implement list/detail, all approved filters, source dialogs/images, favorites and blocks. Preserve nullable seller identity; exact source IDs only.
-- [ ] Verify Python/CJS and browser geometry/workflows then commit.
+- [x] Add failing auth/validation/defaultwindow/featureoff tests and CJS stale/duplicate/failure scenarios.
+- [x] Implement imports, fingerprint cache and configured AI batches; metadata-only unavailable forwards explicit. Add membership controls with discovery action and existing group links.
+- [x] Implement list/detail, all approved filters, source dialogs/images, favorites and blocks. Preserve nullable seller identity; exact source IDs only.
+- [x] Verify Python/CJS and browser geometry/workflows then commit.
 
 ### Task3: Real import, full review and delivery
-- [ ] Inspect real source completeness; add8groups and collect recentweek under coordinator lock. Run real extraction using configured AI; save aggregate results without chats in QA logs.
-- [ ] Run whole suite, all CJS, fresh final review and independent synthetic browser/EXE verification; fix demonstrated issues.
+- [x] Inspect real source completeness; add8groups and collect recentweek under coordinator lock. Run real extraction using configured AI; save aggregate results without chats in QA logs.
+- [x] Run whole suite, all CJS, fresh final review and independent synthetic browser/EXE verification; fix demonstrated issues.
 - [ ] Package new immutable D:\Apps release, verify modules/templates, merge working checkout, rerun related checks, update recoverable desktop entry and push GitHub branches with remote SHA verification.
 - [ ] Update roadmap and verification record with actual imported/processed/unavailable counts and remaining external-data limits.
