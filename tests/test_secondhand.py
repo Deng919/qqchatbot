@@ -26,7 +26,7 @@ def message(gid=11,mid='a',sender=100,text='出戴尔U2720显示器，完好带�
 
 def offer(unit,price='800',title='戴尔U2720显示器',status='unknown'):
     return {'source_key':unit['key'],'title':title,'direction':'sale','price_text':price,'price':float(price) if price else None,
-            'condition':'完好','description':unit['text'],'status':status,'evidence':unit['text']}
+            'condition':'完好' if '完好' in unit['text'] else '', 'description':unit['text'],'status':status,'evidence':unit['text']}
 
 
 def ingest(service,messages):
@@ -170,3 +170,215 @@ def test_historical_filter_does_not_borrow_future_price(market):
     units=ingest(market,[message(day=18,text='出戴尔U2720显示器，完好带底座'),message(day=19,mid='new')])
     market.accept_units(units,{'items':[offer(units[0],''),offer(units[1])]})
     assert market.list_items(date_from='2026-10-18',date_to='2026-10-18')['items'][0]['price'] is None
+
+
+def test_bundle_stays_one_listing_and_exposes_components(market):
+    text = '桌游全套打包出售：狼人杀、三国杀、UNO，整套80元'
+    unit = ingest(market, [message(text=text)])[0]
+    row = {'source_key': unit['key'], 'title': '桌游全套', 'direction': 'sale', 'price': 80,
+           'price_text': '80元', 'condition': '', 'description': '桌游全套打包出售：狼人杀、三国杀、UNO，整套80元',
+           'status': 'unknown', 'evidence': text, 'bundle_mode': 'bundle', 'bundle_label': '桌游全套',
+           'components': [{'title': '狼人杀', 'evidence': '狼人杀'}, {'title': '三国杀', 'evidence': '三国杀'}, {'title': 'UNO', 'evidence': 'UNO'}]}
+    market.accept_units([unit], {'items': [row]})
+    listed = market.list_items(date_from='2026-10-13', date_to='2026-10-19')
+    assert listed['total'] == 1
+    assert listed['items'][0]['bundle_mode'] == 'bundle'
+    assert listed['items'][0]['bundle_count'] == 3
+    detail = market.detail(listed['items'][0]['item_id'])
+    assert [component['title'] for component in detail['item']['components']] == ['狼人杀', '三国杀', 'UNO']
+
+
+def test_separately_priced_items_from_one_source_stay_separate(market):
+    text = '出 ItemA 10元，出 ItemB 20元'
+    unit = ingest(market, [message(text=text)])[0]
+    rows = [
+        {'source_key': unit['key'], 'title': 'ItemA', 'direction': 'sale', 'price': 10, 'price_text': '10元',
+         'condition': '', 'description': '', 'status': 'unknown', 'evidence': '出 ItemA 10元'},
+        {'source_key': unit['key'], 'title': 'ItemB', 'direction': 'sale', 'price': 20, 'price_text': '20元',
+         'condition': '', 'description': '', 'status': 'unknown', 'evidence': '出 ItemB 20元'},
+    ]
+    market.accept_units([unit], {'items': rows})
+    assert market.list_items(date_from='2026-10-13', date_to='2026-10-19')['total'] == 2
+
+
+def test_optional_fields_and_price_text_must_be_source_verifiable(market):
+    unit = ingest(market, [message()])[0]
+    bad = offer(unit)
+    bad['description'] = 'AI补写的说明'
+    with pytest.raises(ValueError, match='说明或成色'):
+        market.accept_units([unit], {'items': [bad]})
+    bad = offer(unit)
+    bad['condition'] = '九成新'
+    with pytest.raises(ValueError, match='说明或成色'):
+        market.accept_units([unit], {'items': [bad]})
+    bad = offer(unit)
+    bad['price_text'] = '戴尔U2720显示器800元'
+    with pytest.raises(ValueError, match='价格原文'):
+        market.accept_units([unit], {'items': [bad]})
+
+
+def test_activity_metrics_label_repeated_sales_and_long_wanted(market):
+    sale_messages = [
+        message(gid=11, mid='sale-1', day=17),
+        message(gid=22, mid='sale-2', day=18),
+        message(gid=11, mid='sale-3', day=19),
+    ]
+    sale_units = ingest(market, sale_messages)
+    market.accept_units(sale_units, {'items': [offer(unit) for unit in sale_units]})
+    sale = market.list_items(date_from='2026-10-13', date_to='2026-10-19')['items'][0]
+    assert sale['repeat_count'] == 3 and sale['active_days'] == 3 and sale['span_days'] == 3
+    assert '重复发布' in sale['behavior_flags']
+
+    want_messages = [
+        message(gid=11, mid='want-1', day=15, text='求购戴尔U2720显示器，预算800元'),
+        message(gid=11, mid='want-2', day=16, text='求购戴尔U2720显示器，预算800元'),
+        message(gid=22, mid='want-3', day=17, text='求购戴尔U2720显示器，预算800元'),
+    ]
+    want_units = ingest(market, want_messages)
+    market.accept_units(want_units, {'items': [dict(offer(unit), direction='want', title='戴尔U2720显示器', price_text='800', price=800, condition='', description='') for unit in want_units]})
+    wanted = [item for item in market.list_items(date_from='2026-10-13', date_to='2026-10-19')['items'] if item['direction'] == 'want'][0]
+    assert wanted['span_days'] == 3 and '长期求购' in wanted['behavior_flags']
+
+
+def test_multi_component_service_bundle_is_marked_suspected_promotion(market):
+    text = '88会员权益打包：芒果TV年卡、优酷年卡、夸克会员，35元'
+    unit = ingest(market, [message(text=text)])[0]
+    row = {'source_key': unit['key'], 'title': '88会员权益打包', 'direction': 'sale', 'price': 35,
+           'price_text': '35元', 'condition': '', 'description': text, 'status': 'unknown', 'evidence': text,
+           'bundle_mode': 'bundle', 'bundle_label': '88会员权益打包',
+           'components': [{'title': '芒果TV年卡', 'evidence': '芒果TV年卡'}, {'title': '优酷年卡', 'evidence': '优酷年卡'}, {'title': '夸克会员', 'evidence': '夸克会员'}]}
+    market.accept_units([unit], {'items': [row]})
+    item = market.list_items(date_from='2026-10-13', date_to='2026-10-19')['items'][0]
+    assert '疑似推广' in item['behavior_flags']
+
+
+def test_split_bundle_payload_is_reunited_but_independent_prices_are_kept(market):
+    unit = ingest(market, [message(text='搬家桌游打包出售：狼人杀、三国杀、UNO，整套80元')])[0]
+    rows = [dict(offer(unit, '80', title=name), condition='') for name in ['狼人杀', '三国杀', 'UNO']]
+    market.accept_units([unit], {'items': rows})
+    items = market.list_items(date_from='2026-10-13', date_to='2026-10-19')['items']
+    assert len(items) == 1 and items[0]['bundle_count'] == 3
+    assert '疑似推广' not in items[0]['behavior_flags']
+    assert len(market.detail(items[0]['item_id'])['sources']) == 1
+
+
+def test_activity_matches_seller_title_without_merging_different_goods(market):
+    units = ingest(market, [message(mid=str(day), day=day, text=f'出戴尔U2720显示器，第{day}天再发，完好带底座，价格800元') for day in [17, 18, 19]])
+    market.accept_units(units, {'items': [offer(unit) for unit in units]})
+    items = market.list_items(date_from='2026-10-13', date_to='2026-10-19')['items']
+    assert len(items) == 3  # behavior matching must not assert these are the same physical item
+    assert all(item['repeat_count'] == 3 and '重复发布' in item['behavior_flags'] for item in items)
+    assert all(market.detail(item['item_id'])['item']['repeat_count'] == 3 for item in items)
+
+
+def test_historical_results_do_not_leak_future_activity(market):
+    units = ingest(market, [message(mid=str(day), day=day) for day in [17, 18, 19]])
+    market.accept_units(units, {'items': [offer(unit) for unit in units]})
+    item = market.list_items(date_from='2026-10-17', date_to='2026-10-17')['items'][0]
+    assert item['repeat_count'] == 1 and '重复发布' not in item['behavior_flags']
+
+
+def test_single_used_course_is_not_automatically_an_advert(market):
+    unit = ingest(market, [message(text='转让健身私教课程，因毕业用不上了，价格800元')])[0]
+    market.accept_units([unit], {'items': [dict(offer(unit, title='私教课程'), condition='')]})
+    assert '疑似推广' not in market.list_items(date_from='2026-10-13', date_to='2026-10-19')['items'][0]['behavior_flags']
+
+
+def test_invalid_component_keeps_previous_listing(market):
+    unit = ingest(market, [message()])[0]
+    market.accept_units([unit], {'items': [offer(unit)]})
+    row = dict(offer(unit), bundle_mode='bundle', bundle_label='显示器', components=[{'title': '键盘', 'evidence': '键盘'}, {'title': '鼠标', 'evidence': '鼠标'}])
+    with pytest.raises(ValueError):market.accept_units([unit], {'items': [row]})
+    assert market.db.execute('SELECT count(*) FROM market_posts').fetchone()[0] == 1
+
+
+def test_repair_legacy_rows_preserves_raw_messages_and_favorite(market):
+    from qq_digest.secondhand_repair import repair_existing
+    unit=ingest(market,[message()])[0]
+    market.accept_units([unit],{'items':[offer(unit)]})
+    key=market.db.execute('SELECT item_key FROM market_posts').fetchone()[0]
+    market.set_favorite(key,True)
+    market.db.execute("UPDATE market_posts SET description='invented',condition_text='invented',price_text='戴尔U2720显示器，完好带底座，价格800元'")
+    market.db.commit()
+    before=[tuple(row) for row in market.db.execute('SELECT * FROM messages')]
+    result=repair_existing(market.archive)
+    assert result['failed_sources']==0
+    row=market.db.execute('SELECT * FROM market_posts').fetchone()
+    assert row['price_text']=='800元' and row['description']=='' and row['condition_text']==''
+    assert market.detail(key)['favorite']
+    assert before==[tuple(row) for row in market.db.execute('SELECT * FROM messages')]
+    again=repair_existing(market.archive)
+    assert again['after_posts']==result['after_posts']==1
+
+
+def test_shared_unpriced_post_is_one_collection_without_claiming_bundle_sale(market):
+    unit=ingest(market,[message(text='出：数学建模习题、数学竞赛习题、工图画图工具')])[0]
+    market.accept_units([unit],{'items':[dict(offer(unit,'',title=title),condition='') for title in ['数学建模习题','数学竞赛习题','工图画图工具']]})
+    item=market.list_items(date_from='2026-10-13',date_to='2026-10-19')['items'][0]
+    assert item['bundle_mode']=='collection' and item['bundle_count']==3
+    assert market.list_items(date_from='2026-10-13',date_to='2026-10-19')['total']==1
+    from qq_digest.secondhand_repair import repair_existing
+    assert repair_existing(market.archive)['failed_sources']==0
+
+
+def test_promotion_uses_source_header_for_each_separately_priced_service(market):
+    text='出88VIP会员权益，支持单独购买\n网易云40元\n芒果年卡35元\n夸克10元'
+    unit=ingest(market,[message(text=text)])[0]
+    rows=[dict(offer(unit,str(price),title=title),condition='',description=part,evidence=part) for title,price,part in [('网易云',40,'网易云40元'),('芒果年卡',35,'芒果年卡35元'),('夸克',10,'夸克10元')]]
+    market.accept_units([unit],{'items':rows})
+    items=market.list_items(date_from='2026-10-13',date_to='2026-10-19')['items']
+    assert len(items)==3 and all('疑似推广' in item['behavior_flags'] for item in items)
+
+
+def test_old_market_schema_upgrades_without_losing_rows(market):
+    from qq_digest.secondhand_schema import initialize
+    unit=ingest(market,[message()])[0];market.accept_units([unit],{'items':[offer(unit)]})
+    for column in ['bundle_key','bundle_label','bundle_mode','components_json']:
+        market.db.execute('ALTER TABLE market_posts DROP COLUMN '+column)
+    initialize(market.db);initialize(market.db)
+    row=market.db.execute('SELECT * FROM market_posts').fetchone()
+    assert row['bundle_mode']=='single' and row['components_json']=='[]' and row['evidence']==unit['text']
+
+
+def test_repair_keeps_favorite_specific_to_independently_priced_item(market):
+    from qq_digest.secondhand_repair import repair_existing
+    unit=ingest(market,[message(text='键盘10元，鼠标20元')])[0]
+    rows=[dict(offer(unit,str(price),title=title),condition='',description=part,evidence=part) for title,price,part in [('键盘',10,'键盘10元'),('鼠标',20,'鼠标20元')]]
+    market.accept_units([unit],{'items':rows})
+    key=market.db.execute("SELECT item_key FROM market_posts WHERE title='键盘'").fetchone()[0]
+    market.set_favorite(key,True);repair_existing(market.archive)
+    assert [i['title'] for i in market.list_items(date_from='2026-10-13',date_to='2026-10-19',favorite=True)['items']]==['键盘']
+
+
+def test_automatic_bundle_identity_survives_repair_and_explicit_reextraction(market):
+    from qq_digest.secondhand_repair import repair_existing
+    text='桌游全套打包出售：狼人杀、三国杀、UNO，整套80元'
+    unit=ingest(market,[message(text=text)])[0]
+    market.accept_units([unit],{'items':[dict(offer(unit,'80',title=t),condition='') for t in ['狼人杀','三国杀','UNO']]})
+    key=market.db.execute('SELECT item_key FROM market_posts').fetchone()[0];market.set_favorite(key,True)
+    before=tuple(market.db.execute('SELECT * FROM market_posts').fetchone())
+    assert repair_existing(market.archive)['failed_sources']==0
+    assert market.db.execute('SELECT item_key FROM market_posts').fetchone()[0]==key
+    assert tuple(market.db.execute('SELECT * FROM market_posts').fetchone())==before
+    row=dict(offer(unit,'80',title='桌游全套'),condition='',bundle_mode='bundle',bundle_label='桌游全套',components=[{'title':t,'evidence':t} for t in ['狼人杀','三国杀','UNO']])
+    market.accept_units([unit],{'items':[row]})
+    assert market.detail(key)['favorite']
+
+
+def test_course_with_notes_still_needs_promotion_evidence(market):
+    unit=ingest(market,[message(text='转让健身私教课程，附带课程资料，因毕业用不上了，价格800元')])[0]
+    market.accept_units([unit],{'items':[dict(offer(unit,title='私教课程'),condition='')]})
+    assert '疑似推广' not in market.list_items(date_from='2026-10-13',date_to='2026-10-19')['items'][0]['behavior_flags']
+
+
+def test_explicit_ai_bundle_cannot_override_separate_prices(market):
+    unit=ingest(market,[message(text='键盘鼠标分别出售，键盘10元，鼠标20元')])[0]
+    row=dict(offer(unit,'10',title='键盘鼠标'),condition='',bundle_mode='bundle',bundle_label='键盘鼠标',components=[{'title':'键盘','evidence':'键盘10元','price_text':'10元'},{'title':'鼠标','evidence':'鼠标20元','price_text':'20元'}])
+    with pytest.raises(ValueError):market.accept_units([unit],{'items':[row]})
+
+
+def test_bundle_recovers_local_component_quotations(market):
+    unit=ingest(market,[message(text='桌游打包出售：狼人杀、三国杀，80元')])[0]
+    market.accept_units([unit],{'items':[dict(offer(unit,'',title=title),condition='',description=title,evidence=title) for title in ['狼人杀','三国杀']]})
+    items=market.list_items(date_from='2026-10-13',date_to='2026-10-19')['items']
+    assert len(items)==1 and items[0]['bundle_mode']=='bundle'

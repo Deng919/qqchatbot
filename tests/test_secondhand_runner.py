@@ -100,3 +100,11 @@ def test_recovered_image_removes_only_its_derived_failure(market,tmp_path,monkey
     second=refresh(config,market.archive,'2026-10-13','2026-10-19',collect=False,ai=AI())
     assert second['unavailable']==0
     assert market.db.execute("SELECT count(*) FROM market_scans WHERE state!='done'").fetchone()[0]==0
+
+
+def test_force_refresh_reprocesses_done_sources(market):
+    market.archive.ingest([message()]);ai=AI();ai.calls=[]
+    config=SimpleNamespace(summary=SimpleNamespace(timezone='Asia/Shanghai'),ntqq=SimpleNamespace(enabled=False))
+    refresh(config,market.archive,'2026-10-13','2026-10-19',collect=False,ai=ai)
+    result=refresh(config,market.archive,'2026-10-13','2026-10-19',collect=False,ai=ai,force=True)
+    assert len(ai.calls)==2 and result['processed']==1

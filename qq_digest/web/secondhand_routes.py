@@ -29,6 +29,7 @@ class Refresh(BaseModel):
     model_config={'extra':'forbid'}
     date_from:str|None=Field(default=None,max_length=10)
     date_to:str|None=Field(default=None,max_length=10)
+    rebuild:StrictBool=False
 
 
 def add_secondhand_routes(app,*,archive,config,templates,require_login,operations):
@@ -144,7 +145,7 @@ def add_secondhand_routes(app,*,archive,config,templates,require_login,operation
                 try:
                     progress.update(running=True,message='正在读取本地二手群…',result=None)
                     start,end=recent_window(timezone_name)
-                    result=run(config,worker_archive,payload.date_from or start,payload.date_to or end,on_progress=lambda message:progress.update(message=message))
+                    result=run(config,worker_archive,payload.date_from or start,payload.date_to or end,on_progress=lambda message:progress.update(message=message),force=payload.rebuild)
                     progress.update(result=result,message='本次更新已结束')
                     return result
                 finally:

@@ -22,10 +22,21 @@ def initialize(connection):
             status TEXT NOT NULL CHECK(status IN ('unknown','sold','fulfilled')),
             evidence TEXT NOT NULL, published_at TEXT NOT NULL, forwarded_at TEXT,
             incomplete INTEGER NOT NULL DEFAULT 0,original_time_unknown INTEGER NOT NULL DEFAULT 0,
+            bundle_key TEXT NOT NULL DEFAULT '', bundle_label TEXT NOT NULL DEFAULT '',
+            bundle_mode TEXT NOT NULL DEFAULT 'single', components_json TEXT NOT NULL DEFAULT '[]',
             FOREIGN KEY(group_id,msg_id) REFERENCES messages(group_id,msg_id) ON DELETE CASCADE,
             FOREIGN KEY(group_id) REFERENCES market_groups(group_id) ON DELETE CASCADE);
         CREATE INDEX IF NOT EXISTS idx_market_item ON market_posts(item_key,published_at);
         CREATE INDEX IF NOT EXISTS idx_market_date ON market_posts(published_at,group_id);
     ''')
-    if 'original_time_unknown' not in {row[1] for row in connection.execute('PRAGMA table_info(market_posts)')}:
+    columns={row[1] for row in connection.execute('PRAGMA table_info(market_posts)')}
+    if 'original_time_unknown' not in columns:
         connection.execute('ALTER TABLE market_posts ADD COLUMN original_time_unknown INTEGER NOT NULL DEFAULT 0')
+    if 'bundle_key' not in columns:
+        connection.execute("ALTER TABLE market_posts ADD COLUMN bundle_key TEXT NOT NULL DEFAULT ''")
+    if 'bundle_label' not in columns:
+        connection.execute("ALTER TABLE market_posts ADD COLUMN bundle_label TEXT NOT NULL DEFAULT ''")
+    if 'bundle_mode' not in columns:
+        connection.execute("ALTER TABLE market_posts ADD COLUMN bundle_mode TEXT NOT NULL DEFAULT 'single'")
+    if 'components_json' not in columns:
+        connection.execute("ALTER TABLE market_posts ADD COLUMN components_json TEXT NOT NULL DEFAULT '[]'")

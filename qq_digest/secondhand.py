@@ -35,6 +35,83 @@ def identity_body(value):
     return normalized(value)
 
 
+_PRICE_TEXT_RE = re.compile(r'^\s*(?:￥|¥)?\d+(?:\.\d+)?\s*(?:元|块|rmb|r)?\s*$', re.I)
+_PROMOTION_RE = re.compile(r'会员|权益|年卡|课程|资料|代开|代购|优惠|快递', re.I)
+_BUNDLE_RE = re.compile(r'打包|全套|整套|整包|合集|整箱|一起(?:出|卖|售)|全部(?:出|卖|售)')
+
+
+def _item_identity(unit,direction,title,evidence,mode='single',components=()):
+    body=identity_body(evidence)
+    name=normalized(title) if mode=='single' else [mode,sorted(normalized(c['title']) for c in components)]
+    identity=[unit['seller_qq'],direction,name,body]
+    if unit['seller_qq'] is None or unit.get('original_time_unknown') or len(body)<8:identity.append(unit['key'])
+    return digest(identity)
+
+
+def _names(title,components_json):
+    components=json.loads(components_json or '[]')
+    return {normalized(title)}|{normalized(c['title']) for c in components}
+
+
+def _join_split_bundles(posts, sources):
+    grouped={}
+    for post in posts:grouped.setdefault((post[4],post[10]),[]).append(post)
+    result=[]
+    for (source_key,direction),rows in grouped.items():
+        unit=sources[source_key];text=unit['text']
+        shared=len({row[16] for row in rows})==1
+        prices={row[13] for row in rows if row[13] is not None}
+        evidence=text if _BUNDLE_RE.search(text) else rows[0][16]
+        separately_priced=len(re.findall(r'\d+(?:\.\d+)?\s*(?:元|块|rmb|r)(?![a-z])',evidence,re.I))>1
+        mode='bundle' if _BUNDLE_RE.search(evidence) else 'collection'
+        if (len(rows)<2 or (not shared and mode!='bundle') or (mode=='collection' and prices) or len(prices)>1
+                or separately_priced or re.search(r'单独|单出|可拆|分别',text) or any(row[23]!='single' for row in rows)):
+            result.extend(rows);continue
+        parent=list(rows[0]);label=evidence[:80].strip()
+        components=[{'title':row[9],'evidence':row[16],'price_text':''} for row in rows]
+        parent[0]=digest([source_key,normalized(label),direction,mode]);parent[9]=label
+        parent[1]=_item_identity(unit,direction,label,evidence,mode,components)
+        parent[11]=evidence;parent[12]='';parent[15]='unknown';parent[16]=evidence
+        parent[21]=digest([source_key,mode,label]);parent[22]=label;parent[23]=mode
+        parent[24]=json.dumps(components,ensure_ascii=False,separators=(',',':'))
+        result.append(tuple(parent))
+    return result
+
+
+def _components(item, *, text, evidence, title):
+    mode=item.get('bundle_mode','single')
+    if mode not in {'single','bundle','collection'}:
+        raise ValueError('打包类型无效')
+    label=item.get('bundle_label','')
+    if not isinstance(label,str) or len(label)>160 or (label and label not in evidence):
+        raise ValueError('打包名称无法核对原文')
+    raw=item.get('components',[])
+    if mode=='single':
+        if raw not in (None,[]): raise ValueError('单件商品不能带组件')
+        return mode,'',[],''
+    if not label: label=title if title in evidence else evidence[:80]
+    if not isinstance(raw,list) or not 2<=len(raw)<=100:
+        raise ValueError('打包组件格式无效')
+    if mode=='bundle' and (not _BUNDLE_RE.search(evidence) or re.search(r'单独|单出|可拆|分别',evidence)):
+        raise ValueError('打包出售缺少原文依据')
+    if len(re.findall(r'\d+(?:\.\d+)?\s*(?:元|块|rmb|r)(?![a-z])',evidence,re.I))>1:
+        raise ValueError('独立价格不能作为整体打包价格')
+    result=[]
+    for component in raw:
+        if not isinstance(component,dict): raise ValueError('打包组件格式无效')
+        name=component.get('title');part=component.get('evidence')
+        if not isinstance(name,str) or not 2<=len(name.strip())<=160 or not isinstance(part,str) or not part.strip() or part not in evidence:
+            raise ValueError('打包组件缺少原文证据')
+        terms=re.findall(r'[a-zA-Z0-9]{2,}|[\u4e00-\u9fff]{2,}',name)
+        if not any(term.casefold() in part.casefold() for term in terms):
+            raise ValueError('打包组件名称无法核对原文')
+        component_price=component.get('price_text','')
+        if not isinstance(component_price,str) or len(component_price)>24 or (component_price and (component_price not in part or not _PRICE_TEXT_RE.fullmatch(component_price))):
+            raise ValueError('打包组件价格无法核对原文')
+        result.append({'title':name.strip(),'evidence':part,'price_text':component_price})
+    return mode,label,result,digest([text,'bundle',label])
+
+
 class SecondhandService:
     def __init__(self,archive,timezone_name='Asia/Shanghai'):
         self.archive=archive;self.db=archive.connection;self.timezone_name=timezone_name
@@ -80,7 +157,7 @@ class SecondhandService:
             self.db.execute('INSERT INTO market_scans VALUES(?,?,?,?,?,?,?) ON CONFLICT(source_key) DO UPDATE SET fingerprint=excluded.fingerprint,state=excluded.state,note=excluded.note,updated_at=excluded.updated_at',
                 (unit['key'],unit['group_id'],unit['msg_id'],unit['fingerprint'],state,note[:500],now))
 
-    def accept_units(self,units,payload,*,validate_only=False):
+    def accept_units(self,units,payload,*,validate_only=False,record_scan=True):
         if not isinstance(payload,dict) or not isinstance(payload.get('items'),list) or len(payload['items'])>500:raise ValueError('交易识别格式无效')
         sources={unit['key']:unit for unit in units};prepared=[];blocked=self.blocked_ids()
         for item in payload['items']:
@@ -100,36 +177,75 @@ class SecondhandService:
             if status!='unknown' and (not re.search(markers,evidence) or re.search(r'(?:未|没|不).{0,2}(?:'+markers+r')',evidence)):raise ValueError('成交状态缺少证据')
             if status=='sold' and direction!='sale' or status=='fulfilled' and direction!='want':raise ValueError('交易状态不匹配')
             price=item.get('price');price_text=item.get('price_text','')
-            if not isinstance(price_text,str) or len(price_text)>100 or (price_text and price_text not in evidence):raise ValueError('价格原文无法核对')
+            if not isinstance(price_text,str) or len(price_text)>24 or (price_text and (price_text not in evidence or not _PRICE_TEXT_RE.fullmatch(price_text))):raise ValueError('价格原文无法核对')
             if price is not None:
                 if type(price) not in (int,float) or not math.isfinite(price) or not 0<=price<=1e9:raise ValueError('价格无效')
                 quoted=re.findall(r'(?<!\d)\d+(?:\.\d+)?(?!\d)',price_text)
                 if not any(float(value)==float(price) for value in quoted):raise ValueError('价格缺少原文证据')
             description=item.get('description','');condition=item.get('condition','')
-            if not isinstance(description,str) or len(description)>12000 or not isinstance(condition,str) or len(condition)>100:raise ValueError('商品说明过长或无效')
+            if (not isinstance(description,str) or len(description)>12000 or not isinstance(condition,str) or len(condition)>100
+                    or (description and description not in evidence) or (condition and condition not in evidence)):
+                raise ValueError('商品说明或成色无法核对原文')
+            bundle_mode,bundle_label,components,bundle_key=_components(item,text=text,evidence=evidence,title=title.strip())
+            if bundle_mode!='single':bundle_key=digest([unit['key'],bundle_mode,bundle_label])
             # Full source text is retained; extraction cannot supply the identity or source dates.
-            body=identity_body(evidence);identity=[unit['seller_qq'],direction,normalized(title),body]
-            if unit['seller_qq'] is None or unit.get('original_time_unknown') or len(body)<8:identity.append(unit['key'])
-            item_key=digest(identity);post_key=digest([unit['key'],normalized(title),direction])
+            identity_title=bundle_label or title
+            item_key=_item_identity(unit,direction,identity_title,evidence,bundle_mode,components)
+            post_key=digest([unit['key'],normalized(identity_title),direction,bundle_mode])
             if status!='unknown' and unit['seller_qq'] and not unit.get('original_time_unknown'):
                 candidates={row['item_key'] for row in self.db.execute('SELECT item_key,title FROM market_posts WHERE seller_qq=? AND direction=? AND original_time_unknown=0',(unit['seller_qq'],direction)) if normalized(row['title'])==normalized(title)}
                 candidates.update(row[1] for row in prepared if row[6]==unit['seller_qq'] and row[10]==direction and not row[20] and normalized(row[9])==normalized(title))
                 if len(candidates)==1:item_key=next(iter(candidates))
                 elif candidates:status='unknown'
             prepared.append((post_key,item_key,unit['group_id'],unit['msg_id'],unit['key'],unit['path'],unit['seller_qq'],unit['seller_name'],unit['forwarder_qq'],title.strip(),direction,
-                description,condition,price,price_text,status,evidence,unit['published_at'],unit['forwarded_at'],int(unit['incomplete']),int(bool(unit.get('original_time_unknown')))))
+                description,condition,price,price_text,status,evidence,unit['published_at'],unit['forwarded_at'],int(unit['incomplete']),int(bool(unit.get('original_time_unknown'))),bundle_key,bundle_label,bundle_mode,json.dumps(components,ensure_ascii=False,separators=(',',':'))))
+        prepared=_join_split_bundles(prepared,sources)
         if validate_only:return len(prepared)
         with self.archive.transaction():
+            inherited=[]
+            for unit in units:
+                inherited.extend(dict(row) for row in self.db.execute('SELECT p.* FROM market_posts p JOIN market_favorites f USING(item_key) WHERE p.source_key=?',(unit['key'],)))
             for unit in units:self.db.execute('DELETE FROM market_posts WHERE source_key=?',(unit['key'],))
-            self.db.executemany('INSERT INTO market_posts VALUES('+','.join('?' for _ in range(21))+')',prepared)
-            self.record_scans(units)
+            self.db.executemany('INSERT INTO market_posts VALUES('+','.join('?' for _ in range(25))+')',prepared)
+            for row in prepared:
+                if any(old['source_key']==row[4] and old['direction']==row[10] and _names(old['title'],old.get('components_json','[]'))&_names(row[9],row[24]) for old in inherited):
+                    self.db.execute('INSERT OR IGNORE INTO market_favorites VALUES(?)',(row[1],))
+            if record_scan:self.record_scans(units)
         return len(prepared)
 
     def _rows(self):
-        return [dict(row) for row in self.db.execute('''SELECT p.*,g.name AS group_name FROM market_posts p
+        rows=[dict(row) for row in self.db.execute('''SELECT p.*,g.name AS group_name,msg.text AS source_text FROM market_posts p
             JOIN groups g ON g.group_id=p.group_id JOIN market_groups m ON m.group_id=p.group_id
+            JOIN messages msg ON msg.group_id=p.group_id AND msg.msg_id=p.msg_id
             WHERE g.enabled=1 AND NOT EXISTS(SELECT 1 FROM market_blocks b WHERE b.qq=p.seller_qq OR b.qq=p.forwarder_qq)
             ORDER BY p.published_at DESC,p.msg_id DESC,p.post_key DESC''')]
+        for row in rows:
+            try:row['components']=json.loads(row.get('components_json') or '[]')
+            except (TypeError,ValueError):row['components']=[]
+        return rows
+
+    def _decorate(self,key,latest,rows,favorites):
+        valid=[row for row in rows if row.get('seller_qq') is not None and not row.get('original_time_unknown')]
+        local_dates=[]
+        for row in valid:
+            try:local_dates.append(datetime.fromisoformat(row['published_at']).astimezone(ZoneInfo(self.timezone_name)).date())
+            except (TypeError,ValueError):continue
+        group_count=len({row['group_id'] for row in rows})
+        active_days=len(set(local_dates));span_days=(max(local_dates)-min(local_dates)).days+1 if local_dates else 0
+        bundle_count=len(latest.get('components') or []) if latest.get('bundle_mode') in {'bundle','collection'} else 0
+        text=' '.join(dict.fromkeys(row.get('evidence','')+' '+(row.get('source_text','') if row['path']=='0' else '') for row in rows))
+        flags=[]
+        if latest['direction']=='sale' and len(rows)>=3 and (active_days>=2 or group_count>=2):flags.append('重复发布')
+        if latest['direction']=='want' and span_days>=3:flags.append('长期求购')
+        promotion_terms=set(_PROMOTION_RE.findall(text))
+        list_evidence=bool(re.search(r'权益|\bvip\b',text,re.I) or len(re.findall(r'\d+[.、]',text))>=2)
+        if (len(promotion_terms)>=2 and list_evidence) or (promotion_terms and re.search(r'代开|代购|长期(?:接|出|收)|优惠|欢迎咨询|每日|天天',text)):
+            flags.append('疑似推广')
+        item={**latest,'item_id':key,'title':latest.get('bundle_label') or latest['title'],'source_count':len(rows),
+              'group_count':group_count,'repeat_count':len(rows),'active_days':active_days,'span_days':span_days,
+              'behavior_flags':flags,'bundle_count':bundle_count,'components':latest.get('components') or [],
+              'favorite':key in favorites,'possible_duplicate':False}
+        return item
 
     def list_items(self,*,date_from=None,date_to=None,q='',group_id=None,direction='all',status='all',min_price=None,max_price=None,favorite=False,page=1,page_size=30):
         start,end=date_window(date_from,date_to,self.timezone_name)
@@ -139,7 +255,8 @@ class SecondhandService:
             if price is not None and (not math.isfinite(price) or price<0):raise ValueError('价格范围无效')
         if min_price is not None and max_price is not None and min_price>max_price:raise ValueError('价格范围无效')
         favorites={row[0] for row in self.db.execute('SELECT item_key FROM market_favorites')};clusters={}
-        for row in self._rows():clusters.setdefault(row['item_key'],[]).append(row)
+        all_rows=self._rows()
+        for row in all_rows:clusters.setdefault(row['item_key'],[]).append(row)
         items=[]
         for key,rows in clusters.items():
             selected=[row for row in rows if start<=row['published_at']<end and (group_id is None or row['group_id']==group_id)]
@@ -152,7 +269,13 @@ class SecondhandService:
             if q and q.casefold() not in (latest['title']+' '+latest['description']+' '+latest['evidence']).casefold():continue
             if favorite and key not in favorites:continue
             if min_price is not None and (latest['price'] is None or latest['price']<min_price) or max_price is not None and (latest['price'] is None or latest['price']>max_price):continue
-            items.append({**latest,'item_id':key,'source_count':len(rows),'group_count':len({row['group_id'] for row in rows}),'favorite':key in favorites,'possible_duplicate':False})
+            history=[row for row in rows if row['published_at']<end]
+            activity=[row for row in all_rows if latest['seller_qq'] is not None and not latest['original_time_unknown']
+                      and row['seller_qq']==latest['seller_qq'] and row['direction']==latest['direction']
+                      and normalized(row['title'])==normalized(latest['title']) and not row['original_time_unknown'] and row['published_at']<end]
+            item=self._decorate(key,latest,activity or history,favorites)
+            item['source_count']=len(history);item['group_count']=len({row['group_id'] for row in history})
+            items.append(item)
         for item in items:
             item['possible_duplicate']=any(other['item_key']!=item['item_key'] and item['seller_qq'] and item['seller_qq']==other['seller_qq'] and normalized(item['title'])==normalized(other['title']) for other in items)
         items.sort(key=lambda row:(row['published_at'],row['item_key']),reverse=True)
@@ -161,6 +284,12 @@ class SecondhandService:
         return {'items':items[(page-1)*page_size:page*page_size],'total':total,'page':page,'page_size':page_size,'date_from':date_from or recent_window(self.timezone_name)[0],'date_to':date_to or recent_window(self.timezone_name)[1],'coverage':coverage}
 
     def detail(self,item_id):
-        rows=[row for row in self._rows() if row['item_key']==item_id]
+        all_rows=self._rows();rows=[row for row in all_rows if row['item_key']==item_id]
         if not rows:raise LookupError('商品不存在或已屏蔽')
-        return {'item_id':item_id,'item':rows[0],'sources':rows,'favorite':bool(self.db.execute('SELECT 1 FROM market_favorites WHERE item_key=?',(item_id,)).fetchone())}
+        latest=rows[0];favorite=bool(self.db.execute('SELECT 1 FROM market_favorites WHERE item_key=?',(item_id,)).fetchone())
+        activity=[row for row in all_rows if latest['seller_qq'] is not None and not latest['original_time_unknown']
+                  and row['seller_qq']==latest['seller_qq'] and row['direction']==latest['direction']
+                  and normalized(row['title'])==normalized(latest['title']) and not row['original_time_unknown']]
+        item=self._decorate(item_id,latest,activity or rows,{item_id} if favorite else set())
+        item['source_count']=len(rows);item['group_count']=len({row['group_id'] for row in rows})
+        return {'item_id':item_id,'item':item,'sources':rows,'favorite':favorite}
