@@ -26,5 +26,15 @@ const findNode=(n,predicate)=>predicate(n)?n:(n.children||[]).map(child=>findNod
  marketClose();marketOpen('c');attachment.resolve({items:[{name:'stale A',status:'success',text:'A attachments'}]});await settle();
  assert.ok(node('market-context')._marketSourceToken>sourceToken,'closing or opening detail invalidates source callbacks');
  marketPageNumber=3;marketSwitchLane('promotion');assert.match(requests.at(-1).url,/lane=promotion/);assert.match(requests.at(-1).url,/grouped=true/);assert.equal(marketPageNumber,1);
+ marketPageNumber=4;marketSwitchCategory('food');const categoryRequest=requests.at(-1);
+ assert.match(categoryRequest.url,/category=food/);assert.match(categoryRequest.url,/lane=promotion/);assert.equal(marketPageNumber,1);
+ categoryRequest.resolve({items:[],total:0,page:1,page_size:30,date_from:'2026-10-13',date_to:'2026-10-19',lane_counts:{sale:2,want:1,promotion:0},categories:[{id:'food',label:'食品饮品',count:0},{id:'digital',label:'线上资源',count:5}]});await settle();
+ const foodButton=findNode(node('market-categories'),n=>n.dataset.marketCategory==='food');assert.ok(foodButton,'category navigation must be visible');
+ assert.match(allText(node('market-categories')),/食品饮品/);assert.match(allText(node('market-categories')),/线上资源/);
+ assert.equal(marketCategory,'food');assert.match(node('market-selection-title').textContent,/食品饮品/);
+ marketSwitchCategory('digital');const digitalRequest=requests.at(-1);marketSwitchCategory('food');
+ digitalRequest.resolve({items:[item('z','stale digital')],total:1,page:1,page_size:30,categories:[{id:'digital',label:'线上资源',count:1}]});await settle();
+ assert.equal(marketCategory,'food');assert.doesNotMatch(node('market-selection-title').textContent,/线上资源/,'stale category response cannot change heading');
+ marketSwitchLane('sale');assert.match(requests.at(-1).url,/category=food/,'lane switches retain the selected product category');
  console.log('Secondhand stale list/detail, literal text, duplicate saves and failed retry verified');
 })().catch(error=>{console.error(error);process.exitCode=1;});

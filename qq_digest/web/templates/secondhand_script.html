@@ -1,5 +1,5 @@
 <script>
-var marketListToken=0,marketDetailToken=0,marketBlockToken=0,marketPageNumber=1,marketSelected=null,marketSaving=false,marketBlocking=false,marketUpdating=false,marketProgressTimer=null,marketLane='sale';
+var marketListToken=0,marketDetailToken=0,marketBlockToken=0,marketPageNumber=1,marketSelected=null,marketSaving=false,marketBlocking=false,marketUpdating=false,marketProgressTimer=null,marketLane='sale',marketCategory='all',marketCategories=[];
 function marketN(id){return document.getElementById(id);}
 function marketNode(tag,cls,text){var node=document.createElement(tag);if(cls)node.className=cls;if(text!==undefined)node.textContent=text;return node;}
 function marketButton(text,action){var node=marketNode('button','btn btn-sm',text);node.type='button';node.onclick=action;return node;}
@@ -7,13 +7,22 @@ function marketStatus(value){return {unknown:'状态未确认',sold:'已出',ful
 function marketFlags(item){var flags=(item.behavior_flags||[]).slice();if(item.bundle_mode==='bundle'||item.bundle_mode==='collection')flags.unshift((item.bundle_mode==='bundle'?'打包交易':'同帖清单')+' · '+(item.bundle_count||0)+'项');return flags;}
 function marketTags(item){var host=marketNode('div','market-item-tags');marketFlags(item).forEach(function(flag){host.appendChild(marketNode('span','market-tag',flag));});return host;}
 function marketDate(value){return value?new Date(value).toLocaleString('zh-CN'):'时间未注明';}
-function marketParams(){var params=new URLSearchParams({page:String(marketPageNumber),grouped:'true',lane:marketLane});[['q','market-q'],['group_id','market-group'],['status','market-status'],['date_from','market-from'],['date_to','market-to'],['min_price','market-min'],['max_price','market-max']].forEach(function(pair){var value=marketN(pair[1]).value;if(value)params.set(pair[0],value);});if(marketN('market-favorites').checked)params.set('favorite','true');return params;}
+function marketParams(){var params=new URLSearchParams({page:String(marketPageNumber),grouped:'true',lane:marketLane,category:marketCategory});[['q','market-q'],['group_id','market-group'],['status','market-status'],['date_from','market-from'],['date_to','market-to'],['min_price','market-min'],['max_price','market-max']].forEach(function(pair){var value=marketN(pair[1]).value;if(value)params.set(pair[0],value);});if(marketN('market-favorites').checked)params.set('favorite','true');return params;}
 function marketSwitchLane(lane){marketLane=lane;marketPageNumber=1;marketClose();marketN('market-list').textContent='';marketLaneTabs(null);return marketLoad();}
-function marketLaneTabs(counts){[['sale','闲置出售'],['want','求购'],['promotion','推广与服务']].forEach(function(pair){var button=marketN('market-lane-'+pair[0]);button.className='market-lane'+(pair[0]===marketLane?' is-active':'');button.setAttribute('aria-pressed',pair[0]===marketLane?'true':'false');button.textContent=pair[1]+(counts&&counts[pair[0]]!==undefined?' '+counts[pair[0]]:'');});marketN('market-lane-note').textContent=marketLane==='promotion'?'疑似推广按发布人收在一起，展开查看每项报价；可直接屏蔽发布人。':marketLane==='want'?'长期求购和重复求购集中展示，展开可核对每次发布。':'重复发布已折叠；打包与同帖清单可就地展开，推广另放在“推广与服务”。';}
+function marketSwitchCategory(category){marketCategory=category;marketPageNumber=1;marketClose();marketN('market-list').textContent='';marketCategoryTabs();marketLaneTabs(null);return marketLoad();}
+function marketCategoryLabel(category){var match=marketCategories.find(function(entry){return entry.id===category;});return match?match.label:category==='all'?'全部商品':'其他与综合';}
+function marketCategoryTabs(categories){if(categories)marketCategories=categories;var host=marketN('market-categories'),focused=document.activeElement&&document.activeElement.dataset.marketCategory;host.textContent='';
+ var total=marketCategories.reduce(function(sum,entry){return sum+entry.count;},0);
+ [{id:'all',label:'全部商品',count:total}].concat(marketCategories).forEach(function(entry){var button=marketButton('',function(){marketSwitchCategory(entry.id);});button.dataset.marketCategory=entry.id;button.className='market-category'+(entry.id===marketCategory?' is-active':'');button.setAttribute('aria-pressed',entry.id===marketCategory?'true':'false');button.appendChild(marketNode('span','market-category-name',entry.label));button.appendChild(marketNode('span','market-category-count',entry.count));host.appendChild(button);if(focused===entry.id)button.focus();});
+ marketN('market-selection-title').textContent=marketCategoryLabel(marketCategory);
+ marketN('market-overview-label').textContent=marketCategoryLabel(marketCategory)+' · 交易概览';
+}
+function marketLaneTabs(counts){[['sale','闲置出售','折叠重复发布'],['want','求购','汇总求购需求'],['promotion','推广与服务','按发布人与分类归拢']].forEach(function(pair){var button=marketN('market-lane-'+pair[0]);button.className='market-lane'+(pair[0]===marketLane?' is-active':'');button.setAttribute('aria-pressed',pair[0]===marketLane?'true':'false');button.textContent='';button.appendChild(marketNode('span','market-lane-label',pair[1]));button.appendChild(marketNode('strong','market-lane-count',counts&&counts[pair[0]]!==undefined?counts[pair[0]]:'—'));button.appendChild(marketNode('span','market-lane-caption',pair[2]));});marketN('market-lane-note').textContent=marketLane==='promotion'?'同一发布人的同类推广收在一张卡片，展开核对各项报价。':marketLane==='want'?'重复求购集中展示，展开可核对持续时间和每次发布。':'重复发布已折叠；打包交易保留整条，展开查看包含的物品。';}
 function marketCardTitle(item){if(item.lane==='promotion')return (item.seller_name||('QQ '+item.seller_qq))+' 的推广与服务';var parts=item.components||[];if(parts.length&&(item.title.length>40||/[\n\r]/.test(item.title)))return parts.slice(0,2).map(function(part){return part.title;}).join('、')+(parts.length>2?'等 '+parts.length+' 件':'');return item.title;}
 function marketPublication(publication){var promise=marketOpen(publication.item_id),token=marketDetailToken;return promise.then(function(){if(token===marketDetailToken&&marketSelected)marketSource(publication,marketN('market-context'));});}
 function marketCard(item){
  var row=marketNode('article','market-item'),heading=marketNode('div','market-item-heading');
+ row.appendChild(marketNode('div','market-item-category',marketCategoryLabel(item.category)));
  var title=marketButton(marketCardTitle(item),function(){marketOpen(item.item_id);});title.className='market-item-title';heading.appendChild(title);
  heading.appendChild(marketNode('span','market-item-price',item.lane==='promotion'?'逐项报价':item.price_text||'价格未注明'));row.appendChild(heading);
  var publications=item.publications||[],count=item.publication_count||item.source_count||1;
@@ -32,8 +41,8 @@ function marketRecent(){marketN('market-from').value='';marketN('market-to').val
 function marketLoad(){var token=++marketListToken,params=marketParams();marketN('market-count').textContent='正在读取交易信息…';
  return api('GET','/api/secondhand?'+params).then(function(data){if(token!==marketListToken)return;
   if(!params.has('date_from'))marketN('market-from').value=data.date_from;if(!params.has('date_to'))marketN('market-to').value=data.date_to;marketPageNumber=data.page;
-  var host=marketN('market-list');host.textContent='';marketLaneTabs(data.lane_counts);marketN('market-count').textContent=data.date_from+' 至 '+data.date_to+' · '+data.total+' 条整理结果';
-  if(!data.items.length)host.appendChild(marketNode('p','market-empty','没有匹配的交易信息。可调整筛选，或点击“更新交易信息”导入本地二手群。'));
+  var host=marketN('market-list');host.textContent='';marketCategoryTabs(data.categories);marketLaneTabs(data.lane_counts);marketN('market-count').textContent=data.date_from+' 至 '+data.date_to+' · '+data.total+' 条整理结果';
+  if(!data.items.length){var empty=marketNode('div','market-empty');empty.appendChild(marketNode('p','','当前分类和筛选下没有交易信息。'));empty.appendChild(marketButton('查看全部分类',function(){marketSwitchCategory('all');}));host.appendChild(empty);}
   data.items.forEach(function(item){host.appendChild(marketCard(item));});
   var pages=Math.max(1,Math.ceil(data.total/data.page_size));marketN('market-pages').hidden=pages<=1;marketN('market-prev').disabled=data.page<=1;marketN('market-next').disabled=data.page>=pages;marketN('market-page-label').textContent=data.page+' / '+pages;
  }).catch(function(error){if(token===marketListToken)marketN('market-count').textContent='读取失败：'+error.message;});}

@@ -9,6 +9,7 @@ from datetime import date, datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 from .secondhand_evidence import digest, qq_number
+from .secondhand_categories import CATEGORY_LABELS, item_category
 
 
 def recent_window(timezone_name='Asia/Shanghai',now=None):
@@ -245,6 +246,7 @@ class SecondhandService:
               'group_count':group_count,'repeat_count':len(rows),'active_days':active_days,'span_days':span_days,
               'behavior_flags':flags,'bundle_count':bundle_count,'components':latest.get('components') or [],
               'favorite':key in favorites,'possible_duplicate':False}
+        item['category']=item_category(item)
         return item
 
     def _feed_groups(self,items,all_rows,start,end,group_id):
@@ -252,7 +254,7 @@ class SecondhandService:
         buckets={}
         for item in items:
             lane='promotion' if '疑似推广' in item['behavior_flags'] else item['direction']
-            identity=[item['seller_qq'],lane]
+            identity=[item['seller_qq'],lane,item['category']]
             if lane!='promotion':identity.extend([normalized(item['title']),item['bundle_mode']])
             if item['seller_qq'] is None or item['original_time_unknown']:identity.append(item['item_id'])
             buckets.setdefault(digest(identity),[]).append((lane,item))
@@ -276,11 +278,12 @@ class SecondhandService:
             counts[lane]+=1;result.append(group)
         return result,counts
 
-    def list_items(self,*,date_from=None,date_to=None,q='',group_id=None,direction='all',status='all',min_price=None,max_price=None,favorite=False,page=1,page_size=30,grouped=False,lane='sale'):
+    def list_items(self,*,date_from=None,date_to=None,q='',group_id=None,direction='all',status='all',min_price=None,max_price=None,favorite=False,page=1,page_size=30,grouped=False,lane='sale',category='all'):
         start,end=date_window(date_from,date_to,self.timezone_name)
         if type(page) is not int or page<1 or type(page_size) is not int or not 1<=page_size<=100:raise ValueError('分页无效')
         if direction not in {'all','sale','want'} or status not in {'all','unknown','sold','fulfilled'}:raise ValueError('筛选无效')
         if grouped and lane not in {'sale','want','promotion'}:raise ValueError('交易分区无效')
+        if category!='all' and category not in CATEGORY_LABELS:raise ValueError('商品分类无效')
         for price in (min_price,max_price):
             if price is not None and (not math.isfinite(price) or price<0):raise ValueError('价格范围无效')
         if min_price is not None and max_price is not None and min_price>max_price:raise ValueError('价格范围无效')
@@ -312,10 +315,13 @@ class SecondhandService:
         lane_counts={};ungrouped_total=len(items)
         if grouped:
             items,lane_counts=self._feed_groups(items,all_rows,start,end,group_id)
+            lane_counts={key:sum(item['lane']==key and (category=='all' or item['category']==category) for item in items) for key in lane_counts}
             items=[item for item in items if item['lane']==lane]
+        categories=[{'id':key,'label':label,'count':sum(item['category']==key for item in items)} for key,label in CATEGORY_LABELS.items()]
+        if category!='all':items=[item for item in items if item['category']==category]
         total=len(items);page=min(page,max(1,(total+page_size-1)//page_size))
         coverage=[dict(row) for row in self.db.execute('SELECT state,count(*) AS count FROM market_scans WHERE group_id IN (SELECT group_id FROM market_groups) GROUP BY state')]
-        return {'items':items[(page-1)*page_size:page*page_size],'total':total,'page':page,'page_size':page_size,'date_from':date_from or recent_window(self.timezone_name)[0],'date_to':date_to or recent_window(self.timezone_name)[1],'coverage':coverage,'grouped':grouped,'lane':lane,'lane_counts':lane_counts,'ungrouped_total':ungrouped_total}
+        return {'items':items[(page-1)*page_size:page*page_size],'total':total,'page':page,'page_size':page_size,'date_from':date_from or recent_window(self.timezone_name)[0],'date_to':date_to or recent_window(self.timezone_name)[1],'coverage':coverage,'grouped':grouped,'lane':lane,'lane_counts':lane_counts,'ungrouped_total':ungrouped_total,'category':category,'categories':categories}
 
     def detail(self,item_id):
         all_rows=self._rows();rows=[row for row in all_rows if row['item_key']==item_id]

@@ -56,3 +56,18 @@ def test_market_grouped_feed_is_opt_in_and_validates_lane(web_client):
     assert data['total']==1 and data['items'][0]['publication_count']==3
     assert data['lane_counts']=={'sale':1,'want':0,'promotion':0}
     assert client.get('/api/secondhand?grouped=true&lane=invalid').status_code==422
+
+
+def test_market_category_filter_and_facets_are_served(web_client):
+    from qq_digest.secondhand import SecondhandService
+    from tests.test_secondhand import message,offer,ingest
+    client,_,_=web_client;client.post('/login',data={'password':'password123'})
+    service=SecondhandService(client.app.state.archive);service.add_groups([123])
+    units=ingest(service,[message(gid=123,mid='a',text='全麦面包'),message(gid=123,mid='b',text='显示器')])
+    service.accept_units(units,{'items':[offer(u,'',u['text']) for u in units]})
+    params='date_from=2026-10-13&date_to=2026-10-19&category=food'
+    for grouped in ['', '&grouped=true']:
+        data=client.get('/api/secondhand?'+params+grouped).json()
+        assert data['total']==1 and data['items'][0]['category']=='food'
+        assert sum(c['count'] for c in data['categories'])==2
+    assert client.get('/api/secondhand?category=invalid').status_code==422

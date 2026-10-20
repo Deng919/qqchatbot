@@ -18,9 +18,9 @@ def test_related_publications_fold_before_pagination_and_keep_member_prices(mark
 
 
 def test_promotion_is_separate_and_folded_by_seller(market):
-    text='88VIP会员权益，支持单独购买\n网易云40元\n芒果年卡35元\n夸克10元'
+    text='88VIP会员权益，支持单独购买\n网易云会员40元\n芒果年卡35元\n夸克会员10元'
     unit=ingest(market,[message(text=text)])[0]
-    rows=[dict(offer(unit,str(price),title=title),condition='',description=part,evidence=part) for title,price,part in [('网易云',40,'网易云40元'),('芒果年卡',35,'芒果年卡35元'),('夸克',10,'夸克10元')]]
+    rows=[dict(offer(unit,str(price),title=title),condition='',description=part,evidence=part) for title,price,part in [('网易云会员',40,'网易云会员40元'),('芒果年卡',35,'芒果年卡35元'),('夸克会员',10,'夸克会员10元')]]
     market.accept_units([unit],{'items':rows})
     normal=feed(market)
     assert normal['total']==0 and normal['lane_counts']['promotion']==1

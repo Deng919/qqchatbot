@@ -12,6 +12,7 @@
     inboxN('inbox-placeholder').hidden=summaryDetailActive||summaryView==='manage'||!!inboxSelectedKey;
     inboxN('inbox-workspace').classList.toggle('inbox-detail-open',summaryDetailActive||inboxMobileOpen);
     inboxN('inbox-workspace').classList.toggle('inbox-manage-open',summaryView==='manage');
+    inboxN('inbox-workspace').classList.toggle('inbox-list-only',!summaryDetailActive&&(summaryView==='groups'||(summaryView==='points'&&!inboxSelectedKey)));
     inboxGroupButtons.forEach(function(entry){entry.button.setAttribute('aria-pressed',String(inboxN('report-group').value===entry.value));});
   }
   function inboxClearSelection(){inboxReadRevision++;inboxSelectedKey=null;inboxItems=[];inboxQuery='';inboxMobileOpen=false;inboxN('inbox-page-query').value='';inboxN('summary-points').textContent='正在读取讨论…';inboxApplyView();}

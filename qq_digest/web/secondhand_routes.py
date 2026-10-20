@@ -61,8 +61,8 @@ def add_secondhand_routes(app,*,archive,config,templates,require_login,operation
     async def listing(date_from:str|None=None,date_to:str|None=None,q:str=Query('',max_length=100),
                       group_id:int|None=Query(None,gt=0,lt=2**63),direction:str='all',status:str='all',
                       min_price:float|None=Query(None,ge=0,le=1e9),max_price:float|None=Query(None,ge=0,le=1e9),
-                      favorite:bool=False,page:int=Query(1,ge=1),page_size:int=Query(30,ge=1,le=100),grouped:bool=False,lane:str='sale'):
-        return execute(lambda:service.list_items(date_from=date_from,date_to=date_to,q=q,group_id=group_id,direction=direction,status=status,min_price=min_price,max_price=max_price,favorite=favorite,page=page,page_size=page_size,grouped=grouped,lane=lane))
+                      favorite:bool=False,page:int=Query(1,ge=1),page_size:int=Query(30,ge=1,le=100),grouped:bool=False,lane:str='sale',category:str='all'):
+        return execute(lambda:service.list_items(date_from=date_from,date_to=date_to,q=q,group_id=group_id,direction=direction,status=status,min_price=min_price,max_price=max_price,favorite=favorite,page=page,page_size=page_size,grouped=grouped,lane=lane,category=category))
 
     @app.get('/api/secondhand/groups',dependencies=[Depends(require_login)])
     async def groups():return {'groups':service.groups()}
