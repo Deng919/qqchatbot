@@ -15,7 +15,7 @@ def test_inbox_home_has_real_list_and_detail_regions(web_client):
     assert 'id="inbox-group-list"' in page
     assert 'id="inbox-point-detail"' in page
     assert 'id="inbox-back"' in page
-    assert '筛选本页讨论' in page
+    assert '筛选本页群聊' in page
     assert 'id="summary-points"' in page
     assert 'id="range-submit-btn"' in page
     assert 'id="report-revisions"' in page

@@ -8,6 +8,7 @@ def initialize(connection):
         CREATE TABLE IF NOT EXISTS market_blocks(
             qq INTEGER PRIMARY KEY CHECK(qq>0), created_at TEXT NOT NULL);
         CREATE TABLE IF NOT EXISTS market_favorites(item_key TEXT PRIMARY KEY);
+        CREATE TABLE IF NOT EXISTS market_dismissed(preference_key TEXT PRIMARY KEY,created_at TEXT NOT NULL);
         CREATE TABLE IF NOT EXISTS market_scans(
             source_key TEXT PRIMARY KEY, group_id INTEGER NOT NULL, msg_id TEXT NOT NULL,
             fingerprint TEXT NOT NULL, state TEXT NOT NULL, note TEXT NOT NULL DEFAULT '', updated_at TEXT NOT NULL,

@@ -30,6 +30,14 @@ def normalized(value):
     return ''.join(c for c in unicodedata.normalize('NFKC',value).casefold() if c.isalnum())
 
 
+def preference_key(item):
+    mode=item.get('bundle_mode','single')
+    name=normalized(item['title']) if mode=='single' else sorted(normalized(part['title']) for part in item.get('components',[])) or identity_body(item.get('bundle_label') or item['title'])
+    identity=[item['seller_qq'],item['direction'],name,mode]
+    if item['seller_qq'] is None or item.get('original_time_unknown'):identity.append(item.get('item_id') or item['item_key'])
+    return digest(identity)
+
+
 def identity_body(value):
     value=re.sub(r'(?:价格|降价|现价|售价|到手价|现|降至|降到|￥|¥)\s*[:：]?\s*\d+(?:\.\d+)?\s*(?:元|块|rmb|r)?','',value,flags=re.I)
     value=re.sub(r'\d+(?:\.\d+)?\s*(?:元|块|rmb)','',value,flags=re.I)
@@ -145,6 +153,23 @@ class SecondhandService:
         with self.archive.transaction():
             if value:self.db.execute('INSERT OR IGNORE INTO market_favorites VALUES(?)',(item_id,))
             else:self.db.execute('DELETE FROM market_favorites WHERE item_key=?',(item_id,))
+
+    def dismiss_items(self,item_ids):
+        if not isinstance(item_ids,list) or not 1<=len(item_ids)<=500:raise ValueError('请选择要隐藏的商品')
+        keys=list(dict.fromkeys(preference_key(self.detail(item_id)['item']) for item_id in item_ids))
+        with self.archive.transaction():
+            self.db.executemany('INSERT OR IGNORE INTO market_dismissed VALUES(?,?)',[(key,datetime.now(timezone.utc).isoformat()) for key in keys])
+        return keys
+
+    def dismissed(self):
+        latest={}
+        for row in self._rows():latest.setdefault(preference_key(row),row)
+        return [{'key':row['preference_key'],'title':(latest.get(row['preference_key'],{}).get('bundle_label') or latest.get(row['preference_key'],{}).get('title') or '原商品已不在当前可见范围'),
+                 'created_at':row['created_at']} for row in self.db.execute('SELECT * FROM market_dismissed ORDER BY created_at DESC')]
+
+    def restore_items(self,keys):
+        if not isinstance(keys,list) or not 1<=len(keys)<=500 or any(not isinstance(key,str) or not re.fullmatch('[0-9a-f]{64}',key) for key in keys):raise ValueError('商品偏好标识无效')
+        with self.archive.transaction():self.db.executemany('DELETE FROM market_dismissed WHERE preference_key=?',[(key,) for key in keys])
 
     def pending_units(self,units):
         return [unit for unit in units if not self.db.execute('SELECT 1 FROM market_scans WHERE source_key=? AND fingerprint=? AND state IN (\'done\',\'forward_unavailable\',\'image_unavailable\')',(unit['key'],unit['fingerprint'])).fetchone()]
@@ -288,7 +313,8 @@ class SecondhandService:
             if price is not None and (not math.isfinite(price) or price<0):raise ValueError('价格范围无效')
         if min_price is not None and max_price is not None and min_price>max_price:raise ValueError('价格范围无效')
         favorites={row[0] for row in self.db.execute('SELECT item_key FROM market_favorites')};clusters={}
-        all_rows=self._rows()
+        dismissed={row[0] for row in self.db.execute('SELECT preference_key FROM market_dismissed')}
+        all_rows=[row for row in self._rows() if preference_key(row) not in dismissed]
         for row in all_rows:clusters.setdefault(row['item_key'],[]).append(row)
         items=[]
         for key,rows in clusters.items():

@@ -66,13 +66,15 @@
     if(!state.from||!state.to||state.from>state.to){host.textContent='请选择完整的日期范围，开始日期不能晚于结束日期。';document.getElementById('summary-reading-pages').hidden=true;return;}
     if(keepScroll)summaryPendingScroll=window.scrollY;
     host.setAttribute('aria-busy','true');
-    var p=new URLSearchParams({date_from:state.from,date_to:state.to,read_filter:state.read,page:String(summaryPointPage)});summaryGroupParams(p,state.group);summaryReportKeyParams(p);if(summarySince)p.set('since',summarySince);
+    if(typeof inboxBeginDashboard==='function')inboxBeginDashboard();
+    var p=new URLSearchParams({date_from:state.from,date_to:state.to,read_filter:state.read,page:String(summaryPointPage),grouped:'true'});summaryGroupParams(p,state.group);summaryReportKeyParams(p);if(summarySince)p.set('since',summarySince);
     api('GET','/api/summary-reading?'+p.toString()).then(function(data){
       if(token!==summaryPointToken||summaryView!=='points')return;
       var last=Math.max(1,Math.ceil(data.total/data.page_size));if(summaryPointPage>last){summaryPointPage=last;return summaryLoadPoints(keepScroll);}
-      host.textContent='';document.getElementById('summary-reading-count').textContent='当前筛选 '+data.total+' 条要点 · 此日期和群范围有 '+data.unread+' 条未读';
+      host.textContent='';document.getElementById('summary-reading-count').textContent=data.grouped?'当前筛选 '+data.total+' 个群 · '+data.point_total+' 条要点 · 点击群卡片展开':'当前筛选 '+data.total+' 条要点 · 此日期和群范围有 '+data.unread+' 条未读';
       var warning=document.getElementById('summary-reading-warning');warning.hidden=!data.skipped_reports;warning.textContent=data.skipped_reports+' 份摘要文件缺失或无法读取，未纳入阅读。';
       document.getElementById('summary-reading-note').textContent=state.read==='new'?(summarySince?'上次打开（'+new Date(summarySince).toLocaleString('zh-CN')+'）后新增或更新的要点；与未读无关。':'首次打开，范围内要点均视为新增。'):'多日摘要需完整落在所选日期内。';
+      if(data.grouped&&typeof inboxRenderDashboard==='function'){inboxRenderDashboard(data);summaryPages(data);summarySave();summaryRestoreScroll();return;}
       if(typeof inboxRenderPoints==='function'){inboxRenderPoints(data.items);summaryPages(data);summarySave();summaryRestoreScroll();return;}
       if(!data.items.length)summaryEmpty(host,state.read!=='all');
       data.items.forEach(function(item){

@@ -15,6 +15,7 @@ const findNode=(n,predicate)=>predicate(n)?n:(n.children||[]).map(child=>findNod
  const history=findNode(node('market-list'),n=>n.className==='market-history');assert.ok(history,'repeat publications are an inline disclosure, not badges');
  assert.match(allText(history),/first original/);assert.match(allText(history),/700元/);
  assert.ok(findNode(node('market-list'),n=>n.textContent==='屏蔽此人'),'block action belongs on the card');
+ assert.ok(findNode(node('market-list'),n=>n.textContent==='不感兴趣'),'per-product dismissal belongs on the card');
  const bundle=findNode(node('market-list'),n=>n.className==='market-bundle');assert.ok(bundle,'bundle components expand inside list');
  const length=node('market-list').children.length;old.resolve({items:[item('a','旧商品')],total:1,page:1,page_size:30,coverage:[]});await settle();assert.equal(node('market-list').children.length,length,'old list cannot append stale results');
  marketOpen('a');const detail=requests.at(-1);marketClose();detail.resolve({item:item('a','旧商品'),sources:[]});await settle();assert.notEqual(node('market-title').textContent,'旧商品','closed detail ignores late response');

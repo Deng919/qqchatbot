@@ -54,7 +54,7 @@ class CatchupService:
                    date_to: str | None = None, group_id: int | None = None,
                    read_filter: str = "all", include_ranges: bool = False,
                    group_ids: list[int] | None = None,
-                   report_keys: list[str] | None = None) -> dict:
+                   report_keys: list[str] | None = None,grouped: bool = False) -> dict:
         if scope not in {"since", "today", "week", "custom"}:
             raise ValueError("补看范围无效")
         if read_filter not in {"all", "unread", "new"}:
@@ -202,6 +202,14 @@ class CatchupService:
             items = [item for item in items if not item["read"]]
         elif read_filter == "new":
             items = [item for item in items if item["new"]]
+        point_total=len(items)
+        if grouped:
+            groups={}
+            for item in items:
+                group=groups.setdefault(item['group_id'],{'group_id':item['group_id'],'group_name':item['group_name'],'total':0,'unread':0,'latest_date':item['report_date'],'preview':[],'reports':set()})
+                group['total']+=1;group['unread']+=int(not item['read']);group['reports'].add((item['report_kind'],item['report_id']))
+                if len(group['preview'])<3:group['preview'].append(item['text'])
+            items=[{key:value for key,value in group.items() if key!='reports'}|{'report_count':len(group['reports'])} for group in groups.values()]
         total = len(items)
         return {
             "items": items[(page - 1) * page_size:page * page_size],
@@ -211,6 +219,7 @@ class CatchupService:
             "page": page,
             "page_size": page_size,
             "skipped_reports": skipped_reports,
+            **({'grouped':True,'point_total':point_total} if grouped else {}),
         }
 
     def set_read(self, item_key: str, read: bool, *, now: datetime | None = None) -> None:

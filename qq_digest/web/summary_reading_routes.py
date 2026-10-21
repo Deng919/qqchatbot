@@ -36,6 +36,7 @@ def add_summary_reading_routes(app, *, archive, config, require_login):
         since: str | None = None, page: int = Query(1, ge=1),
         page_size: int = Query(30, ge=1, le=100),
         report_keys: list[str] | None = Query(None),
+        grouped: bool = False,
     ):
         try:
             return await asyncio.to_thread(
@@ -43,7 +44,7 @@ def add_summary_reading_routes(app, *, archive, config, require_login):
                 group_id=group_id, read_filter=read_filter, since=since,
                 page=page, page_size=page_size,
                 include_ranges=True,group_ids=group_ids,
-                report_keys=report_keys,
+                report_keys=report_keys,grouped=grouped,
             )
         except ValueError as exc:
             raise HTTPException(422, detail=str(exc)) from exc

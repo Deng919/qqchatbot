@@ -153,4 +153,41 @@
     .inbox-row-title { font-size:14px; }
     .inbox-row-preview { font-size:12px; }
   }
+  .inbox-dashboard-mode { grid-template-columns:minmax(0,1fr); }
+  .inbox-dashboard-mode .inbox-list-column { border:0;padding:25px 30px 40px; }
+  .inbox-dashboard-mode .inbox-reading-column { display:none; }
+  .inbox-dashboard-mode.inbox-dashboard-detail .inbox-list-column { display:none; }
+  .inbox-dashboard-mode.inbox-dashboard-detail .inbox-reading-column { display:block; }
+  .inbox-dashboard-mode #inbox-back { display:inline-flex; }
+  .inbox-dashboard-mode #summary-reading-count { padding:0;margin:0 0 16px;font-size:12px; }
+  .summary-dashboard-overview { display:flex;gap:32px;flex-wrap:wrap;margin:0 0 28px;padding:0 0 22px;border-bottom:1px solid var(--border); }
+  .summary-dashboard-metric { display:flex;gap:10px;align-items:baseline; }
+  .summary-dashboard-metric strong { font-size:29px;font-weight:600;font-variant-numeric:tabular-nums;letter-spacing:-1px; }
+  .summary-dashboard-metric span { color:var(--text-soft);font-size:12px; }
+  .summary-dashboard-grid { display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,280px),1fr));gap:28px 22px;padding-bottom:18px;align-items:start; }
+  .summary-group-stack { position:relative;min-width:0;isolation:isolate;border:1px solid var(--border);border-radius:16px;background:var(--surface,#fff); }
+  .summary-group-stack:not([open])::before,.summary-group-stack:not([open])::after { content:'';position:absolute;inset:10px 6px -7px;border:1px solid var(--border);border-radius:16px;background:#f3f6fa;z-index:-1;pointer-events:none; }
+  .summary-group-stack:not([open])::before { inset:18px 12px -13px;background:#eaf0f6; }
+  .summary-group-cover { list-style:none;cursor:pointer;padding:24px;min-height:240px;border-radius:16px;background:var(--surface,#fff);display:flex;flex-direction:column; }
+  .summary-group-cover::-webkit-details-marker { display:none; }
+  .summary-group-cover:hover { background:#f8fafd; }
+  .summary-group-cover:focus-visible { outline:2px solid var(--primary);outline-offset:4px; }
+  .summary-group-meta { display:flex;align-items:center;justify-content:space-between;gap:10px;color:var(--text-soft);font-size:11px; }
+  .summary-group-icon { display:grid;place-items:center;width:32px;height:32px;flex-shrink:0;background:var(--primary-soft);border-radius:9px;color:var(--primary-dark);font-size:12px; }
+  .summary-group-title { margin:18px 0 10px;font-size:20px;line-height:1.5;font-weight:650;overflow-wrap:anywhere; }
+  .summary-group-preview { margin:0 0 22px;font-size:13px;line-height:1.8;color:var(--text-soft);display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;overflow-wrap:anywhere; }
+  .summary-group-footer { margin-top:auto;display:flex;justify-content:space-between;align-items:center;gap:12px;color:var(--text-dim);font-size:11px; }
+  .summary-group-toggle { color:var(--primary-dark);white-space:nowrap; }
+  .summary-group-stack[open] { grid-column:1/-1;border-color:var(--border-strong,var(--border)); }
+  .summary-group-stack[open] .summary-group-cover { min-height:0; }
+  .summary-group-stack[open] .summary-group-preview { margin-bottom:14px; }
+  .summary-group-content { min-width:0;padding:0 20px 22px; }
+  .summary-group-points { display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,300px),1fr));gap:12px; }
+  .summary-group-points .inbox-row { border:1px solid var(--border);border-radius:10px;padding:18px;text-align:left; }
+  .summary-group-points .inbox-row-title { font-size:16px; }
+  .summary-group-points .inbox-row-preview { -webkit-line-clamp:3; }
+  .summary-group-more { margin-top:18px; }
+  .summary-group-load-status,.summary-dashboard-no-match { font-size:13px;color:var(--text-soft);padding:12px 0; }
+  @media(max-width:600px) { .inbox-dashboard-mode .inbox-list-column { padding:20px 18px 32px; }.summary-dashboard-overview { gap:16px 22px; }.summary-dashboard-metric strong { font-size:24px; }.summary-group-cover { padding:20px;min-height:220px; }.summary-group-content { padding:0 12px 16px; }.summary-group-points { grid-template-columns:minmax(0,1fr); } }
+  @media(prefers-reduced-motion:no-preference) { .summary-group-cover { transition:background .16s; }.summary-group-stack[open] .summary-group-content { animation:summary-deck-reveal .18s ease-out; }@keyframes summary-deck-reveal { from { opacity:0;transform:translateY(-5px); }to { opacity:1;transform:translateY(0); } } }
 </style>

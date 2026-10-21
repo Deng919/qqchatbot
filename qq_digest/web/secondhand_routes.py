@@ -25,6 +25,16 @@ class Block(BaseModel):
     qq:StrictInt=Field(gt=0,lt=2**63)
 
 
+class Dismiss(BaseModel):
+    model_config={'extra':'forbid'}
+    item_ids:list[str]=Field(min_length=1,max_length=500)
+
+
+class RestoreInterest(BaseModel):
+    model_config={'extra':'forbid'}
+    keys:list[str]=Field(min_length=1,max_length=500)
+
+
 class Refresh(BaseModel):
     model_config={'extra':'forbid'}
     date_from:str|None=Field(default=None,max_length=10)
@@ -66,6 +76,15 @@ def add_secondhand_routes(app,*,archive,config,templates,require_login,operation
 
     @app.get('/api/secondhand/groups',dependencies=[Depends(require_login)])
     async def groups():return {'groups':service.groups()}
+
+    @app.post('/api/secondhand/dismiss',dependencies=[Depends(require_login)])
+    async def dismiss(payload:Dismiss):return execute(lambda:{'keys':service.dismiss_items(payload.item_ids)},True)
+
+    @app.get('/api/secondhand/dismissed',dependencies=[Depends(require_login)])
+    async def dismissed():return {'items':service.dismissed()}
+
+    @app.post('/api/secondhand/dismissed/restore',dependencies=[Depends(require_login)])
+    async def restore_interest(payload:RestoreInterest):return execute(lambda:(service.restore_items(payload.keys),{'ok':True})[1],True)
 
     @app.get('/api/secondhand/blocks',dependencies=[Depends(require_login)])
     async def blocks():return {'items':service.blocked()}
