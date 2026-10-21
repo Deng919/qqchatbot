@@ -90,7 +90,7 @@ class AttachmentService:
         else:
             if self.config is None:raise ValueError('请配置 DeepSeek API')
             selected = getattr(self.config.ai, 'connection_for', lambda _purpose: None)('vision')
-            if selected is not None:
+            if selected is not None or getattr(self.config.ai,'provider_priority',[])[:1]==['chatgpt_bridge']:
                 from .ai.factory import build_ai_client
                 client=build_ai_client(self.config, purpose='vision')
             else:
@@ -189,8 +189,8 @@ class AttachmentService:
                 except AILimitExceeded as exc:status='budget_paused';error=str(exc)
                 except FileNotFoundError:status='missing';error='请先在 QQ 下载附件，再重读'
                 except NotImplementedError:status='unsupported';error='暂不支持此格式'
-                except ValueError as exc:status='error';error=str(exc) if str(exc) in ('附件与原消息不匹配','无法核实附件来源','附件超过 16 MB','图片尺寸超限','文件需要密码') else '附件不可读，请检查来源或 DeepSeek 设置后重读'
-                except Exception:status='error';error='读取失败，请检查附件或 DeepSeek 设置后重读'
+                except ValueError as exc:status='error';error=str(exc) if str(exc) in ('附件与原消息不匹配','无法核实附件来源','附件超过 16 MB','图片尺寸超限','文件需要密码') else '附件不可读，请检查来源或图片 AI 连接后重读'
+                except Exception:status='error';error='读取失败，请检查附件或图片 AI 连接后重读'
                 with self.archive.transaction():
                     self.archive.connection.execute('''INSERT INTO message_attachments(group_id,msg_id,attachment_key,kind,name,source_md5,version,status,text,error,updated_at)
                         VALUES(?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(group_id,msg_id,attachment_key) DO UPDATE SET kind=excluded.kind,name=excluded.name,

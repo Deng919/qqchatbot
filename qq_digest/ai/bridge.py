@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import os
+import shutil
 import subprocess
 import tempfile
 from pathlib import Path
@@ -73,6 +75,8 @@ class BridgeAIClient:
         self.request_directory = Path(request_directory) if request_directory else None
 
     def chat(self, messages: list[dict[str, str]]) -> dict[str, Any]:
+        if any(isinstance(message.get('content'),list) for message in messages):
+            return self._chat_images(messages)
         request_path: Path | None = None
         try:
             request = {"messages": messages}
@@ -152,6 +156,47 @@ class BridgeAIClient:
 
     def close(self) -> None:
         return None
+
+    def _chat_images(self, messages) -> dict[str, Any]:
+        """Use the installed pool's multimodal entry, retaining its account lock/cleanup."""
+        wrapper=self.wrapper_path.with_name('invoke-pool-mcp.ps1')
+        local=Path(os.environ.get('LOCALAPPDATA',''))
+        cli=local/'gpttoimage/chatgpt-bridge/node_modules/chatgpt-bridge/dist/cli.js'
+        node=shutil.which('node')
+        if not wrapper.is_file() or not cli.is_file() or not node:
+            raise AIError('本地桥接多模态入口不可用，请更新桥接或配置图片 AI 连接')
+        prompt=[];system=[];images=[]
+        for message in messages:
+            text=[];content=message.get('content')
+            if isinstance(content,str):text.append(content)
+            elif isinstance(content,list):
+                for block in content:
+                    if block.get('type')=='text':text.append(block.get('text',''))
+                    elif block.get('type')=='image_url':
+                        url=block.get('image_url',{}).get('url','')
+                        if not url.startswith(('data:image/png;base64,','data:image/jpeg;base64,','data:image/webp;base64,','data:image/gif;base64,')):
+                            raise AIError('多模态桥接只接收经过核实的内嵌图片')
+                        images.append(url)
+                    else:raise AIError('多模态桥接不支持此内容格式')
+            else:raise AIError('多模态消息格式无效')
+            (system if message.get('role') in ('system','developer') else prompt).extend(text)
+        arguments={'prompt':'\n\n'.join(prompt),'attachments':images}
+        if system:arguments['system']='\n\n'.join(system)
+        if self.model:arguments['model']=self.model
+        command=['powershell','-NoProfile','-ExecutionPolicy','Bypass','-File',str(wrapper),
+                 '-AccountDirectory',str(self.account_directory),'-NodePath',node,'-BridgeCliPath',str(cli)]
+        if self.request_directory:command+=['-RuntimeRoot',str(self.request_directory/'bridge-vision-runtime')]
+        try:
+            result=self._runner(command,input=json.dumps({'name':'chat','arguments':arguments},ensure_ascii=False).encode('utf-8'),
+                check=False,capture_output=True,text=False,timeout=self.timeout_seconds,
+                creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0))
+            if result.returncode:raise AIError('本地图片识别桥接调用失败')
+            payload=json.loads(_decode_process_output(result.stdout))
+            if payload.get('isError'):raise AIError('本地图片识别失败，请检查桥接登录和图片 AI 连接')
+            content='\n'.join(b['text'] for b in payload['content'] if b.get('type')=='text')
+            return _parse_json_content(content)
+        except subprocess.TimeoutExpired as exc:raise AIError('本地图片识别超时，请稍后重试') from exc
+        except (OSError,ValueError,KeyError,TypeError) as exc:raise AIError('本地图片识别桥接返回无效结果') from exc
 
 
 class FallbackAIClient:

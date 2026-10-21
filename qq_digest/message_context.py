@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from .archive import Archive
 from .sender_identity import sender_fields
+from .message_images import message_images
 
 
 def message_context(archive: Archive, group_id: int, anchor_id: str, *,
@@ -43,6 +44,13 @@ def message_context(archive: Archive, group_id: int, anchor_id: str, *,
         edge = lookup(cursor)
         rows = adjacent(edge, direction, 20)
     first, last = (rows[0], rows[-1]) if rows else (edge, edge)
-    return {'messages': [{**{key:row[key] for key in row.keys() if key!='content_json'},**sender_fields(row)} for row in rows], 'first_id': first['msg_id'],
+    def serialize(row):
+        result={**{key:row[key] for key in row.keys() if key!='content_json'},**sender_fields(row)}
+        try:images=message_images(archive,group_id,row['msg_id'])
+        except LookupError:images={'items':[],'enabled':False,'read_images':False}
+        result.update(images=images['items'],images_enabled=images['enabled'],read_images=images['read_images'])
+        if images.get('source_incomplete'):result['image_source_incomplete']=True
+        return result
+    return {'messages': [serialize(row) for row in rows], 'first_id': first['msg_id'],
             'last_id': last['msg_id'], 'has_before': bool(adjacent(first, 'before', 1)),
             'has_after': bool(adjacent(last, 'after', 1)), 'anchor_id': anchor_id}
