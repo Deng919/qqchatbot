@@ -1,0 +1,44 @@
+// Missing decoration, stale accessible labels or clipped tooltips must fail this test.
+const { chromium } = require('playwright');
+const fs = require('node:fs'), assert = require('node:assert/strict');
+(async () => {
+  const browser = await chromium.launch({headless:true});
+  try {
+    const page = await browser.newPage({viewport:{width:1100,height:700}}), errors=[];
+    page.on('pageerror', error => errors.push(error.message));
+    const fragment='qq_digest/web/templates/action_icons.html';
+    await page.setContent('<style>.btn{padding:8px;font-size:14px} #clip{overflow:hidden;width:180px;height:90px;margin:0} button{cursor:pointer}</style><div id="clip"><button id="save" type="button" class="btn">收藏</button><button id="read" type="button" class="btn">标为已读</button></div><button class="btn" id="main">生成摘要</button><button class="btn" id="submit" type="submit">删除</button><button class="btn" id="page">下一页</button><dialog><button class="btn" type="button" id="block">屏蔽此人</button></dialog>'+(fs.existsSync(fragment)?fs.readFileSync(fragment,'utf8'):''));
+    const save=page.locator('#save');
+    await page.waitForTimeout(50);
+    assert.equal(await save.getAttribute('aria-label'),'收藏','icon actions need an accessible operation name');
+    assert.equal(await save.evaluate(n=>getComputedStyle(n).fontSize),'0px');
+    for(const id of ['main','submit','page'])assert.equal(await page.locator('#'+id).getAttribute('data-action-icon'),null,'primary and navigation controls retain text');
+    await save.hover();const tip=page.getByRole('tooltip');await tip.waitFor({state:'visible'});assert.equal(await tip.textContent(),'收藏');
+    assert.ok((await tip.boundingBox()).y>=0,'tooltip stays inside the viewport even at the top edge');
+    await page.keyboard.press('Escape');await tip.waitFor({state:'hidden'});
+    await page.mouse.move(800,600);await page.locator('#read').focus();await tip.waitFor({state:'visible'});assert.equal(await tip.textContent(),'标为已读');
+    await page.evaluate(()=>{document.querySelector('#save').onclick=function(){this.textContent='取消收藏';};});await save.click();
+    await page.waitForFunction(()=>document.querySelector('#save').getAttribute('aria-label')==='取消收藏');
+    assert.equal(await save.textContent(),'取消收藏','decoration does not replace the business content or click handler');
+    await page.evaluate(()=>{const b=document.createElement('button');b.type='button';b.className='btn btn-sm';b.textContent='编辑';b.id='dynamic';document.body.appendChild(b);});
+    await page.waitForFunction(()=>document.querySelector('#dynamic').getAttribute('aria-label')==='编辑');
+    await page.evaluate(()=>{const recent=document.createElement('div');recent.id='find-recent';['删除','收藏','constructor','toString'].forEach(label=>{const b=document.createElement('button');b.type='button';b.className='btn';b.textContent=label;recent.appendChild(b);});document.body.appendChild(recent);});
+    await page.waitForTimeout(50);
+    assert.equal(await page.locator('#find-recent [data-action-icon]').count(),0,'recent search queries stay readable even when they match action names');
+    await page.evaluate(()=>{const suggestions=document.createElement('div');suggestions.id='topics-suggestions';const b=document.createElement('button');b.type='button';b.className='btn';b.textContent='收藏';suggestions.appendChild(b);document.body.appendChild(suggestions);});
+    await page.waitForTimeout(50);assert.equal(await page.locator('#topics-suggestions [data-action-icon]').count(),0,'destination topic titles remain visible');
+    await page.evaluate(()=>{const b=document.createElement('button');b.type='button';b.className='btn';b.id='unknown';b.textContent='constructor';document.body.appendChild(b);});
+    await page.waitForTimeout(50);assert.equal(await page.locator('#unknown').getAttribute('data-action-icon'),null,'inherited object keys are not actions');
+    await page.evaluate(()=>document.querySelector('dialog').showModal());await page.locator('#block').hover();await tip.waitFor({state:'visible'});assert.equal(await tip.textContent(),'屏蔽此人');
+    assert.equal(await tip.evaluate(n=>n.matches(':popover-open')),true,'tooltips must escape modal and card clipping');
+    await page.locator('#block').evaluate(n=>n.disabled=true);await tip.waitFor({state:'hidden'});
+    await page.evaluate(()=>document.querySelector('dialog').close());
+    const touch=await browser.newContext({viewport:{width:320,height:650},isMobile:true,hasTouch:true});const phone=await touch.newPage();
+    await phone.setContent(await page.content());
+    const mobile=phone.locator('#save');await mobile.waitFor();
+    assert.equal(await mobile.evaluate(n=>getComputedStyle(n,'::after').content),'"取消收藏"','touch devices have visible action captions');
+    const bounds=await mobile.boundingBox();assert.ok(bounds.width>=44&&bounds.height>=44,'touch target remains large enough');
+    assert.equal(await phone.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
+    assert.deepEqual(errors,[]);console.log('Icon action hover, focus, labels, dynamic updates, modal clipping and touch targets verified');
+  } finally { await browser.close(); }
+})().catch(error=>{console.error(error);process.exitCode=1;});

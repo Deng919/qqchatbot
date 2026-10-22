@@ -1,0 +1,84 @@
+<style>
+  .btn.btn[data-action-icon] { display:inline-flex!important; flex-direction:column; align-items:center; justify-content:center; vertical-align:middle; flex-shrink:0; width:42px; min-width:42px; min-height:42px; padding:0!important; gap:0; font-size:0!important; line-height:1; border:1px solid transparent; border-radius:10px; background:var(--surface-subtle,#f2f5f9); color:var(--text-soft,#687c94); }
+  .btn.btn[data-action-icon]::before { content:''; display:block; width:19px; height:19px; background:currentColor; mask:var(--action-icon) center/contain no-repeat; -webkit-mask:var(--action-icon) center/contain no-repeat; }
+  .btn.btn[data-action-icon]:hover { color:var(--primary,#4b6f97); border-color:var(--primary-border,#c9d9ec); background:var(--primary-soft,#eaf1fb); }
+  .btn.btn[data-action-icon]:focus-visible { outline:2px solid var(--primary,#4b6f97); outline-offset:3px; }
+  .btn.btn[data-action-tone="danger"]:hover { color:#a34444; background:#faeded; border-color:#e9c9c9; }
+  .btn.btn[data-action-active="true"] { color:var(--primary,#4b6f97); background:var(--primary-soft,#eaf1fb); }
+  .btn.btn[data-action-icon]:disabled { opacity:.55; cursor:default; }
+  #action-icon-tooltip { position:fixed; inset:auto; margin:0; max-width:min(320px,calc(100vw - 16px)); padding:8px 11px; border:0; border-radius:7px; background:#304259; color:#fff; font:12px/1.5 sans-serif; overflow-wrap:anywhere; pointer-events:none; box-shadow:0 4px 14px #152b4520; }
+  @media (hover:none), (pointer:coarse), (max-width:600px) {
+    .btn.btn[data-action-icon] { width:auto; min-width:56px; min-height:60px; padding:8px!important; gap:6px; }
+    .btn.btn[data-action-icon]::after { content:attr(data-action-caption); max-width:84px; white-space:normal; font-size:11px; line-height:1.3; }
+  }
+</style>
+<script>
+(function(){
+  // Presentation only: original text, handlers, URLs and disabled states stay owned by each page.
+  var paths={
+    eye:'<path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/>',
+    hide:'<path d="m3 3 18 18M10.6 5.1 12 5c6.5 0 10 7 10 7a20 20 0 0 1-3.1 4.2M6.2 6.2A22 22 0 0 0 2 12s3.5 7 10 7a10 10 0 0 0 5.8-1.8M10 10a3 3 0 0 0 4 4"/>',
+    star:'<path d="m12 3 2.8 5.7 6.3.9-4.6 4.4 1.1 6.3-5.6-3-5.6 3 1.1-6.3L2.9 9.6l6.3-.9Z"/>',
+    check:'<path d="m5 12 4 4L19 6"/><path d="M20 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h7"/>',
+    unread:'<rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 6 9 7 9-7"/>',
+    block:'<circle cx="9" cy="7" r="3"/><path d="M3 21v-3a6 6 0 0 1 11-3m3-5 5 5m0-5-5 5"/>',
+    restore:'<path d="M3 10a9 9 0 1 1 2 9M3 4v6h6"/>',
+    edit:'<path d="m14 5 5 5M4 20l5-1L21 7a2 2 0 0 0-5-5L4 14Z"/>',
+    trash:'<path d="M3 6h18M9 6V3h6v3m-10 0 1 15h12l1-15M10 10v7m4-7v7"/>',
+    close:'<path d="m6 6 12 12M6 18 18 6"/>',
+    book:'<path d="M4 3h12a2 2 0 0 1 2 2v16H6a3 3 0 0 1-3-3V6a3 3 0 0 1 3-3Zm0 14h14M7 7h7m-7 4h7"/>',
+    link:'<path d="m10 13 4-4m-6 6-1 1a4 4 0 0 1-6-6l4-4a4 4 0 0 1 6 0m2 3 1-1a4 4 0 0 1 6 6l-4 4a4 4 0 0 1-6 0"/>',
+    task:'<rect x="4" y="4" width="16" height="17" rx="2"/><path d="M9 4V2h6v2m-7 9 3 3 5-6"/>',
+    archive:'<path d="M4 7h16v14H4ZM3 3h18v4H3Zm6 9h6"/>'
+  };
+  var names=Object.create(null);
+  function group(icon,caption,labels,tone){labels.split('|').forEach(function(label){names[label]={icon:icon,caption:caption,tone:tone||''};});}
+  group('star','收藏','收藏');group('star','已收藏','已收藏');
+  group('eye','详情','查看详情|详情|查看|打开收藏|查看知识|查看资源记录');
+  group('eye','原消息','查看原消息|查看原文|查看这次原文|查看原消息与图片|查看来源|关联的消息');
+  group('book','摘要','完整摘要|打开摘要|打开当前摘要');
+  group('link','原内容','打开原内容|打开资源');
+  group('hide','不感兴趣','不感兴趣|对此商品不感兴趣|忽略');
+  group('block','屏蔽','屏蔽此人|屏蔽原发布人','danger');
+  group('restore','恢复','恢复显示|解除屏蔽|撤销|重新跟踪|恢复审核');
+  group('check','已读','标为已读');group('unread','未读','标为未读');
+  group('check','完成','完成|标为完成');group('restore','重新打开','重新打开');
+  group('edit','编辑','编辑|更名');group('trash','删除','删除|取消收藏|删除规则','danger');
+  // Removing a bookmark uses the same star as adding it, with the active state shown in blue.
+  names['取消收藏']={icon:'star',caption:'取消收藏',tone:''};
+  group('close','关闭','关闭');group('book','保存知识','保存到知识库');group('task','待办','加入待办');
+  group('archive','归档','归档话题');group('restore','重试','重试|重试读取');
+  var selector='button.btn,a.btn',tip=null,active=null;
+  function hide(){if(tip&&tip.matches(':popover-open'))tip.hidePopover();active=null;}
+  function decorate(button){
+    var label=button.textContent.trim(),entry=names[label];
+    if(!entry&&/^(?:查看原消息|原消息|来源) \d+$/.test(label))entry={icon:'eye',caption:label,tone:''};
+    if(!entry&&/^屏蔽(?:原发布人|转发人) \d+$/.test(label))entry={icon:'block',caption:label.startsWith('屏蔽转发人')?'屏蔽转发人':'屏蔽发布人',tone:'danger'};
+    if(button.closest('#find-recent,#topics-suggestions')||button.getAttribute('type')==='submit'||(button.form&&button.type==='submit')||button.classList.contains('btn-primary'))entry=null;
+    if(!entry){if(button.dataset.actionIcon){delete button.dataset.actionIcon;delete button.dataset.actionCaption;delete button.dataset.actionTone;delete button.dataset.actionActive;button.style.removeProperty('--action-icon');if(button.dataset.actionOriginalLabel)button.setAttribute('aria-label',button.dataset.actionOriginalLabel);else button.removeAttribute('aria-label');}return;}
+    if(!button.dataset.actionIcon&&button.hasAttribute('aria-label'))button.dataset.actionOriginalLabel=button.getAttribute('aria-label');
+    button.dataset.actionIcon=entry.icon;button.dataset.actionCaption=entry.caption;button.dataset.actionTone=entry.tone;
+    button.dataset.actionActive=String(label==='已收藏'||label==='取消收藏');
+    button.setAttribute('aria-label',button.dataset.actionOriginalLabel||label);
+    button.style.setProperty('--action-icon','url("data:image/svg+xml,'+encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="black" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">'+paths[entry.icon]+'</svg>')+'")');
+    if(active===button){if(button.disabled||!button.getClientRects().length)hide();else tip.textContent=button.getAttribute('aria-label');}
+  }
+  function refresh(root){if(root.nodeType!==1)return;if(root.matches(selector))decorate(root);root.querySelectorAll(selector).forEach(decorate);}
+  function show(button){
+    if(!button||button.disabled||!button.dataset.actionIcon)return;
+    if(!tip){tip=document.createElement('div');tip.id='action-icon-tooltip';tip.setAttribute('role','tooltip');tip.setAttribute('popover','manual');document.body.appendChild(tip);}
+    active=button;tip.textContent=button.getAttribute('aria-label');tip.showPopover();
+    var rect=button.getBoundingClientRect(),box=tip.getBoundingClientRect();
+    tip.style.left=Math.max(8,Math.min(innerWidth-box.width-8,rect.left+(rect.width-box.width)/2))+'px';
+    tip.style.top=(rect.top>=box.height+12?rect.top-box.height-8:Math.min(innerHeight-box.height-8,rect.bottom+8))+'px';
+  }
+  document.addEventListener('pointerover',function(e){if(e.pointerType==='touch')return;var button=e.target.closest(selector);if(button&&!button.contains(e.relatedTarget))show(button);});
+  document.addEventListener('pointerout',function(e){if(active&&active.contains(e.target)&&!active.contains(e.relatedTarget))hide();});
+  document.addEventListener('focusin',function(e){show(e.target.closest(selector));});
+  document.addEventListener('focusout',hide);document.addEventListener('click',hide);
+  document.addEventListener('keydown',function(e){if(e.key==='Escape')hide();});
+  document.addEventListener('scroll',hide,true);window.addEventListener('resize',hide);
+  new MutationObserver(function(changes){var roots=new Set();changes.forEach(function(change){roots.add(change.target.nodeType===3?change.target.parentElement:change.target);});roots.forEach(refresh);if(active&&(!active.isConnected||!active.getClientRects().length))hide();}).observe(document.body,{childList:true,characterData:true,subtree:true,attributes:true,attributeFilter:['disabled','hidden','open']});
+  refresh(document.body);
+})();
+</script>
