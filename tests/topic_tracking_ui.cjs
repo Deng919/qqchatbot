@@ -25,5 +25,9 @@ const topic=id=>({topic_id:id,title:'项目 '+id,status:'tracking',revision:1,di
  scope.topicsCloseEdit();scope.topicsOpenEdit('merge');requests.shift().resolve({topics:[topic(1)],page:1,page_size:100,total:1});await tick();
  const lookup=scope.topicsTargets(1),search=requests.shift();search.reject(Error('查找失败'));await lookup;
  scope.topicsSubmit({preventDefault(){}});assert.equal(requests.length,0,'Failed target lookup cannot submit a stale selection with Enter');
+ scope.topicsCloseEdit();scope.topicsOpenEdit('move',{discussion_id:7,title:'讨论',revision:0});const targets=requests.shift(),suggestions=requests.shift();
+ targets.reject(Error('目标列表失败'));suggestions.resolve({suggestions:[topic(1)]});await tick();
+ get('topics-suggestions').children[0].onclick();assert.equal(get('topics-target').disabled,false,'a valid suggested target works after list loading fails');assert.equal(get('topics-edit-submit').disabled,false);
+ const moving=scope.topicsSubmit({preventDefault(){}});assert.equal(requests[0].body.target_topic_id,1);requests.shift().reject(Error('offline'));await moving;
  console.log('Topic delayed navigation, duplicate submit, failed edits, close while saving, target lookup and refresh retention verified');
 })().catch(e=>{console.error(e);process.exitCode=1;});

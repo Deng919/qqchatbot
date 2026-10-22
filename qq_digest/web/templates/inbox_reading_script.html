@@ -37,7 +37,7 @@
       api('POST','/api/summary-reading/read',{key:item.key,read:nextRead}).then(function(){
         if(revision!==inboxReadRevision)return;
         item.read=nextRead;var currentItem=inboxItems.find(function(point){return point.key===item.key;});if(currentItem)currentItem.read=nextRead;
-        if(inboxSelectedKey===item.key){if(inboxDashboardActive)inboxSelectPoint(item.key,false);summaryLoadPoints(true);}
+        if(inboxSelectedKey===item.key){inboxSelectPoint(item.key,false);summaryLoadPoints(true);}
       }).catch(function(e){read.disabled=false;summaryShowResult('已读状态保存失败：'+e.message,'failed');});
     });actions.appendChild(read);
     inboxRenderRows();inboxApplyView();if(explicit){var mobile=inboxMobile();inboxN('inbox-detail-title').focus({preventScroll:!mobile});if(!mobile)inboxN('inbox-point-detail').parentElement.scrollTop=0;}

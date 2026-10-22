@@ -41,5 +41,8 @@ const settle=()=>new Promise(setImmediate);
  node('report-group').value='__empty__';inboxRenderGroups([{group_id:11,name:'群 <img>',enabled:true}]);
  assert.equal(node('report-group').value,'__empty__','group options do not expand explicit empty scope');
  node('inbox-group-list').children[1].onclick();assert.equal(node('report-group').value,'11');
+ window.matchMedia=()=>({matches:false});summaryLoadPoints=()=>{};inboxRenderPoints([item('recovery','原阅读模式')]);
+ node('inbox-detail-actions').children.at(-1).onclick();requests.at(-1).resolve({});await settle();
+ assert.equal(node('inbox-detail-actions').children.at(-1).textContent,'标为未读','saved state stays actionable even if the background refresh cannot update the legacy detail');
  console.log('Inbox desktop/mobile selection, delayed save, exact scope and literal text verified');
 })().catch(e=>{console.error(e);process.exitCode=1;});
