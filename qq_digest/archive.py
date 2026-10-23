@@ -38,12 +38,14 @@ class QueuedNotification:
 
 
 class Archive:
-    def __init__(self, connection: sqlite3.Connection):
+    def __init__(self, connection: sqlite3.Connection, *, initialize: bool = True):
         self.connection = connection
         self.connection.row_factory = sqlite3.Row
         self.connection.execute("PRAGMA foreign_keys=ON")
-        self._migrate()
-        self.message_search_indexed = install_message_index(self.connection)
+        self._database_path = self.connection.execute('PRAGMA database_list').fetchone()['file']
+        if initialize:
+            self._migrate()
+        self.message_search_indexed = install_message_index(self.connection) if initialize else False
 
     @classmethod
     def open(cls, path: Path) -> "Archive":
@@ -51,6 +53,20 @@ class Archive:
         path.parent.mkdir(parents=True, exist_ok=True)
         connection = sqlite3.connect(path, timeout=30, check_same_thread=False)
         return cls(connection)
+
+    @contextmanager
+    def read_snapshot(self):
+        """Keep disk-backed reading workers off the shared application connection."""
+        if not self._database_path:
+            yield self
+            return
+        connection = sqlite3.connect(Path(self._database_path).resolve().as_uri() + '?mode=ro', uri=True, timeout=30)
+        try:
+            reader = Archive(connection, initialize=False)
+            connection.execute('BEGIN')
+            yield reader
+        finally:
+            connection.close()
 
     @contextmanager
     def transaction(self):

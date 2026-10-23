@@ -198,6 +198,14 @@ def test_summary_fingerprint_tracks_report_format_version(monkeypatch):
     assert summary_input_fingerprint(**kwargs) != original
 
 
+def test_sender_name_change_invalidates_report_reuse():
+    first = make_message().model_copy(update={'content_json': {'sender_name': '旧名片'}})
+    second = first.model_copy(update={'content_json': {'sender_name': '新名片'}})
+    common = dict(group=GroupConfig(group_id=123, name='测试群'), report_kind='daily',
+                  timezone=ZoneInfo('Asia/Shanghai'), knowledge_base='', max_context_chars=1000)
+    assert summary_input_fingerprint(messages=[first], **common) != summary_input_fingerprint(messages=[second], **common)
+
+
 def test_archive_mismatch_changes_reuse_key_and_persists_warning():
     kwargs = dict(group=GroupConfig(group_id=123, name="测试群"), report_kind="daily",
                   messages=[make_message()], timezone=ZoneInfo("Asia/Shanghai"),

@@ -27,7 +27,7 @@
   </div>
 </section>
 <div id="candidate-detail-backdrop" class="candidate-detail-backdrop" hidden onclick="closeCandidateDetail()"></div>
-<aside id="candidate-detail" class="candidate-detail" hidden aria-live="polite">
+<aside id="candidate-detail" class="candidate-detail" data-backdrop-id="candidate-detail-backdrop" hidden aria-live="polite">
   <div class="section-header"><span>候选详情</span><button class="btn btn-sm" aria-label="关闭候选详情" type="button" onclick="closeCandidateDetail()">关闭</button></div>
   <p id="candidate-detail-feedback" role="status" hidden></p>
   <div id="candidate-detail-content"></div>

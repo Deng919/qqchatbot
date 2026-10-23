@@ -496,7 +496,8 @@
   // Existing overlays share only accessibility behavior; business state stays in each page.
   (function(){
     var selector='dialog,[role="dialog"][aria-modal="true"],#candidate-detail,#range-summary-panel,#report-qa-dialog,#summary-source-panel';
-    var stack=[],inertBefore=new Map(),overflowBefore=null,opener=null,baseOverflow=document.body.style.overflow;
+    var stack=[],inertBefore=new Map(),overflowBefore=null,opener=null,baseOverflow=document.body.style.overflow,backdropPress=null;
+    function outside(panel,event){var rect=panel.getBoundingClientRect();return event.clientX<rect.left||event.clientX>rect.right||event.clientY<rect.top||event.clientY>rect.bottom;}
     function visible(panel){return panel.tagName==='DIALOG'?panel.open:!panel.hidden&&panel.getClientRects().length>0;}
     function controls(panel){return Array.from(panel.querySelectorAll('button,a[href],input,textarea,select,summary,[tabindex]')).filter(function(node){return !node.disabled&&node.tabIndex>=0&&node.getClientRects().length>0;});}
     function restoreBackground(){inertBefore.forEach(function(value,node){node.inert=value;});inertBefore.clear();}
@@ -506,12 +507,15 @@
       if(!stack.length&&next.length){overflowBefore=document.body.style.overflow==='hidden'?baseOverflow:document.body.style.overflow;opener=document.activeElement;}
       stack=next;restoreBackground();
       if(!stack.length){if(overflowBefore!==null){document.body.style.overflow=overflowBefore;overflowBefore=null;if(opener&&opener.isConnected)opener.focus({preventScroll:true});opener=null;}return;}
-      document.body.style.overflow='hidden';var panel=stack[stack.length-1];
+      document.body.style.overflow='hidden';var panel=stack[stack.length-1],backdrop=document.getElementById(panel.getAttribute('data-backdrop-id'));
       if(panel.tagName!=='DIALOG'){panel.setAttribute('role','dialog');panel.setAttribute('aria-modal','true');}
-      for(var current=panel;current&&current!==document.body;current=current.parentElement){Array.from(current.parentElement.children).forEach(function(sibling){if(sibling===current||['SCRIPT','STYLE'].includes(sibling.tagName))return;if(!inertBefore.has(sibling))inertBefore.set(sibling,sibling.inert);sibling.inert=true;});}
+      for(var current=panel;current&&current!==document.body;current=current.parentElement){Array.from(current.parentElement.children).forEach(function(sibling){if(sibling===current||sibling===backdrop||['SCRIPT','STYLE'].includes(sibling.tagName))return;if(!inertBefore.has(sibling))inertBefore.set(sibling,sibling.inert);sibling.inert=true;});}
       if(!panel.contains(document.activeElement)){var focus=controls(panel)[0];if(focus)focus.focus();else{panel.tabIndex=-1;panel.focus();}}
     }
     document.addEventListener('keydown',function(event){if(event.key!=='Tab'||!stack.length)return;var panel=stack[stack.length-1],nodes=controls(panel),first=nodes[0],last=nodes[nodes.length-1];if(!first){event.preventDefault();return;}if(event.shiftKey&&(document.activeElement===first||!panel.contains(document.activeElement))){event.preventDefault();last.focus();}else if(!event.shiftKey&&(document.activeElement===last||!panel.contains(document.activeElement))){event.preventDefault();first.focus();}},true);
+    document.addEventListener('pointerdown',function(event){var panel=event.target.closest('dialog');backdropPress=panel&&panel.open&&outside(panel,event)?panel:null;});
+    document.addEventListener('pointercancel',function(){backdropPress=null;});
+    document.addEventListener('click',function(event){var panel=backdropPress;backdropPress=null;if(!panel||event.target!==panel||stack[stack.length-1]!==panel||!outside(panel,event))return;if(panel.dispatchEvent(new Event('cancel',{cancelable:true})))panel.close();});
     new MutationObserver(sync).observe(document.body,{subtree:true,attributes:true,attributeFilter:['hidden','open'],childList:true});sync();
   })();
 </script>

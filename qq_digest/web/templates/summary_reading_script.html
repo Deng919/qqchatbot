@@ -75,9 +75,8 @@
       if(token!==summaryPointToken||summaryView!=='points')return;
       if(keepScroll)summaryPendingScroll=summaryScrollPosition();
       var last=Math.max(1,Math.ceil(data.total/data.page_size));if(summaryPointPage>last){summaryPointPage=last;return summaryLoadPoints(keepScroll);}
-      document.getElementById('summary-reading-count').textContent=data.grouped?'当前筛选 '+data.total+' 个群 · '+data.point_total+' 条要点 · 点击群卡片展开':'当前筛选 '+data.total+' 条要点 · 此日期和群范围有 '+data.unread+' 条未读';
+      document.getElementById('summary-reading-count').textContent=data.grouped?'当前筛选 '+data.total+' 个群 · '+data.point_total+' 条要点':'当前筛选 '+data.total+' 条要点 · 此日期和群范围有 '+data.unread+' 条未读';
       var warning=document.getElementById('summary-reading-warning');warning.hidden=!data.skipped_reports;warning.textContent=data.skipped_reports+' 份摘要文件缺失或无法读取，未纳入阅读。';
-      document.getElementById('summary-reading-note').textContent=state.read==='new'?(summarySince?'上次打开（'+new Date(summarySince).toLocaleString('zh-CN')+'）后新增或更新的要点；与未读无关。':'首次打开，范围内要点均视为新增。'):'多日摘要需完整落在所选日期内。';
       if(data.grouped&&typeof inboxRenderDashboard==='function'){inboxRenderDashboard(data);summaryPages(data);summarySave();summaryRestoreScroll();return;}
       host.textContent='';
       if(typeof inboxRenderPoints==='function'){inboxRenderPoints(data.items);summaryPages(data);summarySave();summaryRestoreScroll();return;}

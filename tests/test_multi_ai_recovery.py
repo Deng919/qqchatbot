@@ -85,7 +85,7 @@ def test_connection_read_does_not_acquire_blocking_lock_in_event_loop(client):
         def __exit__(self,*args):return original.__exit__(*args)
     client.app.state.first_use.store.lock=WorkerOnly()
     async def run():
-        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=client.app),base_url='http://testserver',cookies=client.cookies) as http:
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=client.app),base_url='http://testserver',cookies=client.cookies.jar) as http:
             response=await http.get('/api/ai-settings/connections')
             assert response.status_code==200
     asyncio.run(run())

@@ -9,6 +9,8 @@ Prompt 动态组装器。
 """
 from __future__ import annotations
 
+from .sender_identity import SENDER_PROMPT_RULE
+
 # ── 段落 1：角色定义（固定） ──────────────────────────────────────
 
 ROLE_PROMPT = """\
@@ -231,7 +233,7 @@ CONSTRAINTS_PROMPT = """\
 5. 如果消息完全是闲聊或系统通知，overview 使用一句客观说明，main_topics 可以为空数组，但 group_id 必须始终返回。
 6. 候选筛选标准不变，不要因为数据少就放宽标准。当天无符合标准的候选时，candidates 返回空数组。
 7. 如果消息被截断，摘要只覆盖实际收到的消息，在对应话题 summary 末尾标注"[上下文不完整]"。
-8. 只输出 JSON，不输出 Markdown 代码块或额外文字。"""
+8. 只输出 JSON，不输出 Markdown 代码块或额外文字。""" + '\n9. ' + SENDER_PROMPT_RULE
 
 # ── 分类映射表 ────────────────────────────────────────────────────
 

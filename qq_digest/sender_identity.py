@@ -6,6 +6,12 @@ from pathlib import Path
 import sqlite3
 
 
+SENDER_PROMPT_RULE = (
+    '提及参与者时，优先使用提供的群名片或昵称；QQ 号用于区分同名参与者。'
+    '没有名字时保留提供的 QQ 号或称“群友”，不得从消息正文猜测姓名，也不得合并同名参与者。'
+)
+
+
 def _name(value):
     if not isinstance(value,str):return ''
     return ''.join(ch for ch in value if ch.isprintable()).strip()[:160]

@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}摘要报告 - QQ Digest{% endblock %}
 {% block page_title %}群聊阅读{% endblock %}
-{% block page_description %}<p class="page-subtitle">选择群聊和日期，浏览讨论与报告。</p>{% endblock %}
+{% block page_description %}{% endblock %}
 {% block actions %}
   <button class="btn btn-primary" id="range-open-btn" type="button" onclick="openRangeSummary()">生成摘要</button>
 {% endblock %}
@@ -20,14 +20,13 @@
 
 </div>
 <div class="inbox-reading-column">
-  <section id="inbox-placeholder" class="inbox-placeholder"><span class="inbox-placeholder-mark" aria-hidden="true">≡</span><h2>从左侧选一条讨论</h2><p>在这里阅读要点，按需查看原消息或完整摘要。</p></section>
+  <section id="inbox-placeholder" class="inbox-placeholder"><span class="inbox-placeholder-mark" aria-hidden="true">≡</span><h2>从左侧选一条讨论</h2></section>
   <article id="inbox-point-detail" class="inbox-point-detail" aria-label="当前讨论" hidden>
     <div class="inbox-detail-bar"><button class="btn btn-sm" id="inbox-back" type="button" onclick="inboxBackToList()">← 返回列表</button><span id="inbox-detail-section"></span></div>
     <div id="inbox-detail-meta" class="inbox-detail-meta"></div>
     <h2 id="inbox-detail-title" tabindex="-1"></h2>
     <p id="inbox-detail-body" class="inbox-detail-body"></p>
     <div id="inbox-detail-actions" class="inbox-detail-actions"></div>
-    <p class="inbox-detail-hint">摘要供快速了解讨论；需要核实时，请查看关联的原消息。</p>
   </article>
 <div class="report-layout" id="report-layout">
   <section class="card" id="report-table-card" hidden>
@@ -77,13 +76,13 @@
 </div>
 
 <div id="summary-source-backdrop" class="range-summary-backdrop" hidden onclick="summaryCloseSource()"></div>
-<aside id="summary-source-panel" class="range-summary-panel" role="dialog" aria-modal="true" aria-labelledby="summary-source-title" hidden>
+<aside id="summary-source-panel" class="range-summary-panel" data-backdrop-id="summary-source-backdrop" role="dialog" aria-modal="true" aria-labelledby="summary-source-title" hidden>
   <div class="range-panel-header"><div><h2 id="summary-source-title">关联的消息</h2><p id="summary-source-scope"></p></div><button id="summary-source-close" class="btn btn-sm" type="button" onclick="summaryCloseSource()">关闭</button></div>
   <div id="summary-source-choices" class="actions"></div><div id="summary-source-messages" aria-live="polite"></div>
 </aside>
 
 <div id="range-summary-backdrop" class="range-summary-backdrop" hidden onclick="closeRangeSummary()"></div>
-<aside id="range-summary-panel" class="range-summary-panel" hidden aria-labelledby="range-summary-title" aria-modal="true" role="dialog">
+<aside id="range-summary-panel" class="range-summary-panel" data-backdrop-id="range-summary-backdrop" hidden aria-labelledby="range-summary-title" aria-modal="true" role="dialog">
   <div class="range-panel-header">
     <div><h2 id="range-summary-title">生成摘要</h2></div>
     <button class="btn btn-sm" type="button" aria-label="关闭摘要生成面板" onclick="closeRangeSummary()">关闭</button>
@@ -113,7 +112,7 @@
 </aside>
 
 <div id="report-qa-backdrop" class="range-summary-backdrop" hidden onclick="closeReportQA()"></div>
-<aside id="report-qa-dialog" class="report-qa-dialog" hidden role="dialog" aria-modal="true" aria-labelledby="report-qa-title">
+<aside id="report-qa-dialog" class="report-qa-dialog" data-backdrop-id="report-qa-backdrop" hidden role="dialog" aria-modal="true" aria-labelledby="report-qa-title">
   <div class="range-panel-header"><div><h2 id="report-qa-title">询问这份报告</h2><p id="report-qa-scope"></p></div><button class="btn btn-sm" type="button" onclick="closeReportQA()" aria-label="关闭问答">关闭</button></div>
   <p class="report-qa-privacy">相关聊天片段会发送到 DeepSeek；对话不保存。</p>
   <div id="report-qa-messages" class="report-qa-messages" aria-live="polite"></div>

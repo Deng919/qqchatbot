@@ -7,6 +7,7 @@ from types import SimpleNamespace
 from zoneinfo import ZoneInfo
 
 import pytest
+from qq_digest.catchup import CatchupService
 from fastapi.testclient import TestClient
 
 from qq_digest.archive import Archive
@@ -16,6 +17,18 @@ from qq_digest.knowledge import KnowledgeWriter
 from qq_digest.models import GroupConfig
 from qq_digest.web.app import create_app
 from qq_digest.web.auth import PasswordHasher
+
+
+def test_reading_worker_uses_an_independent_read_connection(reading_client, monkeypatch):
+    client, archive, *_ = reading_client
+    login(client)
+    original = CatchupService.list_items
+    def checked(service, *args, **kwargs):
+        assert service.archive.connection is not archive.connection
+        return original(service, *args, **kwargs)
+    monkeypatch.setattr(CatchupService, 'list_items', checked)
+    response = client.get('/api/summary-reading?date_from=2026-10-01&date_to=2026-10-23&grouped=true')
+    assert response.status_code == 200
 
 
 @pytest.fixture

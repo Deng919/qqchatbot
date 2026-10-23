@@ -56,7 +56,6 @@
   .workspace-reading .summary-feed-tools .field { grid-column:3; grid-row:1; min-width:0; margin:0; }
   .workspace-reading .summary-feed-tools .field label { display:none; }
   .workspace-reading .summary-feed-tools select { font-size:12px; min-height:34px; height:38px; padding:6px 10px; }
-  .workspace-reading #summary-reading-note { grid-column:2; grid-row:2; font-size:11px; margin:3px 0 0; min-width:0; line-height:1.65; }
   .inbox-page-search { grid-column:3; grid-row:2; display:flex; align-items:center; gap:9px; border:1px solid var(--border); border-radius:5px; padding:6px 10px; background:#fff; color:#94a0af; }
   .inbox-page-search input { min-width:0; width:100%; border:0; padding:3px 0; min-height:25px; outline:0; background:none; color:var(--text); font-size:12px; }
   .inbox-page-search:focus-within { outline:2px solid var(--primary); outline-offset:2px; }
@@ -87,7 +86,6 @@
   #inbox-detail-title { font-size:27px; line-height:1.65; letter-spacing:-.7px; font-weight:650; margin:0 0 23px; overflow-wrap:anywhere; }
   .inbox-detail-body { font-size:15px; line-height:2.1; white-space:pre-wrap; overflow-wrap:anywhere; margin:0 0 31px; }
   .inbox-detail-actions { display:flex; gap:9px; flex-wrap:wrap; border-top:1px solid var(--border); padding-top:24px; margin-top:20px; }
-  .inbox-detail-hint { font-size:11px; line-height:1.9; color:var(--text-dim); margin-top:23px; }
   .workspace-reading .report-detail { max-width:none; border:0; padding:0; }
   .workspace-reading .summary-report-title { font-size:22px; }
   .workspace-reading .summary-pages { margin:20px 10px; gap:7px; font-size:10px; }
@@ -140,8 +138,6 @@
     .workspace-reading .inbox-page-search { grid-column:2; grid-row:3; }
     .workspace-reading .inbox-filter-details { grid-column:1; grid-row:4; }
     .workspace-reading .inbox-filter-details[open] { grid-column:1/-1; grid-row:5; }
-    .workspace-reading #summary-reading-note { grid-column:2; grid-row:4; }
-    .workspace-reading .inbox-filter-details[open] ~ .summary-feed-tools #summary-reading-note { grid-column:1/-1; }
     .workspace-reading .report-filters { grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; }
     .workspace-reading .report-filters button { grid-column:1/-1; }
     #inbox-back { display:inline-flex; }

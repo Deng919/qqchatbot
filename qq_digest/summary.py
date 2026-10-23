@@ -10,6 +10,7 @@ from .models import NormalizedMessage
 from .preprocessing import Preprocessor
 from .prompt_builder import build_system_prompt, build_user_prompt, CANDIDATE_LIMITS
 from .ai.client import reject_response
+from .sender_identity import sender_fields
 
 
 def _normalize_message_ids(value):
@@ -152,7 +153,7 @@ def build_context_window(
     for index, message in enumerate(messages):
         if cleaned_text_by_index is not None and index not in cleaned_text_by_index:
             continue
-        sender = message.sender_qq or "unknown"
+        sender = sender_fields({'sender_qq': message.sender_qq, 'content_json': message.content_json}).get('sender_label') or message.sender_qq or "unknown"
         timestamp = message.timestamp.strftime("%Y-%m-%d %H:%M")
         if cleaned_text_by_index is None:
             text = message.text.strip() or message.raw_digest.strip() or message.message_type

@@ -181,7 +181,7 @@ def test_cancelled_http_request_keeps_worker_lock_and_persists_import(setup_clie
         return original(self, *args)
     monkeypatch.setattr(NTQQCollector, 'collect', blocking)
     async def scenario():
-        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=client.app), base_url='http://testserver', cookies=client.cookies) as http:
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=client.app), base_url='http://testserver', cookies=client.cookies.jar) as http:
             task = asyncio.create_task(http.post('/api/setup/import', json={'expected_revision':state['revision'], 'group_id':100, 'start_date':'2026-10-05', 'end_date':'2026-10-05'}))
             assert await asyncio.to_thread(entered.wait, 5)
             task.cancel()

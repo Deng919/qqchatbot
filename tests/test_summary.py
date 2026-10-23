@@ -223,6 +223,54 @@ def test_build_context_limits_length_and_preserves_order():
     assert len(context) <= 80
 
 
+def test_summary_context_keeps_archived_sender_names_and_identity():
+    first = message('named', datetime(2026, 8, 24, 9), 'offset').model_copy(
+        update={'content_json': {'sender_name': '本群名片'}})
+    second = message('unnamed', datetime(2026, 8, 24, 10), '横轴纵轴').model_copy(
+        update={'sender_qq': 20002})
+    window = build_context_window([first, second], 1000)
+
+    assert '[named|2026-08-24 09:00|本群名片 · 10001] offset' in window.text
+    assert '[unnamed|2026-08-24 10:00|20002] 横轴纵轴' in window.text
+    assert window.included_message_ids == ('named', 'unnamed')
+    assert window.chars == len(window.text)
+
+
+def test_summary_prompt_passes_sender_name_and_prefers_it_in_output():
+    ai = FakeAI(valid_response())
+    stamp = datetime(2026, 8, 24, 12, tzinfo=ZoneInfo('Asia/Shanghai'))
+    named = message('m1', stamp, '有效消息').model_copy(
+        update={'content_json': {'sender_name': '本群名片'}})
+    Summarizer(ai=ai, max_context_chars=1000).summarize(
+        group_id=123, group_name='测试群', window_start=stamp, window_end=stamp,
+        messages=[named], timezone=ZoneInfo('Asia/Shanghai'))
+
+    assert '本群名片 · 10001' in ai.calls[0][1]['content']
+    assert '优先使用提供的群名片或昵称' in ai.calls[0][0]['content']
+
+
+def test_named_sender_is_counted_in_context_budget():
+    named = message('m1', datetime(2026, 8, 24, 9), '正文').model_copy(
+        update={'content_json': {'sender_name': '长名片' * 30}})
+    short = message('m2', datetime(2026, 8, 24, 10), '后续正文')
+    window = build_context_window([named, short], 70)
+
+    assert window.included_message_ids == ('m2',)
+    assert window.truncated is True
+    assert window.chars == len(window.text) <= 70
+
+
+def test_same_named_senders_keep_distinct_qq_numbers():
+    stamp = datetime(2026, 8, 24, 9)
+    first = message('m1', stamp, '方案 A').model_copy(
+        update={'content_json': {'sender_name': '同名群友'}})
+    second = message('m2', stamp, '方案 B').model_copy(
+        update={'sender_qq': 20002, 'content_json': {'sender_name': '同名群友'}})
+    context = build_context([first, second], 1000)
+    assert '同名群友 · 10001] 方案 A' in context
+    assert '同名群友 · 20002] 方案 B' in context
+
+
 def test_build_context_truncates_at_line_boundary():
     messages = [
         message("m1", datetime(2026, 8, 24, 9), "x" * 40),

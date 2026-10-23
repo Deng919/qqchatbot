@@ -11,7 +11,7 @@ const findNode=(n,predicate)=>predicate(n)?n:(n.children||[]).map(child=>findNod
 (async()=>{
  node('market-direction').value='all';node('market-status').value='all';
  marketLoad();const old=requests.at(-1);marketLoad();requests.at(-1).resolve({items:[item('b','新商品')],total:1,page:1,page_size:30,date_from:'2026-10-13',date_to:'2026-10-19',coverage:[]});await settle();
- assert.match(allText(node('market-list')),/同帖清单 · 3项/);assert.match(allText(node('market-list')),/重复发布/);
+ assert.match(allText(node('market-list')),/同帖清单 · 3项/);assert.match(allText(node('market-list')),/发布记录 · 2次/);
  const history=findNode(node('market-list'),n=>n.className==='market-history');assert.ok(history,'repeat publications are an inline disclosure, not badges');
  assert.match(allText(history),/first original/);assert.match(allText(history),/700元/);
  assert.ok(findNode(node('market-list'),n=>n.textContent==='屏蔽此人'),'block action belongs on the card');

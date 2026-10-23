@@ -23,7 +23,7 @@ def test_cancelled_task_decision_retains_storage_admission(runtime, monkeypatch)
 
     async def check():
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app=client.app),
-                                    base_url='http://testserver', cookies=client.cookies) as http:
+                                    base_url='http://testserver', cookies=client.cookies.jar) as http:
             task = asyncio.create_task(http.post('/api/tasks/suggestions/synthetic/decision',
                                                  json={'action': 'confirm', 'title': '合成待办'}))
             assert await asyncio.to_thread(entered.wait, 3)

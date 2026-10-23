@@ -230,7 +230,7 @@ def test_canceled_http_writer_retains_admission_until_worker_finishes(runtime, m
     monkeypatch.setattr(app_module, 'save_ui_api_key', save)
     async def check():
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app=client.app),
-            base_url='http://testserver', cookies=client.cookies) as http:
+            base_url='http://testserver', cookies=client.cookies.jar) as http:
             task = asyncio.create_task(http.put('/api/ai-settings/key', json={'api_key': 'synthetic'}))
             assert await asyncio.to_thread(entered.wait, 3)
             task.cancel()

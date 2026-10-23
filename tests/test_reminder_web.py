@@ -169,7 +169,7 @@ def test_canceled_request_retains_lock_until_worker_finishes(web_client, monkeyp
         return original(service)
     monkeypatch.setattr(ReminderService,'scan',slow)
     async def scenario():
-        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=client.app),base_url='http://testserver',cookies=client.cookies) as http:
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=client.app),base_url='http://testserver',cookies=client.cookies.jar) as http:
             request=asyncio.create_task(http.post('/api/reminders/check'))
             try:
                 assert await asyncio.to_thread(entered.wait,5)

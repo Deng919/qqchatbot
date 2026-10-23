@@ -1,10 +1,25 @@
 from datetime import datetime, timedelta, timezone
 import sqlite3
+import pytest
 from zoneinfo import ZoneInfo
 
 from qq_digest.archive import Archive
 from qq_digest.models import GroupConfig
 from tests.factories import make_message
+
+
+def test_read_snapshot_is_independent_read_only_and_closed(tmp_path):
+    archive = Archive.open(tmp_path / 'snapshot.sqlite')
+    archive.ingest([make_message()])
+    with archive.read_snapshot() as reader:
+        assert reader.connection is not archive.connection
+        assert reader.count_messages(group_id=123) == 1
+        with pytest.raises(sqlite3.OperationalError, match='readonly'):
+            reader.connection.execute('DELETE FROM messages')
+    with pytest.raises(sqlite3.ProgrammingError, match='closed'):
+        reader.connection.execute('SELECT 1')
+    assert archive.count_messages(group_id=123) == 1
+    archive.close()
 
 
 def test_ingest_is_idempotent(tmp_path):

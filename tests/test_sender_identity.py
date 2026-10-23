@@ -119,6 +119,13 @@ def test_search_browsing_and_qa_sources_share_safe_identity(identities,tmp_path)
     service=ArchiveQAService(ar);data=service.preview(owner='test',question='接口配置？',query='接口',group_id=11,date_from='2026-10-07',date_to='2026-10-07')
     assert data['messages'][0]['sender_label']=='本群名片 · 12345'
     assert 'content_json' not in data['messages'][0]
+    class FakeClient:
+        def chat(self,prompt):
+            sent=json.loads(prompt[1]['content'])['messages'][0]
+            assert sent['sender_name']=='本群名片' and sent['sender_qq']==12345
+            assert '优先使用提供的群名片或昵称' in prompt[0]['content']
+            return {'answer':'合成回答','source_ids':['s1']}
+    assert service.ask(data['ticket'],'test',FakeClient())['sources'][0]['sender_name']=='本群名片'
     ar.connection.execute('UPDATE messages SET content_json=?',('{"sender_name":"修改名称"}',));ar.connection.commit()
     with pytest.raises(ValueError,match='变化'):service.source(data['ticket'],'test','s1')
     ar.close()
@@ -160,7 +167,10 @@ def test_report_question_source_displays_identity(tmp_path):
     now=datetime(2026,10,7,tzinfo=timezone.utc)
     message=NormalizedMessage(msg_id='one',group_id=11,text='正文',timestamp=now,collected_at=now,sender_qq=12345,content_json={'sender_name':'本群名片'})
     class FakeClient:
-        def chat(self,prompt):return {'answer':'合成回答','source_ids':['one']}
+        def chat(self,prompt):
+            assert '本群名片 · 12345' in prompt[1]['content']
+            assert '优先使用提供的群名片或昵称' in prompt[0]['content']
+            return {'answer':'合成回答','source_ids':['one']}
     result=answer_report_question(ReportEvidence(11,'2026-10-07','2026-10-07',tmp_path/'missing.md',[message]),'谁发的？',[],FakeClient())
     assert result['sources'][0]['sender_label']=='本群名片 · 12345'
     assert 'content_json' not in result['sources'][0]

@@ -25,7 +25,7 @@
   </form>
   <section id="find-home" class="find-home"><h2>从一个关键词开始</h2>
     <div class="find-recent-heading"><h3>最近搜索</h3><button class="find-text-button" type="button" id="find-clear-recent" onclick="clearFindRecent()" hidden>清空</button></div>
-    <div id="find-recent" class="find-recent"></div><p class="find-local-note">搜索历史仅存本机。</p>
+    <div id="find-recent" class="find-recent"></div>
   </section>
   <section id="find-results-card" class="card find-results-card" hidden aria-busy="false"><div class="card-header"><span id="search-result-title">查找结果</span><span class="header-meta" id="search-count" role="status"></span></div>
     <p id="find-result-scope" class="find-result-scope"></p><div id="search-results"></div>
@@ -33,7 +33,7 @@
   </section>
 </div>
 <div id="find-context-overlay" class="find-context-overlay" hidden onclick="closeFindContext()"></div>
-<aside id="find-context" class="find-context" role="dialog" aria-modal="true" aria-labelledby="find-context-title" hidden>
+<aside id="find-context" class="find-context" data-backdrop-id="find-context-overlay" role="dialog" aria-modal="true" aria-labelledby="find-context-title" hidden>
   <header class="find-context-header"><div><h2 id="find-context-title">原消息与前后讨论</h2><p id="find-context-meta"></p></div><button class="btn btn-sm" id="find-context-close" type="button" onclick="closeFindContext()">关闭</button></header>
   <div id="find-context-body" class="find-context-body"></div><div id="find-context-actions" class="find-context-actions"></div>
 </aside>

@@ -22,10 +22,14 @@ class CatchupReadPayload(BaseModel):
 
 
 def add_summary_reading_routes(app, *, archive, config, require_login):
-    def service():
-        return CatchupService(archive, timezone_name=(
+    def service(source=archive):
+        return CatchupService(source, timezone_name=(
             config.summary.timezone if config is not None else "Asia/Shanghai"
         ))
+
+    def read_items(scope, **kwargs):
+        with archive.read_snapshot() as reader:
+            return service(reader).list_items(scope, **kwargs)
 
     @app.get("/api/summary-reading", dependencies=[Depends(require_login)])
     async def summary_reading(
@@ -40,7 +44,7 @@ def add_summary_reading_routes(app, *, archive, config, require_login):
     ):
         try:
             return await asyncio.to_thread(
-                service().list_items, "custom", date_from=date_from, date_to=date_to,
+                read_items, "custom", date_from=date_from, date_to=date_to,
                 group_id=group_id, read_filter=read_filter, since=since,
                 page=page, page_size=page_size,
                 include_ranges=True,group_ids=group_ids,
@@ -71,7 +75,7 @@ def add_summary_reading_routes(app, *, archive, config, require_login):
         require_login(request)
         try:
             return await asyncio.to_thread(
-                service().list_items, scope, since=since, page=page
+                read_items, scope, since=since, page=page
             )
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc

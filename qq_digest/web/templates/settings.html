@@ -7,12 +7,11 @@
 <div class="desktop-settings">
   <div data-settings-panel="ai">{% include "ai_connection_settings.html" %}</div>
   <section class="card setting-card" data-settings-panel="automatic" aria-labelledby="automatic-title">
-    <div class="setting-heading"><div><h2 id="automatic-title">自动运行</h2><p>程序运行时执行。</p></div></div>
+    <div class="setting-heading"><div><h2 id="automatic-title">自动运行</h2></div></div>
     <form id="automatic-form"><fieldset id="automatic-options" disabled style="border:0;padding:0;margin:0"><div id="automatic-list">正在读取自动运行设置…</div></fieldset><p id="automatic-schedule" class="setting-help"></p><button class="btn btn-primary" id="automatic-save" disabled>保存自动运行设置</button><p id="automatic-result" class="setting-result" role="status" hidden></p></form>
   </section>
   <section class="card setting-card" data-settings-panel="features" aria-labelledby="features-title">
     <div class="setting-heading"><div><h2 id="features-title">功能开关</h2></div><span class="setting-index">功能</span></div>
-    <p class="setting-help">关闭功能不删除数据。自动任务在「自动运行」中设置。</p>
     <p id="feature-redirect" class="setting-result" hidden>该功能已关闭。</p>
     <form id="features-form">
       <div class="actions"><button type="button" class="btn" id="features-simple" disabled>精简界面</button><button type="button" class="btn" id="features-all" disabled>全部扩展功能</button></div>
@@ -43,7 +42,6 @@
     <label class="setting-label" for="export-folder">导出到</label>
     <div class="setting-row"><input id="export-folder" class="input setting-path" type="text" spellcheck="false"><button id="choose-export" class="btn" type="button">选择文件夹</button></div>
     <div class="setting-row export-options"><label for="export-format">文件格式</label><select id="export-format" class="input"><option value="both">Markdown 和 JSON</option><option value="markdown">仅 Markdown</option><option value="json">仅 JSON</option></select><button id="export-reports" class="btn btn-primary" type="button">导出摘要</button></div>
-    <p class="setting-help">每次导出到独立文件夹。</p>
     <button id="open-export" class="btn btn-sm" type="button" disabled>打开导出目录</button>
     <p id="export-result" class="setting-result" role="status" hidden></p>
   </section>
@@ -51,7 +49,6 @@
   <section class="card setting-card" data-settings-panel="automatic" aria-labelledby="startup-title">
     <div class="setting-heading"><div><h2 id="startup-title">开机自启</h2></div><span class="setting-index">03</span></div>
     <label class="startup-option"><input id="auto-start" type="checkbox"><span>开机时启动</span></label>
-    <p class="setting-help">仅当前 Windows 用户。</p>
   </section>
 
   <section class="card setting-card" data-settings-panel="backup" aria-labelledby="backup-title">
