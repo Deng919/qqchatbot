@@ -37,5 +37,15 @@ const findNode=(n,predicate)=>predicate(n)?n:(n.children||[]).map(child=>findNod
  digitalRequest.resolve({items:[item('z','stale digital')],total:1,page:1,page_size:30,categories:[{id:'digital',label:'线上资源',count:1}]});await settle();
  assert.equal(marketCategory,'food');assert.doesNotMatch(node('market-selection-title').textContent,/线上资源/,'stale category response cannot change heading');
  marketSwitchLane('sale');assert.match(requests.at(-1).url,/category=food/,'lane switches retain the selected product category');
+ const wanted={...item('want','iPhone12-14'),direction:'want',lane:'want',price_text:'',description:'当备用机，电池容量高一点最好'};
+ const source={group_name:'二手群',published_at:'2026-10-17',evidence:'收个iPhone12-14当备用机，电池容量高一点最好',price_text:'',status:'unknown'};
+ marketOpen('want');requests.at(-1).resolve({item:wanted,sources:[source],favorite:false});await settle();
+ assert.equal(node('market-meta').textContent,'','detail omits the redundant statistics and missing-value metadata');
+ const plainSource=node('market-sources').children.at(-1);
+ assert.doesNotMatch(allText(plainSource),/价格未注明|状态未确认/,'absent prices and completion evidence are not repeated beneath the original');
+ assert.equal(plainSource.children.filter(n=>n.className==='header-meta').length,1,'no empty metadata paragraph beneath the source');
+ assert.match(allText(plainSource),/二手群/);assert.match(allText(plainSource),/收个iPhone12-14/);
+ marketOpen('sold');requests.at(-1).resolve({item:{...item('sold','手机'),status:'sold'},sources:[{...source,price_text:'800元',status:'sold'}],favorite:false});await settle();
+ assert.match(allText(node('market-sources').children.at(-1)),/800元 · 已出/,'explicit prices and completion remain visible');
  console.log('Secondhand stale list/detail, literal text, duplicate saves and failed retry verified');
 })().catch(error=>{console.error(error);process.exitCode=1;});

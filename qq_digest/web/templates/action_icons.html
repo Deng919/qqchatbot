@@ -21,9 +21,10 @@
   summary.action-disclosure::before { content:'';display:inline-block;width:7px;height:7px;flex-shrink:0;border-right:1.8px solid currentColor;border-top:1.8px solid currentColor;transform:rotate(45deg);margin:0 12px 2px 2px;vertical-align:middle; }
   details[open]>summary.action-disclosure::before { transform:rotate(135deg);margin-bottom:4px; }
   summary.action-disclosure::after { content:none!important; }
-  summary.summary-group-cover.action-disclosure { position:relative; }
-  summary.summary-group-cover.action-disclosure::before { position:absolute;right:14px;top:24px; }
-  .summary-group-toggle { display:none; }
+  summary.summary-group-cover.action-disclosure::before { display:none; }
+  .summary-group-toggle { display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;flex-shrink:0;border-radius:8px;background:var(--surface-subtle,#f2f5f9);font-size:0; }
+  .summary-group-toggle::before { content:'';width:8px;height:8px;border-right:1.8px solid currentColor;border-top:1.8px solid currentColor;transform:rotate(135deg); }
+  .summary-group-stack[open] .summary-group-toggle::before { transform:rotate(315deg); }
   @media (max-width:600px) {
     .workspace-app .page-toolbar-inner { flex-wrap:wrap; }
     .workspace-app .page-toolbar-inner>.page-heading { flex:1 0 100%; }
@@ -120,7 +121,8 @@
     if(!button||button.disabled||(!button.dataset.actionIcon&&!button.dataset.disclosureLabel))return;
     if(!tip){tip=document.createElement('div');tip.id='action-icon-tooltip';tip.setAttribute('role','tooltip');tip.setAttribute('popover','manual');document.body.appendChild(tip);}
     active=button;tip.textContent=button.dataset.disclosureLabel||button.getAttribute('aria-label');tip.showPopover();
-    var rect=button.getBoundingClientRect(),box=tip.getBoundingClientRect();
+    var anchor=button.matches('.summary-group-cover')?button.querySelector('.summary-group-toggle'):null;
+    var rect=(anchor||button).getBoundingClientRect(),box=tip.getBoundingClientRect();
     tip.style.left=Math.max(8,Math.min(innerWidth-box.width-8,rect.left+(rect.width-box.width)/2))+'px';
     tip.style.top=(rect.top>=box.height+12?rect.top-box.height-8:Math.min(innerHeight-box.height-8,rect.bottom+8))+'px';
   }

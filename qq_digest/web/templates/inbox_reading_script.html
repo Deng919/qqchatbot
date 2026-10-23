@@ -77,8 +77,9 @@
       var loaded=false,loading=false,page=0,loadedItems=[];
       function current(){return revision===inboxDashboardRevision&&summaryView==='points';}
       function renderContent(total){
-        body.textContent='';var list=summaryNode('div','summary-group-points');
-        loadedItems.forEach(function(item){var parts=inboxTextParts(item),button=summaryButton('',function(){inboxSelectPoint(item.key,true);},'inbox-row');button.dataset.key=item.key;button.appendChild(summaryNode('span','inbox-row-meta',(item.date_label||item.report_date)+' · '+item.section+' · '+(item.read?'已读':'未读')));button.appendChild(summaryNode('strong','inbox-row-title',parts.title));button.appendChild(summaryNode('span','inbox-row-preview',parts.body));list.appendChild(button);inboxDashboardButtons.push({key:item.key,button:button});});body.appendChild(list);
+        var previous=body.children[0],scrollTop=previous&&previous.className==='summary-group-points'?previous.scrollTop||0:0;
+        body.textContent='';var list=summaryNode('div','summary-group-points');list.tabIndex=0;list.setAttribute('role','region');list.setAttribute('aria-label','本群摘要要点，可滚动查看更多');
+        loadedItems.forEach(function(item){var parts=inboxTextParts(item),button=summaryButton('',function(){inboxSelectPoint(item.key,true);},'inbox-row');button.dataset.key=item.key;button.appendChild(summaryNode('span','inbox-row-meta',(item.date_label||item.report_date)+' · '+item.section+' · '+(item.read?'已读':'未读')));button.appendChild(summaryNode('strong','inbox-row-title',parts.title));button.appendChild(summaryNode('span','inbox-row-preview',parts.body));list.appendChild(button);inboxDashboardButtons.push({key:item.key,button:button});});body.appendChild(list);list.scrollTop=scrollTop;
         if(!loadedItems.length)body.appendChild(summaryNode('p','header-meta','这个群暂无符合当前筛选的要点。'));
         if(loadedItems.length<total)body.appendChild(summaryButton('加载更多要点（'+loadedItems.length+' / '+total+'）',function(){load(page+1);},'btn btn-sm summary-group-more'));
       }
