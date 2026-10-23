@@ -11,14 +11,11 @@ const find=(node,p)=>p(node)?node:node.children.map(c=>find(c,p)).find(Boolean),
  assert.equal(n('inbox-workspace').classList.contains('inbox-list-only'),true,'dashboard gets the whole width');
  const card=find(n('summary-points'),x=>x.tag==='details');assert.ok(card);card.open=true;card.events.toggle();
  assert.match(requests[0].url,/group_id=11/);assert.match(requests[0].url,/read_filter=unread/);assert.match(requests[0].url,/report_keys=daily%3A5/);
- requests.shift().resolve({items:[{key:'a',text:'标题：详情',group_id:11,group_name:'研发 <img>',section:'讨论',report_id:5,report_kind:'daily',date_label:'2026-10-20',read:false,status:'legacy',source_ids:[]}],total:2,page:1,page_size:30});await settle();
+ requests.shift().resolve({items:[{key:'a',text:'标题：详情',group_id:11,group_name:'研发 <img>',section:'讨论',report_id:5,report_kind:'daily',date_label:'2026-10-20',read:false,status:'legacy',source_ids:[]}],total:1,page:1,page_size:30});await settle();
  assert.equal(requests.length,0,'expanding never writes read state');const point=find(card,x=>x.className==='inbox-row');point.onclick();assert.equal(inboxSelectedKey,'a');assert.equal(n('inbox-workspace').classList.contains('inbox-dashboard-detail'),true);
  inboxBackToList();assert.equal(n('inbox-workspace').classList.contains('inbox-list-only'),true);assert.equal(card.open,true,'back preserves the expanded deck');
  inboxFilterPage('产品');assert.equal(card.hidden,true);inboxFilterPage('');assert.equal(card.hidden,false);
  card.open=false;card.events.toggle();card.open=true;card.events.toggle();assert.equal(requests.length,0,'reopening reuses loaded points');
- find(card,x=>x.className==='summary-group-points').scrollTop=240;
- find(card,x=>x.className==='btn btn-sm summary-group-more').onclick();requests.shift().resolve({items:[{...inboxItems[0],key:'b',text:'第二条'}],total:2,page:2,page_size:30});await settle();
- assert.equal(find(card,x=>x.className==='summary-group-points').scrollTop,240,'loading more retains the inner reading position');
  inboxSelectPoint('a',true);n('inbox-detail-actions').children.at(-1).onclick();assert.equal(requests[0].body.read,true);requests.shift().resolve({});await settle();
  inboxRenderDashboard({total:1,point_total:1,unread:0,items:[{group_id:11,group_name:'研发',total:1,unread:0,report_count:1,preview:[]}]});
  requests.shift().resolve({items:[{...inboxItems[0],read:true}],total:1,page:1,page_size:30});await settle();

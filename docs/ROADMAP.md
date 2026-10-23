@@ -3,6 +3,8 @@
 更新日期：2026-10-23
 定位：本地 QQ 群消息采集、摘要、检索和知识整理的 Windows 桌面工具。
 
+**2026-10-23 操作逻辑统一检查：** 群卡片展开后自动连续读取本群全部要点，取消手动加载更多，保留两排滚动；修复详情返回及迟到刷新回跳、已读提示滞后、待办部分加载失败、首次设置退出后暂停不解除、换源群选择残留、AI 草稿丢失和版本页登录恢复，并修正候选长链接撑出手机屏幕。1735 项 Python 全量通过、2 项符号链接权限跳过，52 个 CJS、17 个实际页面五种宽度／故障流程／隔离 EXE 通过。桌面已更新到 `D:\Apps\QQDigestDesktop-2026-10-23-InteractionLogic-Final-Release` 并只读复查；旧版保留回退。见[检查与验收](superpowers/specs/2026-10-23-interaction-logic-verification.md)。
+
 **2026-10-23 展开密度与详情精简：** 群卡片展开仅显示两排摘要，其余区域内滚动；修正右下角展开／收起箭头方向及提示位置，加载更多保留滚动位置。移除商品详情顶部冗余统计，来源下方只显示实际价格和明确成交状态。53 项相关 Python 回归、46 个 CJS、独立浏览器／隔离 EXE／实际桌面五种宽度检查通过；本轮未重跑 Python 全量。桌面已更新至 `D:\Apps\QQDigestDesktop-2026-10-23-CompactExpand-Final-Release`，原版保留回退。见[验收记录](superpowers/specs/2026-10-23-compact-expansion-verification.md)。
 
 **2026-10-23 操作图标统一：** 辅助操作扩展为图标按钮，主要操作及导航保留图标和文字；展开／收起统一箭头，保留区域标题、原生点击和键盘行为。手机保留简短说明并修正页头标题挤压。195 项相关 Python 回归、45 个 CJS、11 页面五种宽度的独立浏览器／隔离 EXE／实际桌面复查通过；本轮未重跑 Python 全量。119 模块／56 模板及包清单一致，桌面更新至 `D:\Apps\QQDigestDesktop-2026-10-23-UnifiedIcons-Release`，原版保留回退。见[验收记录](superpowers/specs/2026-10-23-unified-icons-verification.md)。

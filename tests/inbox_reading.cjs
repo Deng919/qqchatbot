@@ -9,7 +9,7 @@ global.summaryNode=(tag,cls,text)=>{const n=make();n.className=cls;if(text!==und
 global.summaryCleanText=String;global.summaryButton=(text,fn)=>{const n=summaryNode('button','',text);n.onclick=fn;return n;};
 let reportCloses=0;global.closeReport=()=>{reportCloses++;summaryDetailActive=false;};global.summaryOpenSource=()=>{};global.viewReport=()=>{};global.appendBookmarkAction=()=>{};
 global.summarySelectGroups=ids=>node('report-group').value=ids.join(',');global.filterReports=()=>{};global.summaryEmpty=host=>host.textContent='empty';
-global.summaryLoadPoints=()=>{throw Error('a delayed save must not reload a newer selection');};global.summaryShowResult=()=>{};
+let readingRefreshes=0;global.summaryLoadPoints=()=>{readingRefreshes++;};global.summaryShowResult=()=>{};
 const requests=[];global.api=(method,url,body)=>new Promise(resolve=>requests.push({method,url,body,resolve}));
 vm.runInThisContext(fs.readFileSync('qq_digest/web/templates/inbox_reading_script.html','utf8').replace(/<\/?script>/g,''));
 const item=(key,text)=>({key,text,group_name:'群 <img>',group_id:11,report_id:1,report_kind:'range',section:'讨论',date_label:'2026-10-18',read:false,status:'legacy',source_ids:[]});
@@ -22,6 +22,8 @@ const settle=()=>new Promise(setImmediate);
  inboxSelectPoint('b',true);requests[0].resolve({});await settle();
  assert.equal(node('inbox-point-detail').parentElement.scrollTop,0,'new point starts at the top of the reading pane');
  assert.equal(inboxSelectedKey,'b','late read-save cannot replace a newer point');
+ assert.equal(readingRefreshes,1,'late read-save still refreshes counts for the active scope');
+ assert.equal(node('summary-points').children.find(row=>row.dataset.key==='a').className.includes('is-unread'),false,'the saved row updates without changing the newer selection');
  assert.equal(node('inbox-detail-body').textContent,'<script>第二条</script>','user text stays literal');
  summaryDetailActive=true;const closes=reportCloses;inboxRenderPoints([item('a','第一条'),item('b','第二条')]);
  assert.equal(reportCloses,closes,'background refresh cannot close or cancel full report');summaryDetailActive=false;

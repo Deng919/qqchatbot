@@ -366,3 +366,11 @@ class FirstUseService:
             raise ValueError('请先完成 AI 和计划设置')
         state.update(active=False, completed=True, step=6)
         return self._save(revision, state)
+
+    def exit(self, revision):
+        self.store.check(revision)
+        state = self._state()
+        if not state.get('active'):
+            return self.snapshot()
+        state['active'] = False
+        return self._save(revision, state)

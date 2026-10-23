@@ -320,7 +320,7 @@
   function viewReport(kind, reportId) {
     if ((kind !== 'daily' && kind !== 'range') || !Number.isInteger(Number(reportId))) return;
     summaryNavigationToken++;
-    if(!summaryDetailActive){summaryBrowseScroll=summaryPendingScroll!==null?summaryPendingScroll:window.scrollY;summaryReportOpener=document.activeElement;}
+    if(!summaryDetailActive){summaryBrowseScroll=summaryPendingScroll!==null?summaryPendingScroll:summaryScrollPosition();summaryReportOpener=document.activeElement;}
     var selectionToken = ++reportSelectionToken;
     closeReportQA(); qaReport = null;
     revisionReport=null; revisionPage=1; revisionLoadToken+=1; revisionControls();

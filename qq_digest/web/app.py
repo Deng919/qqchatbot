@@ -16,6 +16,7 @@ from fastapi import FastAPI, Form, HTTPException, Query, Request
 from fastapi.responses import RedirectResponse
 from fastapi.templating import Jinja2Templates
 from ..distribution import is_public_distribution
+from ..first_use import setup_in_progress
 from pydantic import BaseModel, Field, field_validator, ConfigDict, StrictBool, StrictInt
 from typing import Literal
 
@@ -63,7 +64,8 @@ from ..report_selection import selected_report_groups, selected_report_keys
 
 templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"),
                            context_processors=[lambda request: {'features': getattr(request.state, 'features', {}),
-                               'storage_handoff': getattr(request.state, 'storage_handoff', {})}])
+                               'storage_handoff': getattr(request.state, 'storage_handoff', {}),
+                               'setup_paused': setup_in_progress(getattr(request.app.state, 'config', None))}])
 templates.env.globals["public_distribution"] = is_public_distribution
 
 
@@ -474,7 +476,6 @@ def create_app(
     from .desktop_update_routes import add_desktop_update_routes
     add_desktop_update_routes(app, templates=templates, require_login=require_login,
                              desktop_bridge=_desktop_bridge, desktop_mutation=_desktop_mutation)
-    from ..first_use import setup_in_progress
     from .first_use_routes import add_first_use_routes
     add_first_use_routes(app, config=config, config_path=config_path, archive=archive,
                          templates=templates, require_login=require_login, operations=operations)

@@ -1,5 +1,6 @@
 import re
 import subprocess
+import pytest
 from pathlib import Path
 from html.parser import HTMLParser
 
@@ -52,7 +53,8 @@ def test_inbox_templates_are_packaged():
         assert name in TEMPLATES
 
 
-def test_inbox_behavior_with_existing_script_harness():
-    result = subprocess.run(['node', str(Path(__file__).with_name('inbox_reading.cjs'))],
+@pytest.mark.parametrize('script', ['inbox_reading.cjs', 'inbox_delayed_read.cjs'])
+def test_inbox_behavior_with_existing_script_harness(script):
+    result = subprocess.run(['node', str(Path(__file__).with_name(script))],
                             capture_output=True, text=True, timeout=15)
     assert result.returncode == 0, result.stdout + result.stderr

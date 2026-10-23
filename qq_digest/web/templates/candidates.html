@@ -145,6 +145,9 @@
   (function openLinkedCandidate() { var id = Number(new URLSearchParams(location.search).get('candidate_id')); if (Number.isInteger(id) && id > 0) { document.getElementById('candidate-status').value = 'all'; loadCandidates(); viewCandidate(id); } })();
 </script>
 <style>
+  .candidate-list { grid-template-columns:minmax(0,1fr); }
+  .candidate-item { min-width:0;overflow-wrap:anywhere; }
+  .candidate-main>div { min-width:0; }
   .candidate-toolbar { display: grid; grid-template-columns: repeat(3, minmax(120px, .8fr)) repeat(2, minmax(130px, .8fr)) minmax(200px, 1.6fr) auto; gap: 8px; margin-bottom: 14px; padding: 12px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); }
   .candidate-title { font-weight: 650; }
   .candidate-main { display: flex; justify-content: space-between; gap: 16px; align-items: flex-start; }

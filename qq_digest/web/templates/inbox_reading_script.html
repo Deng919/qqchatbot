@@ -20,10 +20,10 @@
     inboxGroupButtons.forEach(function(entry){entry.button.setAttribute('aria-pressed',String(inboxN('report-group').value===entry.value));});
   }
   function inboxClearSelection(){inboxReadRevision++;inboxDashboardRevision++;inboxSelectedKey=null;inboxItems=[];inboxQuery='';inboxMobileOpen=false;inboxDashboardActive=false;inboxN('inbox-page-query').value='';inboxN('summary-points').textContent='正在读取讨论…';inboxApplyView();}
-  function inboxBackToList(){inboxMobileOpen=false;inboxApplyView();if(inboxMobile()||inboxDashboardActive)inboxN('summary-points').focus();}
+  function inboxBackToList(){inboxMobileOpen=false;inboxApplyView();inboxDashboardCards.forEach(function(entry){entry.restorePosition();});if(inboxMobile()||inboxDashboardActive)inboxN('summary-points').focus();if(inboxDashboardActive&&typeof summaryScrollTo==='function')summaryScrollTo(summaryBrowseScroll);}
   function inboxSelectPoint(key,explicit){
     var item=inboxItems.find(function(point){return point.key===key;});if(!item)return;
-    if(explicit){closeReport();inboxMobileOpen=true;}inboxSelectedKey=key;
+    if(explicit){if(typeof summaryScrollPosition==='function')summaryBrowseScroll=summaryScrollPosition();inboxDashboardCards.forEach(function(entry){entry.rememberPosition();});closeReport();inboxMobileOpen=true;}inboxSelectedKey=key;
     var parts=inboxTextParts(item);inboxN('inbox-detail-section').textContent=item.section;
     inboxN('inbox-detail-meta').textContent=item.group_name+' · '+(item.date_label||item.report_date)+' · '+(item.read?'已读':'未读');
     inboxN('inbox-detail-title').textContent=parts.title;inboxN('inbox-detail-body').textContent=parts.body;
@@ -37,7 +37,8 @@
       api('POST','/api/summary-reading/read',{key:item.key,read:nextRead}).then(function(){
         if(revision!==inboxReadRevision)return;
         item.read=nextRead;var currentItem=inboxItems.find(function(point){return point.key===item.key;});if(currentItem)currentItem.read=nextRead;
-        if(inboxSelectedKey===item.key){inboxSelectPoint(item.key,false);summaryLoadPoints(true);}
+        if(inboxSelectedKey===item.key)inboxSelectPoint(item.key,false);else inboxRenderRows();
+        summaryLoadPoints(true);
       }).catch(function(e){read.disabled=false;summaryShowResult('已读状态保存失败：'+e.message,'failed');});
     });actions.appendChild(read);
     inboxRenderRows();inboxApplyView();if(explicit){var mobile=inboxMobile();inboxN('inbox-detail-title').focus({preventScroll:!mobile});if(!mobile)inboxN('inbox-point-detail').parentElement.scrollTop=0;}
@@ -64,6 +65,7 @@
   function inboxBeginDashboard(){inboxDashboardActive=true;inboxApplyView();}
   function inboxFilterDashboard(){var query=inboxQuery.trim().toLocaleLowerCase(),visible=0;inboxDashboardCards.forEach(function(entry){entry.card.hidden=!!query&&!entry.name.toLocaleLowerCase().includes(query);if(!entry.card.hidden)visible++;});var note=inboxN('inbox-dashboard-no-match');if(note)note.hidden=visible>0||!inboxDashboardCards.length;}
   function inboxRenderDashboard(data){
+    var positions=new Map();if(inboxDashboardActive)inboxDashboardCards.forEach(function(entry){entry.rememberPosition();positions.set(entry.card.dataset.groupId,entry.scrollTop);});
     inboxDashboardActive=true;var selected=inboxItems.find(function(item){return item.key===inboxSelectedKey;}),revision=++inboxDashboardRevision,host=inboxN('summary-points');host.textContent='';inboxDashboardCards=[];inboxDashboardButtons=[];inboxItems=inboxMobileOpen&&selected?[selected]:[];
     var overview=summaryNode('div','summary-dashboard-overview');[['群聊',data.total],['摘要要点',data.point_total],['范围内未读',data.unread]].forEach(function(pair){var metric=summaryNode('div','summary-dashboard-metric');metric.appendChild(summaryNode('strong','',String(pair[1])));metric.appendChild(summaryNode('span','',pair[0]));overview.appendChild(metric);});host.appendChild(overview);
     var grid=summaryNode('div','summary-dashboard-grid');host.appendChild(grid);
@@ -73,23 +75,27 @@
       meta.appendChild(summaryNode('span','summary-group-icon','群'));meta.appendChild(summaryNode('span','',group.unread?'有 '+group.unread+' 条未读':'全部已读'));heading.appendChild(meta);
       heading.appendChild(summaryNode('h2','summary-group-title',group.group_name));heading.appendChild(summaryNode('p','summary-group-preview',summaryCleanText((group.preview||[])[0]||'展开查看这个群的摘要要点')));
       var footer=summaryNode('div','summary-group-footer');footer.appendChild(summaryNode('span','',group.report_count+' 份摘要 · '+group.total+' 条要点'));var hint=summaryNode('span','summary-group-toggle','展开 ↓');footer.appendChild(hint);heading.appendChild(footer);card.appendChild(heading);
-      var body=summaryNode('div','summary-group-content');body.hidden=true;card.appendChild(body);grid.appendChild(card);inboxDashboardCards.push({card:card,name:group.group_name});
-      var loaded=false,loading=false,page=0,loadedItems=[];
+      var body=summaryNode('div','summary-group-content');body.hidden=true;card.appendChild(body);grid.appendChild(card);var entry={card:card,name:group.group_name,scrollTop:positions.get(String(group.group_id))||0,rememberPosition:rememberPosition,restorePosition:restorePosition};inboxDashboardCards.push(entry);
+      var loaded=false,loading=false,page=0,loadedItems=[],total=group.total,restoreScroll=positions.get(String(group.group_id));
       function current(){return revision===inboxDashboardRevision&&summaryView==='points';}
+      function rememberPosition(){var list=body.children[0];if(list&&list.className==='summary-group-points'&&list.clientHeight>0)entry.scrollTop=list.scrollTop;}
+      function restorePosition(){var list=body.children[0];if(restoreScroll!==undefined&&list&&list.className==='summary-group-points'&&list.clientHeight>0){list.scrollTop=restoreScroll;if(list.scrollTop>=restoreScroll)restoreScroll=undefined;}rememberPosition();}
       function renderContent(total){
-        var previous=body.children[0],scrollTop=previous&&previous.className==='summary-group-points'?previous.scrollTop||0:0;
-        body.textContent='';var list=summaryNode('div','summary-group-points');list.tabIndex=0;list.setAttribute('role','region');list.setAttribute('aria-label','本群摘要要点，可滚动查看更多');
-        loadedItems.forEach(function(item){var parts=inboxTextParts(item),button=summaryButton('',function(){inboxSelectPoint(item.key,true);},'inbox-row');button.dataset.key=item.key;button.appendChild(summaryNode('span','inbox-row-meta',(item.date_label||item.report_date)+' · '+item.section+' · '+(item.read?'已读':'未读')));button.appendChild(summaryNode('strong','inbox-row-title',parts.title));button.appendChild(summaryNode('span','inbox-row-preview',parts.body));list.appendChild(button);inboxDashboardButtons.push({key:item.key,button:button});});body.appendChild(list);list.scrollTop=scrollTop;
+        var list=body.children[0];
+        if(!list||list.className!=='summary-group-points'){body.textContent='';list=summaryNode('div','summary-group-points');list.tabIndex=0;list.setAttribute('role','region');list.setAttribute('aria-label','本群摘要要点，可滚动查看更多');body.appendChild(list);}
+        while(body.children.length>1)body.children[body.children.length-1].remove();
+        loadedItems.slice(list.children.length).forEach(function(item){var parts=inboxTextParts(item),button=summaryButton('',function(){inboxSelectPoint(item.key,true);},'inbox-row');button.dataset.key=item.key;button.appendChild(summaryNode('span','inbox-row-meta',(item.date_label||item.report_date)+' · '+item.section+' · '+(item.read?'已读':'未读')));button.appendChild(summaryNode('strong','inbox-row-title',parts.title));button.appendChild(summaryNode('span','inbox-row-preview',parts.body));list.appendChild(button);inboxDashboardButtons.push({key:item.key,button:button});});
+        restorePosition();
         if(!loadedItems.length)body.appendChild(summaryNode('p','header-meta','这个群暂无符合当前筛选的要点。'));
-        if(loadedItems.length<total)body.appendChild(summaryButton('加载更多要点（'+loadedItems.length+' / '+total+'）',function(){load(page+1);},'btn btn-sm summary-group-more'));
       }
       function load(next){
-        if(loading||!current())return;loading=true;
+        if(loading||!current())return;loading=true;var advance=false;
+        while(body.children.length&&body.children[body.children.length-1].className!=='summary-group-points')body.children[body.children.length-1].remove();
         var state=summaryValues(),params=new URLSearchParams({date_from:state.from,date_to:state.to,read_filter:state.read,group_id:String(group.group_id),page:String(next),page_size:'30'});summaryReportKeyParams(params);if(summarySince)params.set('since',summarySince);
         var status=summaryNode('p','summary-group-load-status','正在读取本群要点…');body.appendChild(status);
-        api('GET','/api/summary-reading?'+params).then(function(result){if(!current())return;loaded=true;page=result.page;var seen=new Set(loadedItems.map(function(item){return item.key;}));result.items.forEach(function(item){if(!seen.has(item.key)){seen.add(item.key);loadedItems.push(item);var at=inboxItems.findIndex(function(point){return point.key===item.key;});if(at<0)inboxItems.push(item);else inboxItems[at]=item;}});renderContent(result.total);}).catch(function(error){if(!current())return;status.textContent='读取失败：'+error.message;status.appendChild(summaryButton('重试',function(){status.remove();load(next);}));}).finally(function(){loading=false;});
+        api('GET','/api/summary-reading?'+params).then(function(result){if(!current())return;var count=loadedItems.length,seen=new Set(loadedItems.map(function(item){return item.key;}));result.items.forEach(function(item){if(!seen.has(item.key)){seen.add(item.key);loadedItems.push(item);var at=inboxItems.findIndex(function(point){return point.key===item.key;});if(at<0)inboxItems.push(item);else inboxItems[at]=item;}});if(loadedItems.length===count&&loadedItems.length<result.total)throw new Error('本群要点发生变化，请重试或刷新筛选');loaded=true;page=result.page;total=result.total;renderContent(total);advance=loadedItems.length<total;}).catch(function(error){if(!current())return;status.textContent='读取失败：'+error.message;status.appendChild(summaryButton('重试',function(){status.remove();load(next);}));}).finally(function(){loading=false;if(advance&&current()&&card.open)load(page+1);});
       }
-      card.addEventListener('toggle',function(){if(!current())return;body.hidden=!card.open;hint.textContent=card.open?'收起 ↑':'展开 ↓';summaryExpanded['group:'+group.group_id]=card.open;summarySave();if(card.open&&!loaded&&!loading)load(1);});
+      card.addEventListener('toggle',function(){if(!current())return;body.hidden=!card.open;hint.textContent=card.open?'收起 ↑':'展开 ↓';summaryExpanded['group:'+group.group_id]=card.open;summarySave();if(card.open&&!loading&&(!loaded||loadedItems.length<total))load(page+1);});
       if(summaryExpanded['group:'+group.group_id]){card.open=true;body.hidden=false;hint.textContent='收起 ↑';load(1);}
     });
     var noMatch=summaryNode('p','summary-dashboard-no-match','本页没有匹配的群聊。');noMatch.id='inbox-dashboard-no-match';noMatch.hidden=true;host.appendChild(noMatch);inboxFilterDashboard();inboxApplyView();

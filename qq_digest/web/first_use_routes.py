@@ -162,3 +162,7 @@ def add_first_use_routes(app, *, config, config_path, archive, templates, requir
     @app.post('/api/setup/finish', dependencies=[Depends(require_login)])
     async def finish(payload: Version):
         return await mutate(lambda svc: svc.finish(payload.expected_revision))
+
+    @app.post('/api/setup/exit', dependencies=[Depends(require_login)])
+    async def exit_setup(payload: Version):
+        return await mutate(lambda svc: svc.exit(payload.expected_revision))

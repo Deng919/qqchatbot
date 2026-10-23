@@ -38,7 +38,7 @@
     if((location.pathname==='/'||location.pathname==='/reports')&&typeof summarySetView==='function'){
       event.preventDefault();summarySetView(summaryView==='groups'?'groups':'points');
       var url=new URL(location.href);url.searchParams.delete('kind');url.searchParams.delete('id');history.replaceState(null,'',url.pathname+url.search);
-      requestAnimationFrame(function(){window.scrollTo({top:0,behavior:'instant'});});
+      requestAnimationFrame(function(){summaryScrollTo(0);});
     }
   }
   function updateWorkspaceTools() {

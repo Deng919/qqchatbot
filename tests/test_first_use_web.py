@@ -47,6 +47,24 @@ def test_auth_strict_inputs_and_configuration_version(setup_client):
     assert not client.get('/api/scheduler').json()['enabled']
 
 
+def test_exit_resumes_automatic_tasks_and_preserves_partial_setup(setup_client):
+    client, source = setup_client
+    assert client.post('/api/setup/exit', json={'expected_revision': '0'*64}).status_code == 401
+    login(client)
+    post(client, 'source', db_dir=str(source), qq_number=123456)
+    before = post(client, 'groups', group_ids=[100]).json()
+    with client.app.state.operations.claim('backup'):
+        assert post(client, 'exit').status_code == 409
+    assert client.post('/api/setup/exit', json={'expected_revision': '0'*64}).status_code == 409
+    assert client.get('/api/setup').json()['active']
+    result = post(client, 'exit')
+    assert result.status_code == 200
+    after = result.json()
+    assert not after['active'] and not client.get('/api/scheduler').json()['setup_paused']
+    for key in ['completed', 'step', 'selected_groups', 'imports', 'ntqq', 'ai', 'schedule']:
+        assert after[key] == before[key]
+
+
 def test_complete_flow_without_ai_then_reopen(setup_client):
     client, source = setup_client
     login(client)

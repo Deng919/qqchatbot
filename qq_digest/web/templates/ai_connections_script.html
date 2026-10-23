@@ -4,8 +4,8 @@ var aiPurposes=['summary','report_qa','archive_qa','vision'];
 function aiNode(tag,text,cls){var node=document.createElement(tag);if(text!==undefined)node.textContent=text;if(cls)node.className=cls;return node;}
 function aiConnectionResult(text,error){var node=document.getElementById('multi-ai-result');node.textContent=text;node.hidden=!text;node.style.color=error?'#9b3d2f':'';}
 function aiDisable(busy){aiConnectionBusy=busy;document.getElementById('multi-ai-settings').querySelectorAll('input,select,button').forEach(function(node){node.disabled=busy||aiConnectionRevision===null;});}
-function resetAIConnectionForm(){if(aiConnectionBusy)return;['id','name','url','model','key'].forEach(function(key){document.getElementById('multi-ai-'+key).value='';});document.getElementById('multi-ai-vision').checked=false;document.getElementById('multi-ai-json').checked=true;aiConnectionDirty=false;}
-function editAIConnection(item){if(aiConnectionBusy)return;document.getElementById('multi-ai-id').value=item.id;document.getElementById('multi-ai-name').value=item.name;document.getElementById('multi-ai-url').value=item.base_url;document.getElementById('multi-ai-model').value=item.model;document.getElementById('multi-ai-vision').checked=item.supports_vision;document.getElementById('multi-ai-json').checked=item.json_mode!==false;document.getElementById('multi-ai-key').value='';aiConnectionDirty=true;document.getElementById('multi-ai-name').focus();}
+function resetAIConnectionForm(force){if(aiConnectionBusy||(!force&&aiConnectionDirty&&!confirm('放弃未保存的连接修改？')))return;['id','name','url','model','key'].forEach(function(key){document.getElementById('multi-ai-'+key).value='';});document.getElementById('multi-ai-vision').checked=false;document.getElementById('multi-ai-json').checked=true;aiConnectionDirty=false;}
+function editAIConnection(item){if(aiConnectionBusy||(aiConnectionDirty&&!confirm('放弃未保存的连接修改？')))return;document.getElementById('multi-ai-id').value=item.id;document.getElementById('multi-ai-name').value=item.name;document.getElementById('multi-ai-url').value=item.base_url;document.getElementById('multi-ai-model').value=item.model;document.getElementById('multi-ai-vision').checked=item.supports_vision;document.getElementById('multi-ai-json').checked=item.json_mode!==false;document.getElementById('multi-ai-key').value='';aiConnectionDirty=false;document.getElementById('multi-ai-name').focus();}
 function renderAIConnections(data,keepPurpose){
  var draft={};if(keepPurpose)aiPurposes.forEach(function(p){draft[p]=document.getElementById('ai-purpose-'+p).value;});
  aiConnections=data.connections||[];aiConnectionRevision=data.available?data.revision:null;
@@ -27,7 +27,7 @@ function loadAIConnections(){
  if(aiConnectionBusy)return Promise.resolve();
  if((aiConnectionDirty||aiPurposeDirty)&&!confirm('重新载入将放弃此处未保存的连接和用途修改，继续？'))return Promise.resolve();
  aiDisable(true);
- return api('GET','/api/ai-settings/connections').then(function(data){aiConnectionBusy=false;resetAIConnectionForm();aiPurposeDirty=false;renderAIConnections(data,false);if(data.available)aiConnectionResult('连接设置已载入。');}).catch(function(error){aiConnectionRevision=null;aiConnectionResult('读取失败：'+error.message+'，可重新载入。',true);}).finally(function(){aiDisable(false);document.getElementById('multi-ai-reload').disabled=false;});
+ return api('GET','/api/ai-settings/connections').then(function(data){aiConnectionBusy=false;resetAIConnectionForm(true);aiPurposeDirty=false;renderAIConnections(data,false);if(data.available)aiConnectionResult('连接设置已载入。');}).catch(function(error){aiConnectionRevision=null;aiConnectionResult('读取失败：'+error.message+'，可重新载入。',true);}).finally(function(){aiDisable(false);document.getElementById('multi-ai-reload').disabled=false;});
 }
 function aiMutate(method,url,body,after){
  if(aiConnectionBusy||!aiConnectionRevision)return Promise.resolve();
@@ -36,13 +36,13 @@ function aiMutate(method,url,body,after){
 }
 function saveAIConnection(event){event.preventDefault();if(aiConnectionBusy||!aiConnectionRevision)return Promise.resolve();
  var payload={id:document.getElementById('multi-ai-id').value.trim(),name:document.getElementById('multi-ai-name').value.trim(),base_url:document.getElementById('multi-ai-url').value.trim(),model:document.getElementById('multi-ai-model').value.trim(),supports_vision:document.getElementById('multi-ai-vision').checked,json_mode:document.getElementById('multi-ai-json').checked,api_key:document.getElementById('multi-ai-key').value,expected_revision:aiConnectionRevision};
- return aiMutate('PUT','/api/ai-settings/connections',payload,function(data){renderAIConnections(data,aiPurposeDirty);aiConnectionBusy=false;resetAIConnectionForm();aiConnectionBusy=true;aiConnectionResult('连接已保存。');});
+ return aiMutate('PUT','/api/ai-settings/connections',payload,function(data){renderAIConnections(data,aiPurposeDirty);aiConnectionBusy=false;resetAIConnectionForm(true);aiConnectionBusy=true;aiConnectionResult('连接已保存。');});
 }
 function saveAIPurposes(event){event.preventDefault();if(aiConnectionBusy||!aiConnectionRevision)return Promise.resolve();var values={};aiPurposes.forEach(function(p){values[p]=document.getElementById('ai-purpose-'+p).value;});
  return aiMutate('PUT','/api/ai-settings/purposes',{purpose_connections:values,expected_revision:aiConnectionRevision},function(data){aiPurposeDirty=false;renderAIConnections(data,false);aiConnectionResult('用途选择已保存。');});
 }
-function deleteAIConnection(id){if(aiConnectionBusy||!aiConnectionRevision||!confirm('删除连接 '+id+'？'))return Promise.resolve();
- return aiMutate('DELETE','/api/ai-settings/connections/'+encodeURIComponent(id)+'?expected_revision='+encodeURIComponent(aiConnectionRevision),undefined,function(data){renderAIConnections(data,aiPurposeDirty);aiConnectionResult('连接已删除。');});
+function deleteAIConnection(id){var editing=document.getElementById('multi-ai-id').value===id;if(aiConnectionBusy||!aiConnectionRevision||!confirm('删除连接 '+id+'？'+(editing&&aiConnectionDirty?' 此连接未保存的修改也会丢弃。':'')))return Promise.resolve();
+ return aiMutate('DELETE','/api/ai-settings/connections/'+encodeURIComponent(id)+'?expected_revision='+encodeURIComponent(aiConnectionRevision),undefined,function(data){renderAIConnections(data,aiPurposeDirty);if(editing){aiConnectionBusy=false;resetAIConnectionForm(true);aiConnectionBusy=true;}aiConnectionResult('连接已删除。');});
 }
 function testAIConnection(id){return aiMutate('POST','/api/ai-settings/connections/test',{id:id,expected_revision:aiConnectionRevision},function(){aiConnectionResult('连接测试成功。测试仅使用固定文本，不含聊天内容；图片能力需通过实际识图验证。');});}
 document.getElementById('multi-ai-form').addEventListener('input',function(){aiConnectionDirty=true;});
