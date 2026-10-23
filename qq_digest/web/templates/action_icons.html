@@ -22,8 +22,9 @@
   details[open]>summary.action-disclosure::before { transform:rotate(135deg);margin-bottom:4px; }
   summary.action-disclosure::after { content:none!important; }
   summary.summary-group-cover.action-disclosure::before { display:none; }
-  .summary-group-toggle { display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;flex-shrink:0;border-radius:8px;background:var(--surface-subtle,#f2f5f9);font-size:0; }
-  .summary-group-toggle::before { content:'';width:8px;height:8px;border-right:1.8px solid currentColor;border-top:1.8px solid currentColor;transform:rotate(135deg); }
+  .summary-group-toggle { display:inline-flex;align-items:center;justify-content:center;gap:7px;min-height:32px;flex-shrink:0;font-size:12px;font-weight:500; }
+  .summary-group-toggle::before { content:'';order:1;width:7px;height:7px;margin-top:-4px;border-right:1.5px solid currentColor;border-top:1.5px solid currentColor;transform:rotate(135deg); }
+  .summary-group-stack[open] .summary-group-toggle::before { margin-top:4px; }
   .summary-group-stack[open] .summary-group-toggle::before { transform:rotate(315deg); }
   @media (max-width:600px) {
     .workspace-app .page-toolbar-inner { flex-wrap:wrap; }
@@ -119,10 +120,10 @@
   function refresh(root){if(root.nodeType!==1)return;if(root.matches(selector))decorate(root);root.querySelectorAll(selector).forEach(decorate);if(root.matches('summary'))disclosure(root);root.querySelectorAll('summary').forEach(disclosure);}
   function show(button){
     if(!button||button.disabled||(!button.dataset.actionIcon&&!button.dataset.disclosureLabel))return;
+    if(button.matches('.summary-group-cover'))return;
     if(!tip){tip=document.createElement('div');tip.id='action-icon-tooltip';tip.setAttribute('role','tooltip');tip.setAttribute('popover','manual');document.body.appendChild(tip);}
     active=button;tip.textContent=button.dataset.disclosureLabel||button.getAttribute('aria-label');tip.showPopover();
-    var anchor=button.matches('.summary-group-cover')?button.querySelector('.summary-group-toggle'):null;
-    var rect=(anchor||button).getBoundingClientRect(),box=tip.getBoundingClientRect();
+    var rect=button.getBoundingClientRect(),box=tip.getBoundingClientRect();
     tip.style.left=Math.max(8,Math.min(innerWidth-box.width-8,rect.left+(rect.width-box.width)/2))+'px';
     tip.style.top=(rect.top>=box.height+12?rect.top-box.height-8:Math.min(innerHeight-box.height-8,rect.bottom+8))+'px';
   }
