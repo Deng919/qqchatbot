@@ -28,6 +28,7 @@ class _ActivityLease:
     owner: threading.Thread
     depth: int
     context: AbstractContextManager
+    share_token: object | None = None
 
 
 _activity_guard = threading.Lock()
@@ -136,11 +137,12 @@ def root_lock(root: str | Path):
 
 
 @contextmanager
-def activity_lock(root: str | Path):
+def activity_lock(root: str | Path, *, share_token=None):
     """Claim a storage operation immediately, allowing watcher-thread release.
 
-    Same-thread nested claims share the outer OS lease. Other threads and
-    processes fail fast. The process registry is guarded only during entry and
+    Same-thread nested claims share the outer OS lease. A coordinator may share
+    its lease across threads after its own conflict check using an identity token.
+    Unrelated coordinators and processes fail fast. The registry is guarded during entry and
     exit, so its mutex is never held while the operation runs or transferred
     between threads. Any final outstanding exit releases the original lease.
     """
@@ -151,13 +153,13 @@ def activity_lock(root: str | Path):
     with _activity_guard:
         lease = _activities.get(key)
         if lease is not None:
-            if lease.owner is not owner:
+            if lease.owner is not owner and not (share_token is not None and lease.share_token is share_token):
                 raise StorageBusy("存储目录正在被其他操作使用，请稍后重试")
             lease.depth += 1
         else:
             context = _file_lock(root / ".qqdigest-activity.lock")
             context.__enter__()
-            lease = _ActivityLease(owner=owner, depth=1, context=context)
+            lease = _ActivityLease(owner=owner, depth=1, context=context, share_token=share_token)
             _activities[key] = lease
     try:
         yield

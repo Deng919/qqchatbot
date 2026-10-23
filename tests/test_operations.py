@@ -63,3 +63,37 @@ def test_unknown_operation_is_rejected():
     with pytest.raises(ValueError, match="未知操作"):
         with operations.claim("unknown"):
             pass
+
+
+@pytest.mark.parametrize('background',['daily','manual_summary'])
+def test_preferences_work_during_summary_without_unlocking_storage(tmp_path,background):
+    from concurrent.futures import ThreadPoolExecutor
+    operations=OperationCoordinator(lambda:tmp_path)
+    with operations.claim(background):
+        def preference():
+            with operations.claim('bookmark_mutation'):
+                assert operations.is_active(background)
+                for exclusive in ['backup','storage_mutation','version_mutation','group_mutation']:
+                    with pytest.raises(OperationBusy):
+                        with operations.claim(exclusive):pass
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            executor.submit(preference).result()
+
+
+@pytest.mark.parametrize('exclusive',['backup','storage_mutation','version_mutation','collect','sync','archive_qa'])
+def test_preferences_still_respect_exclusive_tasks(exclusive):
+    operations=OperationCoordinator()
+    with operations.claim(exclusive):
+        with pytest.raises(OperationBusy):
+            with operations.claim('bookmark_mutation'):pass
+
+
+def test_other_coordinator_cannot_join_summary_lease(tmp_path):
+    from concurrent.futures import ThreadPoolExecutor
+    first=OperationCoordinator(lambda:tmp_path)
+    second=OperationCoordinator(lambda:tmp_path)
+    with first.claim('daily'):
+        def unrelated():
+            with pytest.raises(OperationBusy):
+                with second.claim('bookmark_mutation'):pass
+        with ThreadPoolExecutor(max_workers=1) as executor:executor.submit(unrelated).result()

@@ -421,7 +421,7 @@
                 if (detail && typeof detail === 'object') {
                   detail = data.detail.message;
                 }
-                var error=new Error(detail || ('请求失败（' + response.status + '）'));error.status=response.status;throw error;
+                var error=new Error(detail || ('请求失败（' + response.status + '）'));error.status=response.status;if(response.status===409)toast(error.message,'error');throw error;
               }
               return data;
             });

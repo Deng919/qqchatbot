@@ -58,3 +58,24 @@ def test_interest_routes_auth_validation_and_operation_lock(web_client):
     assert client.get('/api/secondhand/dismissed').json()=={'items':[]}
     with client.app.state.operations.claim('backup'):
         assert client.post('/api/secondhand/dismissed/restore',json={'keys':['a'*64]}).status_code==409
+
+
+@pytest.mark.parametrize('background',['daily','manual_summary'])
+def test_preference_endpoints_during_background_summary(web_client,tmp_path,background):
+    from qq_digest.secondhand import SecondhandService
+    client,_,_=web_client;client.post('/login',data={'password':'password123'})
+    service=SecondhandService(client.app.state.archive,'Asia/Shanghai')
+    from qq_digest.models import GroupConfig
+    service.archive.upsert_groups([GroupConfig(group_id=11,name='二手群')])
+    service.add_groups([11])
+    units=ingest(service,[message()]);service.accept_units(units,{'items':[offer(units[0])]})
+    item=service.list_items(date_from='2026-10-13',date_to='2026-10-19')['items'][0]
+    client.app.state.operations.activity_root=lambda:tmp_path
+    with client.app.state.operations.claim(background):
+        assert client.patch('/api/secondhand/items/'+item['item_id'],json={'favorite':True}).status_code==200
+        hidden=client.post('/api/secondhand/dismiss',json={'item_ids':[item['item_id']]})
+        assert hidden.status_code==200
+        assert service.list_items(date_from='2026-10-13',date_to='2026-10-19')['total']==0
+        assert client.post('/api/secondhand/dismissed/restore',json={'keys':hidden.json()['keys']}).status_code==200
+        assert client.post('/api/secondhand/blocks',json={'qq':123}).status_code==200
+        assert client.delete('/api/secondhand/blocks/123').status_code==200

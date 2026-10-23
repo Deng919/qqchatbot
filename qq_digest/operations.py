@@ -10,6 +10,10 @@ OPERATION_KINDS = (
     "backup", "storage_mutation", "topic_mutation", "reminder_mutation", "bookmark_mutation", "setup_mutation", "version_mutation", "archive_qa"
 )
 CONFLICTS = {kind: frozenset(OPERATION_KINDS) for kind in OPERATION_KINDS}
+# Local preference writes do not alter summary inputs or report files.
+for background in ('daily', 'manual_summary'):
+    CONFLICTS[background] -= {'bookmark_mutation'}
+    CONFLICTS['bookmark_mutation'] -= {background}
 
 
 class OperationBusy(RuntimeError):
@@ -75,7 +79,7 @@ class OperationCoordinator:
             from .storage_files import StorageBusy, activity_lock
             root = self.activity_root() if self.activity_root is not None else None
             try:
-                with activity_lock(root) if root is not None else nullcontext():
+                with activity_lock(root, share_token=self) if root is not None else nullcontext():
                     yield
             except StorageBusy as exc:
                 raise OperationBusy(kind, ('external',)) from exc

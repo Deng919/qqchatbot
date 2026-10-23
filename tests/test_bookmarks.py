@@ -157,7 +157,8 @@ def test_saved_content_remains_readable_during_background_work(browsing_client):
     with client.app.state.operations.claim('daily'):
         for url in ('/api/bookmarks', f'/api/bookmarks/{bid}', f'/api/bookmarks/{bid}/context'):
             assert client.get(url).status_code == 200
-        assert client.patch(f'/api/bookmarks/{bid}', json={'status': 'completed', 'expected_revision': 0}).status_code == 409
+        assert client.patch(f'/api/bookmarks/{bid}', json={'status': 'completed', 'expected_revision': 0}).status_code == 200
+        assert client.get(f'/api/bookmarks/{bid}').json()['status'] == 'completed'
     assert client.patch(f'/api/bookmarks/{bid}', json={'status': 'completed', 'expected_revision': 2**63}).status_code == 422
     assert client.delete(f'/api/bookmarks/{bid}?expected_revision={2**63}').status_code == 422
 

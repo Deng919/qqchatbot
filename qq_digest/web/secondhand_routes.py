@@ -58,7 +58,7 @@ def add_secondhand_routes(app,*,archive,config,templates,require_login,operation
     def execute(action,mutate=False):
         try:
             if mutate:
-                with operations.claim('group_mutation'):return action()
+                with operations.claim('bookmark_mutation'):return action()
             return action()
         except OperationBusy as exc:raise HTTPException(409,str(exc)) from exc
         except LookupError as exc:raise HTTPException(404,str(exc)) from exc
