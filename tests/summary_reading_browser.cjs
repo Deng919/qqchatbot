@@ -13,10 +13,12 @@ const otherGroup={group_id:22,group_name:'另一个群',total:1,unread:1,report_
  await page.evaluate(()=>{window.requests=[];window.api=(method,url,body)=>new Promise((resolve,reject)=>requests.push({method,url,body,resolve,reject}));window.appendBookmarkAction=()=>{};window.recentWeekDates=()=>({start:'2026-10-22',end:'2026-10-23'});window.refreshDateHints=()=>{};window.formatNumber=String;window.featureFlags={report_qa:false,report_revisions:false};});
  await page.evaluate(main);await page.evaluate(read('summary_reading_script.html').replace(/<\/?script>/g,'').replace('  summaryInit();',''));await page.evaluate(read('inbox_reading_script.html').replace(/<\/?script>/g,''));
  await page.evaluate(({group,otherGroup})=>{document.getElementById('report-from').value='2026-10-23';document.getElementById('report-to').value='2026-10-23';inboxRenderDashboard({total:2,point_total:91,unread:91,items:[group,otherGroup]});},{group,otherGroup});
- assert.equal(await page.locator('.summary-group-toggle').first().textContent(),'展开');
+ assert.equal(await page.locator('.summary-group-toggle').first().textContent(),'');
+ assert.equal(await page.locator('.summary-group-toggle').first().getAttribute('aria-hidden'),'true');
  await page.locator('.summary-group-cover').first().hover();assert.equal(await page.getByRole('tooltip').count(),0);
  await page.locator('.summary-group-cover').first().click();
- await page.waitForFunction(()=>document.querySelector('.summary-group-toggle').textContent==='收起');
+ await page.waitForFunction(()=>document.querySelector('.summary-group-cover').getAttribute('aria-expanded')==='true');
+ assert.equal(await page.locator('.summary-group-toggle').first().textContent(),'');
  async function resolveRequest(value){await page.waitForFunction(()=>requests.length>0);return page.evaluate(value=>{const request=requests.shift();request.resolve(value);return request.url;},value);}
  async function pages(saved){for(let pageNumber=1;pageNumber<=3;pageNumber++){const start=(pageNumber-1)*30,items=Array.from({length:30},(_,i)=>({...item(start+i),read:saved&&start+i===0}));await resolveRequest({items,total:90,page:pageNumber,page_size:30});}}
  await pages(false);await page.waitForFunction(()=>document.querySelector('.summary-group-points').children.length===90);

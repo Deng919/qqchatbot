@@ -74,7 +74,7 @@
       var card=summaryNode('details','summary-group-stack'),heading=summaryNode('summary','summary-group-cover'),meta=summaryNode('div','summary-group-meta');card.dataset.groupId=String(group.group_id);
       meta.appendChild(summaryNode('span','summary-group-icon','群'));meta.appendChild(summaryNode('span','',group.unread?'有 '+group.unread+' 条未读':'全部已读'));heading.appendChild(meta);
       heading.appendChild(summaryNode('h2','summary-group-title',group.group_name));heading.appendChild(summaryNode('p','summary-group-preview',summaryCleanText((group.preview||[])[0]||'展开查看这个群的摘要要点')));
-      var footer=summaryNode('div','summary-group-footer');footer.appendChild(summaryNode('span','',group.report_count+' 份摘要 · '+group.total+' 条要点'));var hint=summaryNode('span','summary-group-toggle','展开');footer.appendChild(hint);heading.appendChild(footer);card.appendChild(heading);
+      var footer=summaryNode('div','summary-group-footer');footer.appendChild(summaryNode('span','',group.report_count+' 份摘要 · '+group.total+' 条要点'));var hint=summaryNode('span','summary-group-toggle');hint.setAttribute('aria-hidden','true');footer.appendChild(hint);heading.appendChild(footer);card.appendChild(heading);
       var body=summaryNode('div','summary-group-content');body.hidden=true;card.appendChild(body);grid.appendChild(card);var entry={card:card,name:group.group_name,scrollTop:positions.get(String(group.group_id))||0,rememberPosition:rememberPosition,restorePosition:restorePosition};inboxDashboardCards.push(entry);
       var loaded=false,loading=false,page=0,loadedItems=[],total=group.total,restoreScroll=positions.get(String(group.group_id));
       function current(){return revision===inboxDashboardRevision&&summaryView==='points';}
@@ -95,8 +95,8 @@
         var status=summaryNode('p','summary-group-load-status','正在读取本群要点…');body.appendChild(status);
         api('GET','/api/summary-reading?'+params).then(function(result){if(!current())return;var count=loadedItems.length,seen=new Set(loadedItems.map(function(item){return item.key;}));result.items.forEach(function(item){if(!seen.has(item.key)){seen.add(item.key);loadedItems.push(item);var at=inboxItems.findIndex(function(point){return point.key===item.key;});if(at<0)inboxItems.push(item);else inboxItems[at]=item;}});if(loadedItems.length===count&&loadedItems.length<result.total)throw new Error('本群要点发生变化，请重试或刷新筛选');loaded=true;page=result.page;total=result.total;renderContent(total);advance=loadedItems.length<total;}).catch(function(error){if(!current())return;status.textContent='读取失败：'+error.message;status.appendChild(summaryButton('重试',function(){status.remove();load(next);}));}).finally(function(){loading=false;if(advance&&current()&&card.open)load(page+1);});
       }
-      card.addEventListener('toggle',function(){if(!current())return;body.hidden=!card.open;hint.textContent=card.open?'收起':'展开';summaryExpanded['group:'+group.group_id]=card.open;summarySave();if(card.open&&!loading&&(!loaded||loadedItems.length<total))load(page+1);});
-      if(summaryExpanded['group:'+group.group_id]){card.open=true;body.hidden=false;hint.textContent='收起';load(1);}
+      card.addEventListener('toggle',function(){if(!current())return;body.hidden=!card.open;summaryExpanded['group:'+group.group_id]=card.open;summarySave();if(card.open&&!loading&&(!loaded||loadedItems.length<total))load(page+1);});
+      if(summaryExpanded['group:'+group.group_id]){card.open=true;body.hidden=false;load(1);}
     });
     var noMatch=summaryNode('p','summary-dashboard-no-match','本页没有匹配的群聊。');noMatch.id='inbox-dashboard-no-match';noMatch.hidden=true;host.appendChild(noMatch);inboxFilterDashboard();inboxApplyView();
   }
