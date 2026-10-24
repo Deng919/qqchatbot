@@ -58,6 +58,26 @@ def test_desktop_proof_cannot_be_replayed(desktop_app):
     assert other.get('/api/groups').status_code == 401
 
 
+@pytest.mark.parametrize('maintenance', ['storage_mutation', 'version_mutation'])
+def test_desktop_login_does_not_write_storage_during_maintenance(desktop_app, maintenance):
+    http = client(desktop_app)
+    with desktop_app.state.operations.claim(maintenance):
+        response = http.post('/api/desktop-session', json={'token': proof()})
+        assert response.status_code == 200
+        assert http.get('/api/groups').status_code == 200
+        assert http.patch('/api/groups/123', json={}).status_code == 409
+
+
+def test_desktop_login_remains_available_after_storage_handoff(desktop_app):
+    desktop_app.state.desktop_bridge.storage_handoff_state = lambda: {
+        'read_only': True, 'restart_required': True, 'message': '请重启程序'}
+    http = client(desktop_app)
+    response = http.post('/api/desktop-session', json={'token': proof()})
+    assert response.status_code == 200
+    assert http.get('/api/groups').status_code == 200
+    assert http.patch('/api/groups/123', json={}).status_code == 409
+
+
 def test_browser_login_is_still_required(desktop_app):
     http = client(desktop_app)
     page = http.get('/desktop-start')

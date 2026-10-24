@@ -26,7 +26,8 @@ class StorageHandoffMiddleware:
         path = scope['path'].rstrip('/') or '/'
         # Version inventory registers a release on disk; it is an implicit write.
         write = scope['method'] not in {'GET', 'HEAD', 'OPTIONS'} or path == '/api/desktop-updates'
-        exempt = path in {'/login', '/logout'}
+        # Authentication only issues/clears a cookie; it does not mutate storage.
+        exempt = path in {'/login', '/logout', '/api/desktop-session'}
         state = runtime_state(self.runtime)
         scope.setdefault('state', {})['storage_handoff'] = state
         try:
