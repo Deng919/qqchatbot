@@ -209,7 +209,7 @@ def add_secondhand_routes(app,*,archive,config,templates,require_login,operation
         if ref is None:raise HTTPException(404,'图片来源不存在')
         from ..attachments import AttachmentService
         reader=AttachmentService(archive,config)
-        try:data,mime=await guarded_to_thread(reader.preview_image if preview else reader.original_image,ref)
+        try:data,mime=await guarded_to_thread(reader.preview_image if preview else reader.original_image,ref,download=True)
         except (OSError,ValueError,NotImplementedError) as exc:raise HTTPException(404,'图片未下载或无法核实来源') from exc
         return Response(data,media_type=mime,headers={'X-Content-Type-Options':'nosniff','Cache-Control':'no-store'})
 

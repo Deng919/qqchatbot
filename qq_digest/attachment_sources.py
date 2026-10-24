@@ -20,6 +20,21 @@ def _paths(data,depth=0):
     return list(dict.fromkeys(result))[:8]
 
 
+def _image_download_path(fields):
+    for wire,value in fields.get(45816,[]):
+        if wire=='bytes' and value not in (b'',b'multimedia.nt.qq.com.cn'):
+            return ''
+    for number in (45802,45803,45804):
+        for wire,value in fields.get(number,[]):
+            if wire!='bytes' or not value or len(value)>8192:continue
+            try:
+                from .image_downloads import validate_download_path
+                return validate_download_path(value.decode('utf-8'))
+            except (UnicodeDecodeError,ValueError):
+                continue
+    return ''
+
+
 def attachment_refs(blob):
     refs=[]
     for wire,data in parse_protobuf(blob or b'').get(40800,[]):
@@ -38,7 +53,11 @@ def attachment_refs(blob):
         name=raw_name.decode('utf-8',errors='replace')
         if not name or any(not c.isprintable() for c in name):name=PureWindowsPath(path).name or ('图片' if image else '文件')
         label='image' if image else 'file'
-        refs.append({'key':f'{label}:{md5}:{len(refs)}','kind':label,'name':name[:200],'path':path,'md5':md5})
+        ref={'key':f'{label}:{md5}:{len(refs)}','kind':label,'name':name[:200],'path':path,'md5':md5}
+        if image:
+            download_path=_image_download_path(fields)
+            if download_path:ref['download_path']=download_path
+        refs.append(ref)
     return refs[:100]
 
 

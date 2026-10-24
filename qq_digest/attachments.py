@@ -125,18 +125,28 @@ class AttachmentService:
         if not text.strip():raise ValueError('附件没有可读正文')
         return text[:MAX_CHARS],partial or len(text)>MAX_CHARS
 
-    def original_image(self,ref):
+    def original_image(self,ref,*,download=False):
         if ref.get('kind')!='image':raise ValueError('不是图片附件')
-        data=self._verified_data(ref)
+        try:data=self._verified_data(ref)
+        except (OSError,ValueError):
+            if not download:raise
+            from .image_downloads import download_original
+            data=self._file_data(download_original(ref,self.config))
+            if hashlib.md5(data).hexdigest()!=str(ref.get('md5') or '').lower():raise ValueError('附件与原消息不匹配')
         block=image_block(data)
         mime=block['image_url']['url'].split(';',1)[0].removeprefix('data:')
         return data,mime
 
-    def preview_image(self,ref):
+    def preview_image(self,ref,*,download=False):
         """A local cache preview is distinct from the verified original bytes."""
         if ref.get('kind')!='image':raise ValueError('不是图片附件')
         # Ignore arbitrary message paths: only this account's digest-named cache.
-        data=self._file_data(self._image_cache(ref))
+        try:data=self._file_data(self._image_cache(ref))
+        except (OSError,ValueError):
+            if not download:raise
+            from .image_downloads import download_original
+            data=self._file_data(download_original(ref,self.config))
+            if hashlib.md5(data).hexdigest()!=str(ref.get('md5') or '').lower():raise ValueError('附件与原消息不匹配')
         try:
             with Image.open(io.BytesIO(data)) as image:
                 if image.format not in IMAGE_TYPES:raise NotImplementedError('暂不支持此图片格式')
@@ -176,6 +186,9 @@ class AttachmentService:
 
     def _image_cache(self,ref):
         """Only original images named by the message digest in this QQ account."""
+        from .image_downloads import cached_image_path
+        managed=cached_image_path(ref,self.config)
+        if managed is not None:return managed
         digest=str(ref.get('md5') or '').lower()
         if self.config is None or self.config.ntqq.qq_number<=0 or not re.fullmatch('[0-9a-f]{32}',digest):return None
         root=Path.home()/'Documents'/'Tencent Files'/str(self.config.ntqq.qq_number)/'nt_qq'/'nt_data'/'Pic'

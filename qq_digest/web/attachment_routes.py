@@ -56,9 +56,10 @@ def add_attachment_routes(app,*,archive,config,require_login,operations):
         _,refs=image_source(ar,gid,msg_id)
         ref=next((r for r in refs if r['key']==key),None)
         if ref is None:raise HTTPException(404,'图片来源不存在')
-        if preview and not ar.connection.execute('SELECT 1 FROM market_groups WHERE group_id=?',(gid,)).fetchone():raise HTTPException(404,'此来源不支持二手图片预览')
+        market=bool(ar.connection.execute('SELECT 1 FROM market_groups WHERE group_id=?',(gid,)).fetchone())
+        if preview and not market:raise HTTPException(404,'此来源不支持二手图片预览')
         reader=AttachmentService(ar,config(request))
-        try:data,mime=await guarded_to_thread(reader.preview_image if preview else reader.original_image,ref)
+        try:data,mime=await guarded_to_thread(reader.preview_image if preview else reader.original_image,ref,**({'download':True} if market else {}))
         except (OSError,ValueError,NotImplementedError) as exc:raise HTTPException(404,'原图未下载或无法核实来源') from exc
         return Response(data,media_type=mime,headers={'X-Content-Type-Options':'nosniff','Cache-Control':'no-store'})
 
