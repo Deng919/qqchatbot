@@ -191,7 +191,7 @@ class TestCollect:
             "file",
         ]
         assert messages[0].sender_qq is None
-        assert messages[0].content_json == {"sender_uid": "u_sender"}
+        assert messages[0].content_json == {"sender_uid": "u_sender", "attachment_source_unavailable": True}
         assert messages[1].sender_qq == 12345
 
     def test_metadata_scan_failure_is_not_silently_accepted(self, ntqq_dbs):

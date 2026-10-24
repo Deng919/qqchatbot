@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import base64
 import binascii
+import json
 import sqlite3
 from collections.abc import Iterable
 from datetime import datetime
@@ -153,6 +154,14 @@ class NTQQCollector(Collector):
                     connection=self._open_msg_db()
                     try:rows=self._scan_metadata(connection,group_id,int(start.timestamp()),int(end.timestamp()))
                     finally:connection.close()
+                    verified = {(str(row[0]), row[3]) for row in rows}
+                    sequences = {(str(row[0]), row[3]): row[5] for row in rows if isinstance(row[5], int)}
+                    for message in messages:
+                        identity = (message.msg_id, int(message.timestamp.timestamp()))
+                        if identity not in verified:
+                            message.content_json['attachment_source_unavailable'] = True
+                        if identity in sequences:
+                            message.content_json['message_sequence'] = sequences[identity]
                     for message in self._fetch_blobs(rows,group_id,datetime.now(self.timezone)):
                         if not message.content_json.get('attachments') and not message.content_json.get('forward_messages'):continue
                         previous=by_id.get(message.msg_id)
@@ -162,6 +171,44 @@ class NTQQCollector(Collector):
                         else:by_id[message.msg_id]=message
                 except (sqlite3.Error,CollectionIncompleteError):
                     for message in messages:message.content_json['attachment_source_unavailable']=True
+            else:
+                for message in messages:
+                    message.content_json['attachment_source_unavailable'] = True
+            if (self.db_dir / 'nt_msg_media.db').is_file():
+                try:
+                    for message in self._collect_message_media(group_id, start, end):
+                        previous = by_id.get(message.msg_id)
+                        if previous is None:
+                            if message.text:
+                                by_id[message.msg_id] = message
+                        elif previous.timestamp == message.timestamp:
+                            metadata = dict(previous.content_json)
+                            used_recovery = 'message_sequence' not in metadata
+                            metadata.setdefault('message_sequence', message.content_json['message_sequence'])
+                            refs = list(metadata.get('attachments', []))
+                            authoritative = {ref.get('kind') for ref in refs if ref.get('md5')}
+                            recovered = message.content_json.get('attachments', [])
+                            recovered_kinds = {ref.get('kind') for ref in recovered if ref.get('md5')}
+                            refs = [ref for ref in refs if ref.get('md5') or ref.get('kind') not in recovered_kinds]
+                            added_refs = [ref for ref in recovered if ref.get('kind') not in authoritative]
+                            refs.extend(added_refs)
+                            used_recovery = used_recovery or bool(added_refs)
+                            if refs:
+                                metadata['attachments'] = refs
+                            if not metadata.get('forward_messages') and message.content_json.get('forward_messages'):
+                                metadata['forward_messages'] = message.content_json['forward_messages']
+                                used_recovery = True
+                            if used_recovery:
+                                metadata['attachment_source_unavailable'] = True
+                            update = {'content_json': metadata}
+                            old_uid = previous.content_json.get('sender_uid')
+                            new_uid = message.content_json.get('sender_uid')
+                            if (previous.sender_qq is None and message.sender_qq is not None
+                                    and (not old_uid or not new_uid or old_uid == new_uid)):
+                                update['sender_qq'] = message.sender_qq
+                            by_id[message.msg_id] = previous.model_copy(update=update)
+                except (sqlite3.Error, ValueError, TypeError, KeyError):
+                    pass
             # The media index can be newer than the decrypted message snapshot.
             # It also retains pure-image messages absent from the text index.
             try:
@@ -199,6 +246,29 @@ class NTQQCollector(Collector):
             msg_db.close()
 
         yield from self._fetch_blobs(matching_rows, group_id, now)
+
+    def _collect_message_media(
+        self, group_id: int, start: datetime, end: datetime
+    ) -> Iterable[NormalizedMessage]:
+        path = self.db_dir / 'nt_msg_media.db'
+        connection = sqlite3.connect(path.resolve().as_uri() + '?mode=ro', uri=True)
+        try:
+            rows = connection.execute(
+                'SELECT msg_id,timestamp,sender_uid,sender_qq,message_sequence,text,kind,content_json '
+                'FROM message_media WHERE group_id=? AND timestamp>=? AND timestamp<=? '
+                'ORDER BY timestamp,msg_id',
+                (group_id, int(start.timestamp()), int(end.timestamp())),
+            )
+            for mid, ts, uid, sender, sequence, text, kind, metadata in rows:
+                content = json.loads(metadata)
+                content.update(sender_uid=uid, message_sequence=sequence, attachment_source_unavailable=True)
+                yield self._resolve_sender(NormalizedMessage(
+                    msg_id=mid, group_id=group_id, sender_qq=sender,
+                    timestamp=datetime.fromtimestamp(ts, self.timezone),
+                    message_type=self._map_kind(kind), text=text, content_json=content,
+                    source_id='ntqq_message_media', collected_at=datetime.now(self.timezone)))
+        finally:
+            connection.close()
 
     def _collect_indexed_images(
         self, group_id: int, start: datetime, end: datetime
@@ -323,31 +393,38 @@ class NTQQCollector(Collector):
         group_id: int,
         start_ts: int,
         end_ts: int,
-    ) -> list[tuple[int, str, int, int, str]]:
-        """Scan metadata columns, returning matching (msg_id, peer, sender, ts).
+    ) -> list[tuple[int, str, int, int, str, int | None]]:
+        """Read exact group/time metadata plus optional modern message sequence.
 
         The 40021 column stores the numeric group_id directly.
-        Uses a rowid DESC scan for corruption resilience.
+        Rowids are message IDs and do not establish chronological order.
         """
-        matching: list[tuple[int, str, int, int, str]] = []
+        matching: list[tuple[int, str, int, int, str, int | None]] = []
         gid_str = str(group_id)
         try:
             cur = msg_db.cursor()
             cur.execute('PRAGMA table_info(group_msg_table)')
             columns={row[1] for row in cur}
             sender_column='40033' if '40033' in columns else '40027'
-            metadata_columns=f'"40001","40020","40021","{sender_column}","40050"'
+            sequence_column='"40003"' if '40003' in columns else 'NULL'
+            metadata_columns=f'"40001","40020","40021","{sender_column}","40050",{sequence_column}'
+            modern_peer = '40033' in columns and '40027' in columns
+            indices = {row[1] for row in cur.execute('PRAGMA index_list(group_msg_table)')}
+            indexed = (' INDEXED BY group_msg_table_idx40027_40003'
+                       if modern_peer and 'group_msg_table_idx40027_40003' in indices else '')
+            peer_filter = '"40027"=? AND ' if modern_peer else ''
+            parameters = (group_id, gid_str, start_ts, end_ts) if modern_peer else (gid_str, start_ts, end_ts)
             cur.execute(
-                f"SELECT rowid, {metadata_columns} FROM group_msg_table ORDER BY rowid DESC"
+                f'SELECT rowid, {metadata_columns} FROM group_msg_table{indexed} '
+                f'WHERE {peer_filter}"40021"=? AND "40050">=? AND "40050"<=? ORDER BY rowid DESC',
+                parameters,
             )
             for row in cur:
                 peer = row[3] or ""
                 ts = row[5] or 0
-                if ts and ts < start_ts:
-                    break
                 if peer == gid_str and start_ts <= ts <= end_ts:
                     sender = row[4] or 0
-                    matching.append((row[1], peer, sender, ts,str(row[2] or '')))
+                    matching.append((row[1], peer, sender, ts,str(row[2] or ''),row[6]))
         except sqlite3.DatabaseError as exc:
             raise CollectionIncompleteError(f"消息元数据扫描不完整: {exc}") from exc
         return matching
@@ -358,7 +435,7 @@ class NTQQCollector(Collector):
 
     def _fetch_blobs(
         self,
-        rows: list[tuple[int, str, int, int, str]],
+        rows: list[tuple[int, str, int, int, str, int | None]],
         group_id: int,
         collected_at: datetime,
     ) -> Iterable[NormalizedMessage]:
@@ -380,7 +457,7 @@ class NTQQCollector(Collector):
                 for row in mcur.fetchall():
                     blob_map[row[0]] = row[1]
 
-                for msg_id, peer, sender, ts, sender_uid in batch:
+                for msg_id, peer, sender, ts, sender_uid, sequence in batch:
                     if msg_id not in blob_map:
                         raise CollectionIncompleteError(
                             f"消息正文缺失: group_id={group_id}, msg_id={msg_id}"
@@ -393,6 +470,7 @@ class NTQQCollector(Collector):
                     from ..attachment_sources import attachment_refs
                     refs=attachment_refs(blob)
                     metadata={'sender_uid':sender_uid} if sender_uid else {}
+                    if isinstance(sequence, int):metadata['message_sequence']=sequence
                     if refs:metadata['attachments']=refs
                     from ..forward_sources import forward_records
                     forwards=forward_records(blob)

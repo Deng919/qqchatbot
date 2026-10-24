@@ -37,7 +37,28 @@ const item={item_id:'phone',title:'闲置手机',category:'digital',description:
  assert.equal(await page.locator('.market-item img').count(),0,'missing images and arbitrary URLs leave no gallery');assert.equal(await page.locator('.market-item .market-images').count(),0);assert.deepEqual(remote,[]);
  await page.evaluate(item=>document.getElementById('market-list').appendChild(marketCard({...item,images:[{key:'missing',name:'missing.jpg',url:'/api/secondhand/image?key=missing'}]})),item);
  await page.locator('.market-item').last().scrollIntoViewIfNeeded();await page.waitForFunction(()=>document.querySelectorAll('.market-item img').length===0);
- assert.equal(await page.locator('.market-item .market-images:visible').count(),0,'an unavailable photo leaves no broken thumbnail or empty strip');
+ assert.equal(await page.locator('.market-item .market-image-missing:visible').count(),1,'an unavailable referenced photo remains visibly marked as not downloaded');
+ assert.match(await page.locator('.market-item .market-image-missing').textContent(),/图片未下载/);
+ const related={...item,images:[{...item.images[0],related:true,source_msg_id:'adjacent-photo',source_timestamp:'2026-10-24T02:48:20+00:00',source_url:'/api/secondhand/source?group_id=11&msg_id=adjacent-photo'}]};
+ await page.evaluate(item=>{const host=document.getElementById('market-list');host.textContent='';host.appendChild(marketCard(item));window.detailData={item,sources:[],favorite:false};window.mountMessageContext=(host,options)=>{host.textContent='原消息上下文：'+options.citedId;host.dataset.sourceUrl=options.url;};},related);
+ assert.match(await page.locator('.market-images-label').textContent(),/连续消息配图/,'separately sent photos are distinguished from same-message photos');
+ assert.match(await page.locator('.market-image-source').textContent(),/图片原消息/);
+ assert.equal(await page.locator('.market-image-source').getAttribute('href'),'/api/secondhand/source?group_id=11&msg_id=adjacent-photo');
+ assert.match(await page.locator('.market-image-source').getAttribute('title'),/2026/,'the photo source timestamp remains accessible');
+ await page.locator('.market-image-source').click();
+ await page.waitForFunction(()=>document.querySelector('#market-context').textContent.includes('adjacent-photo'));
+ assert.equal(await page.locator('#market-dialog').evaluate(n=>n.open),true,'photo provenance opens the market context dialog');
+ assert.equal(await page.locator('#market-context [data-source-url]').getAttribute('data-source-url'),'/api/secondhand/source?group_id=11&msg_id=adjacent-photo');
+ assert.ok((await page.evaluate(()=>requests)).every(request=>request.method==='GET'),'photo provenance makes read-only requests');
+ await page.evaluate(()=>{marketClose();marketN('market-detail-images').textContent='';});
+ const missingRelated={...related,images:[{...related.images[0],url:'/api/secondhand/image?key=both-missing',preview_url:'/api/secondhand/image?key=both-missing&preview=true'}]};
+ await page.evaluate(({item,related,missingRelated})=>{const host=document.getElementById('market-list');host.textContent='';[item,related,missingRelated].forEach(product=>host.appendChild(marketCard(product)));},{item,related,missingRelated});
+ await page.waitForFunction(()=>document.querySelector('.market-image-missing'));
+ assert.equal(await page.locator('.market-item').last().locator('.market-image-source').count(),1,'an undownloaded continuous photo retains its original-message link');
+ for(const width of [1440,390]){await page.setViewportSize({width,height:900});assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false,'photo provenance stays within the page at '+width);if(process.env.SECONDHAND_SCREENSHOT_DIR)await page.screenshot({path:path.join(process.env.SECONDHAND_SCREENSHOT_DIR,'secondhand-related-missing-'+width+'.png'),fullPage:true});}
+ await page.setViewportSize({width:1440,height:900});
+ await page.evaluate(item=>{const host=document.getElementById('market-list');host.textContent='';['https://external.invalid/source','/api/secondhand/source?group_id=11&msg_id=other'].forEach(source_url=>host.appendChild(marketCard({...item,images:[{...item.images[0],related:true,source_msg_id:'adjacent-photo',source_url}]})));},item);
+ assert.equal(await page.locator('.market-image-source').count(),0,'unsafe or mismatched photo provenance cannot become a source link');
  const cached={...item,images:[{...item.images[0],preview_url:imageUrl+'&preview=true'}]};
  await page.evaluate(item=>{const host=document.getElementById('market-list');host.textContent='';host.appendChild(marketCard(item));},cached);
  assert.equal(await page.locator('.market-item img').getAttribute('src'),imageUrl+'&preview=true','cached previews serve both thumbnail and click');
@@ -57,8 +78,8 @@ const item={item_id:'phone',title:'闲置手机',category:'digital',description:
   if(key==='preview-missing'){
    await page.waitForFunction(original=>{const img=document.querySelector('.market-item img');return img&&img.getAttribute('src')===original&&img.complete&&img.naturalWidth>0;},original);
    assert.equal(await page.locator('.market-item .market-image-link').getAttribute('href'),original);assert.match(await page.locator('.market-item .market-image-link').getAttribute('aria-label'),/^查看原图/);assert.equal(await page.locator('.market-item .market-images-label').textContent(),'原消息配图');
-  }else await page.waitForFunction(()=>!document.querySelector('.market-item .market-images'));
-  assert.equal(imageRequests.filter(search=>search==='?key='+key+'&preview=true').length,1,'preview is tried once');assert.equal(imageRequests.filter(search=>search==='?key='+key).length,1,'strict original is the only retry');
+  }else{await page.waitForFunction(()=>!document.querySelector('.market-item img'));assert.match(await page.locator('.market-item .market-image-missing').textContent(),/图片未下载/);}
+  assert.equal(imageRequests.filter(search=>search==='?key='+key+'&preview=true').length,key==='both-missing'?2:1,'each preview is tried once');assert.equal(imageRequests.filter(search=>search==='?key='+key).length,key==='both-missing'?2:1,'strict original is the only retry');
  }
  await page.evaluate(item=>{const host=document.getElementById('market-list');host.textContent='';host.appendChild(marketCard({...item,images:[{...item.images[0],preview_url:'https://external.invalid/unsafe-preview.jpg'}]}));},item);
  assert.equal(await page.locator('.market-item img').getAttribute('src'),imageUrl,'an unsafe preview falls back directly to the safe original');assert.deepEqual(remote,[]);

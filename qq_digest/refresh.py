@@ -402,6 +402,7 @@ def _decrypt_db(
     *,
     required_tables: set[str] | None = None,
     check_integrity: bool = False,
+    failed_integrity_path: str | Path | None = None,
 ) -> bool:
     """Decrypt a full QQ NT database to plain SQLite."""
     input_path = Path(input_path)
@@ -448,7 +449,10 @@ def _decrypt_db(
         if check_integrity:
             conn = sqlite3.connect(str(temp_path))
             try:
-                integrity = conn.execute("PRAGMA quick_check").fetchall()
+                try:
+                    integrity = conn.execute("PRAGMA quick_check").fetchall()
+                except sqlite3.DatabaseError as exc:
+                    integrity = [(str(exc),)]
             finally:
                 conn.close()
             if integrity != [("ok",)]:
@@ -457,6 +461,11 @@ def _decrypt_db(
                     input_path.name,
                     integrity[:10],
                 )
+                # Kept only inside the refresh's private temporary directory.
+                # A rejected DB can supply bounded rows to a separate validated
+                # optional snapshot, but must never replace the verified DB.
+                if failed_integrity_path is not None:
+                    os.replace(temp_path, failed_integrity_path)
                 return False
         os.replace(temp_path, output_path)
         return True
@@ -683,6 +692,7 @@ def refresh_database(
         staged_dir = run_dir / "decrypted"
         input_dir.mkdir()
         staged_dir.mkdir()
+        rejected_message_path = run_dir / 'rejected-nt_msg.db'
         for src_path, enc_key in decrypt_jobs:
             fn = os.path.basename(src_path)
             snapshot_path = input_dir / fn
@@ -700,6 +710,7 @@ def refresh_database(
                     enc_key,
                     required_tables=required_tables,
                     check_integrity=required_tables is not None,
+                    failed_integrity_path=rejected_message_path if fn.lower() == 'nt_msg.db' else None,
                 ):
                     ok_count += 1
                     refreshed_names.add(fn.lower())
@@ -710,6 +721,18 @@ def refresh_database(
                 fail_count += 1
                 errors.append(f"快照或解密异常 {fn}: {exc}")
                 logger.warning("Snapshot/decrypt failed for %s: %s", fn, exc)
+
+        if rejected_message_path.is_file() and 'group_msg_fts.db' in refreshed_names:
+            from .message_media_index import build_message_media_snapshot
+            try:
+                count = build_message_media_snapshot(
+                    rejected_message_path, staged_dir / 'group_msg_fts.db',
+                    staged_dir / 'nt_msg_media.db')
+                refreshed_names.add('nt_msg_media.db')
+                logger.info('Validated %d recent rows into optional media snapshot', count)
+            except (OSError, sqlite3.Error, ValueError, TypeError) as exc:
+                errors.append(f'nt_msg_media.db 近期附件索引未刷新: {exc}')
+                logger.warning('Optional recent media snapshot failed: %s', exc)
 
         missing_core = _publish_staged_outputs(
             staged_dir,

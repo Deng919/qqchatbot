@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+from datetime import timedelta
 from pathlib import Path
 from threading import Lock
 from urllib.parse import urlencode
@@ -55,6 +56,51 @@ def add_secondhand_routes(app,*,archive,config,templates,require_login,operation
         units=source_units([archive._row_to_message(row)],service.blocked_ids())
         return [ref for unit in units if not unit.get('attachment_issue') for ref in unit['attachments'] if isinstance(ref,dict) and ref.get('kind')=='image']
 
+    def continuous_image_sources(item):
+        from ..secondhand_evidence import source_units
+        # A source sequence proves who spoke between text and separately sent
+        # pictures. Time or the same seller alone cannot establish continuity.
+        if item.get('path')!='0' or item.get('forwarder_qq') or not item.get('seller_qq'):return []
+        row=archive.connection.execute('SELECT * FROM messages WHERE group_id=? AND msg_id=?',(item['group_id'],item['msg_id'])).fetchone()
+        if row is None:return []
+        anchor=archive._row_to_message(row);seq=anchor.content_json.get('message_sequence')
+        if type(seq) is not int or anchor.sender_qq!=item['seller_qq'] or anchor.message_type=='forward':return []
+        start=(anchor.timestamp-timedelta(seconds=120)).isoformat();end=(anchor.timestamp+timedelta(seconds=120)).isoformat()
+        rows=archive.connection.execute('SELECT * FROM messages WHERE group_id=? AND timestamp>=? AND timestamp<=? LIMIT 201',(item['group_id'],start,end)).fetchall()
+        if len(rows)>200:return []
+        by_seq={};duplicates=set()
+        for candidate in map(archive._row_to_message,rows):
+            number=candidate.content_json.get('message_sequence')
+            if type(number) is not int or number<=0:continue
+            if number in by_seq:duplicates.add(number)
+            else:by_seq[number]=candidate
+        if seq in duplicates:return []
+        session={seq:anchor}
+        for direction in (-1,1):
+            for offset in range(1,21):
+                number=seq+direction*offset;candidate=by_seq.get(number)
+                if candidate is None or number in duplicates or candidate.sender_qq!=anchor.sender_qq or candidate.message_type=='forward':break
+                if anchor.content_json.get('sender_uid') and candidate.content_json.get('sender_uid')!=anchor.content_json['sender_uid']:break
+                session[number]=candidate
+        posts=archive.connection.execute("SELECT msg_id,item_key FROM market_posts WHERE group_id=? AND path='0' AND published_at>=? AND published_at<=?",(item['group_id'],start,end)).fetchall()
+        products={}
+        for post in posts:products.setdefault(post['msg_id'],set()).add(post['item_key'])
+        if len(products.get(anchor.msg_id,()))>1:return []
+        # Other substantial text is also a possible item boundary, even before
+        # extraction has accepted it. Equal-distance pictures stay unassigned.
+        boundaries={number for number,candidate in session.items() if candidate.msg_id in products or len(candidate.text.replace('[图片]','').strip())>=5}
+        boundaries.add(seq);sources=[]
+        for number,candidate in sorted(session.items()):
+            if number==seq:continue
+            distance=min(abs(number-other) for other in boundaries)
+            nearest=[other for other in boundaries if abs(number-other)==distance]
+            if nearest!=[seq]:continue
+            units=source_units([candidate],service.blocked_ids())
+            unit=next((unit for unit in units if unit['path']=='0' and not unit.get('attachment_issue')),None)
+            if unit:
+                sources.extend((candidate,ref) for ref in unit['attachments'] if isinstance(ref,dict) and ref.get('kind')=='image')
+        return sources
+
     def item_images(item,cache,limit):
         identity=(item['group_id'],item['msg_id'])
         if identity not in cache:
@@ -63,10 +109,18 @@ def add_secondhand_routes(app,*,archive,config,templates,require_login,operation
             cache[identity]=source_units([archive._row_to_message(row)],service.blocked_ids()) if row and row['enabled'] else []
         unit=next((unit for unit in cache[identity] if not unit.get('attachment_issue') and unit['key']==item.get('source_key') and unit['path']==item.get('path')),None)
         refs=unit['attachments'] if unit else []
-        item['images']=[{'key':str(ref['key']),'name':str(ref.get('name') or '原消息配图')[:200],
-                         'url':'/api/secondhand/image?'+urlencode({'group_id':identity[0],'msg_id':identity[1],'key':ref['key']}),
-                         'preview_url':'/api/secondhand/image?'+urlencode({'group_id':identity[0],'msg_id':identity[1],'key':ref['key'],'preview':'true'}) if config and config.ntqq.qq_number>0 else ''}
-                        for ref in refs if isinstance(ref,dict) and ref.get('kind')=='image' and ref.get('key') and len(str(ref['key']))<=150][:limit]
+        sources=[(identity[1],None,ref,False) for ref in refs if isinstance(ref,dict) and ref.get('kind')=='image']
+        if unit:sources.extend((message.msg_id,message.timestamp.isoformat(),ref,True) for message,ref in continuous_image_sources(item))
+        item['images']=[]
+        for msg_id,timestamp,ref,related in sources:
+            if not ref.get('key') or len(str(ref['key']))>150:continue
+            query={'group_id':identity[0],'msg_id':msg_id,'key':ref['key']}
+            image={'key':str(ref['key']),'name':str(ref.get('name') or '原消息配图')[:200],
+                   'url':'/api/secondhand/image?'+urlencode(query),
+                   'preview_url':'/api/secondhand/image?'+urlencode({**query,'preview':'true'}) if config and config.ntqq.qq_number>0 else ''}
+            if related:image.update(related=True,source_msg_id=msg_id,source_timestamp=timestamp,source_url='/api/secondhand/source?'+urlencode({'group_id':identity[0],'msg_id':msg_id}))
+            item['images'].append(image)
+            if len(item['images'])>=limit:break
         return item
 
     def execute(action,mutate=False):

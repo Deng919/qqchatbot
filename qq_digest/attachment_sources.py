@@ -44,11 +44,21 @@ def attachment_refs(blob):
 
 def refresh_attachment_metadata(connection,message):
     refs=message.content_json.get('attachments')
-    if not isinstance(refs,list) or not refs:return
+    sequence=message.content_json.get('message_sequence')
+    valid_sequence=type(sequence) is int and 0<sequence<2**63
+    source_partial=message.content_json.get('attachment_source_unavailable') is True
+    if not refs and not valid_sequence and not source_partial:return
     row=connection.execute('SELECT content_json,timestamp FROM messages WHERE group_id=? AND msg_id=?',(message.group_id,message.msg_id)).fetchone()
     if row is None or row['timestamp']!=message.timestamp.astimezone(timezone.utc).isoformat():return
     try:metadata=json.loads(row['content_json'])
     except (TypeError,ValueError):metadata={}
+    before=json.dumps(metadata,ensure_ascii=False)
+    if valid_sequence:metadata['message_sequence']=sequence
+    if source_partial:metadata['attachment_source_unavailable']=True
+    if not isinstance(refs,list) or not refs:
+        if json.dumps(metadata,ensure_ascii=False)!=before:
+            connection.execute('UPDATE messages SET content_json=? WHERE group_id=? AND msg_id=?',(json.dumps(metadata,ensure_ascii=False),message.group_id,message.msg_id))
+        return
     previous=metadata.get('attachments',[])
     if not isinstance(previous,list):previous=[]
     refs=[ref for ref in refs if isinstance(ref,dict)]
@@ -56,8 +66,8 @@ def refresh_attachment_metadata(connection,message):
         if not ref.get('md5') and index<len(previous) and isinstance(previous[index],dict):
             old=previous[index]
             if old.get('kind')==ref.get('kind') and old.get('md5'):refs[index]=old
-    unchanged=metadata.get('attachments')==refs
     metadata['attachments']=refs
+    unchanged=json.dumps(metadata,ensure_ascii=False)==before
     identities={(str(ref.get('key') or ''),ref.get('kind'),str(ref.get('md5') or '').lower()) for ref in refs}
     for cached in connection.execute('SELECT attachment_key,kind,source_md5 FROM message_attachments WHERE group_id=? AND msg_id=?',(message.group_id,message.msg_id)).fetchall():
         if (cached['attachment_key'],cached['kind'],cached['source_md5']) not in identities:
