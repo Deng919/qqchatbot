@@ -115,11 +115,12 @@
     button.dataset.actionActive=String(label==='已收藏'||label==='取消收藏');
     button.setAttribute('aria-label',button.dataset.actionOriginalLabel||label);
     button.style.setProperty('--action-icon','url("data:image/svg+xml,'+encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="black" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">'+paths[entry.icon]+'</svg>')+'")');
-    if(active===button){if(button.disabled||!button.getClientRects().length)hide();else tip.textContent=button.getAttribute('aria-label');}
+    if(active===button){if(button.disabled||button.dataset.actionMode==='label'||!button.getClientRects().length)hide();else tip.textContent=button.getAttribute('aria-label');}
   }
   function refresh(root){if(root.nodeType!==1)return;if(root.matches(selector))decorate(root);root.querySelectorAll(selector).forEach(decorate);if(root.matches('summary'))disclosure(root);root.querySelectorAll('summary').forEach(disclosure);}
   function show(button){
     if(!button||button.disabled||(!button.dataset.actionIcon&&!button.dataset.disclosureLabel))return;
+    if(button.dataset.actionMode==='label')return;
     if(button.matches('.summary-group-cover'))return;
     if(!tip){tip=document.createElement('div');tip.id='action-icon-tooltip';tip.setAttribute('role','tooltip');tip.setAttribute('popover','manual');document.body.appendChild(tip);}
     active=button;tip.textContent=button.dataset.disclosureLabel||button.getAttribute('aria-label');tip.showPopover();
