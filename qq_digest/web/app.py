@@ -420,6 +420,12 @@ def create_app(
         worker_archive = Archive.open(cfg.archive_path)
         ai_client = None
         try:
+            summary_request = ManualSummaryRequest(
+                group_ids=payload.group_ids, start_date=payload.start_date,
+                end_date=payload.end_date,
+            )
+            from ..summary_generation import preview_summary
+            preview_summary(worker_archive, summary_request, cfg.summary.timezone)
             ai_client = build_ai_client(cfg)
             service = ManualSummaryService(
                 attachment_config=cfg,
@@ -432,11 +438,7 @@ def create_app(
                 single_day_as_daily=single_day_as_daily,
             )
             result = service.run(
-                ManualSummaryRequest(
-                    group_ids=payload.group_ids,
-                    start_date=payload.start_date,
-                    end_date=payload.end_date,
-                ),
+                summary_request,
                 on_progress=on_progress,
             )
             return {
@@ -872,10 +874,12 @@ def create_app(
         total_msgs = ar.connection.execute("SELECT COUNT(*) AS c FROM messages").fetchone()["c"]
         pending = ar.connection.execute("SELECT COUNT(*) AS c FROM candidates WHERE status='pending'").fetchone()["c"]
         daily_reports = ar.connection.execute(
-            "SELECT COUNT(*) AS c FROM reports"
+            "SELECT COUNT(*) AS c FROM reports r WHERE NOT EXISTS "
+            "(SELECT 1 FROM market_groups m WHERE m.group_id=r.group_id)"
         ).fetchone()["c"]
         range_reports = ar.connection.execute(
-            "SELECT COUNT(*) AS c FROM manual_reports"
+            "SELECT COUNT(*) AS c FROM manual_reports r WHERE NOT EXISTS "
+            "(SELECT 1 FROM market_groups m WHERE m.group_id=r.group_id)"
         ).fetchone()["c"]
         return {
             "enabled_groups": len(enabled),
@@ -958,11 +962,11 @@ def create_app(
     # API: Groups
     # ------------------------------------------------------------------
     @app.get("/api/groups")
-    async def api_groups(request: Request):
+    async def api_groups(request: Request, scope: Literal['all', 'summary'] = 'all'):
         require_login(request)
         ar = _archive(request)
         result = []
-        for g in ar.all_groups():
+        for g in (ar.summary_groups() if scope == 'summary' else ar.all_groups()):
             stats = ar.connection.execute(
                 """
                 SELECT COUNT(*) AS message_count, MAX(timestamp) AS latest_message_at
@@ -1398,7 +1402,7 @@ def create_app(
                    r.start_date, r.end_date, r.json_path, r.candidate_ids, r.updated_at
             FROM manual_reports r JOIN groups g ON g.group_id=r.group_id
         )"""
-        clauses = []
+        clauses = ['NOT EXISTS (SELECT 1 FROM market_groups m WHERE m.group_id=all_reports.group_id)']
         params: list[object] = []
         if kind != "all":
             clauses.append("report_kind=?")

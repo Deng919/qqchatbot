@@ -55,8 +55,10 @@ class CatchupService:
                    read_filter: str = "all", include_ranges: bool = False,
                    group_ids: list[int] | None = None,
                    report_keys: list[str] | None = None,grouped: bool = False) -> dict:
-        if scope not in {"since", "today", "week", "custom"}:
+        if scope not in {"since", "today", "week", "custom", "all"}:
             raise ValueError("补看范围无效")
+        if scope == "all" and (date_from is not None or date_to is not None):
+            raise ValueError("全部历史不能同时指定日期范围")
         if read_filter not in {"all", "unread", "new"}:
             raise ValueError("阅读筛选无效")
         if page < 1 or page_size < 1 or page_size > 100:
@@ -73,9 +75,13 @@ class CatchupService:
             cutoff = None
         current = self._now(now)
         today = current.astimezone(self.timezone).date()
-        conditions: list[str] = []
+        conditions: list[str] = [
+            "NOT EXISTS (SELECT 1 FROM market_groups m WHERE m.group_id=r.group_id)"
+        ]
         params: list[object] = []
-        if scope == "custom":
+        if scope == "all":
+            pass
+        elif scope == "custom":
             first = self._date(date_from) if date_from is not None else today
             last = self._date(date_to) if date_to is not None else today
             if first > last:

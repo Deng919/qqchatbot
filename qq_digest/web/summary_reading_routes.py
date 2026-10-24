@@ -40,11 +40,11 @@ def add_summary_reading_routes(app, *, archive, config, require_login):
         since: str | None = None, page: int = Query(1, ge=1),
         page_size: int = Query(30, ge=1, le=100),
         report_keys: list[str] | None = Query(None),
-        grouped: bool = False,
+        grouped: bool = False, all_dates: bool = False,
     ):
         try:
             return await asyncio.to_thread(
-                read_items, "custom", date_from=date_from, date_to=date_to,
+                read_items, "all" if all_dates else "custom", date_from=date_from, date_to=date_to,
                 group_id=group_id, read_filter=read_filter, since=since,
                 page=page, page_size=page_size,
                 include_ranges=True,group_ids=group_ids,

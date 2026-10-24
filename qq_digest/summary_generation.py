@@ -6,9 +6,9 @@ from .manual_summary import ManualSummaryRequest, range_window
 
 
 def preview_summary(archive, request: ManualSummaryRequest, timezone_name: str) -> dict:
-    enabled = {group.group_id: group for group in archive.enabled_groups()}
+    enabled = {group.group_id: group for group in archive.summary_groups(enabled_only=True)}
     if any(group_id not in enabled for group_id in request.group_ids):
-        raise ValueError('所选群不存在或未关注，请重新选择')
+        raise ValueError('所选群不存在、未关注或属于二手群，请重新选择普通摘要群')
     try:
         start, end = range_window(request, ZoneInfo(timezone_name))
         start_utc = start.astimezone(timezone.utc).isoformat()

@@ -65,7 +65,8 @@ class ReportCompletenessService:
                   "missing_report_groups": 0, "limited_input_groups": 0, "unknown_input_groups": 0,
                   "notes": [], "scope": "仅描述本次任务与本地归档，不能证明 QQ 历史消息无遗漏。"}
         outcomes = self.archive.connection.execute(
-            "SELECT group_id,status FROM job_group_results WHERE job_id=?",
+            "SELECT group_id,status FROM job_group_results r WHERE job_id=? "
+            "AND NOT EXISTS (SELECT 1 FROM market_groups m WHERE m.group_id=r.group_id)",
             (job["job_id"],),
         ).fetchall() if job else []
         if not job or not outcomes:

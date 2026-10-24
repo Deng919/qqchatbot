@@ -125,11 +125,11 @@ class ManualSummaryService:
         return result
 
     def _selected_groups(self, group_ids: Sequence[int]):
-        enabled = {group.group_id: group for group in self.archive.enabled_groups()}
+        enabled = {group.group_id: group for group in self.archive.summary_groups(enabled_only=True)}
         missing = [group_id for group_id in group_ids if group_id not in enabled]
         if missing:
             joined = "、".join(str(group_id) for group_id in missing)
-            raise ValueError(f"群 {joined} 不存在或未启用")
+            raise ValueError(f"群 {joined} 不存在或未启用，或已注册为二手群，不能生成普通摘要")
         return [enabled[group_id] for group_id in group_ids]
 
     def _run_groups(self, request, groups, *, on_progress=None) -> ManualSummaryResult:

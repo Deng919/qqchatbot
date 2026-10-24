@@ -194,7 +194,7 @@ class DailyPipeline:
 
         prepared_groups = []
         knowledge_base = self._load_knowledge_base()
-        for group in self.archive.enabled_groups(daily_summary=True):
+        for group in self.archive.summary_groups(enabled_only=True, daily_summary=True):
             if collect:
                 try:
                     raw_msgs = list(self.collector.collect(group.group_id, start, end))

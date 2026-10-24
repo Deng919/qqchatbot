@@ -30,7 +30,7 @@ function generationSelection(preferred,groups){
     GroupSelector:{mount(host,options){
       mounts.push(options);
       let selected=Array.from(options.selected);
-      return {ids:()=>selected.slice(),setGroups(){},chooseVisible(checked){
+      return {ids:()=>selected.slice(),setGroups(){},setSelected(ids){selected=Array.from(ids);},chooseVisible(checked){
         selected=checked?groups.map(group=>Number(group.group_id)):[];
         options.onChange();
       }};
@@ -55,8 +55,8 @@ const single=generationSelection('22',[group11,group22]);
 assert.deepEqual(single.context.selectedRangeGroupIds(),[22],'an existing single-group selection is preserved');
 assert.equal(single.mounts[0].open,false);
 const unavailable=generationSelection('99',[group11]);
-assert.deepEqual(unavailable.context.selectedRangeGroupIds(),[99],'an unavailable preferred group is not replaced with the sole enabled group');
-assert.equal(unavailable.mounts[0].open,false);
+assert.deepEqual(unavailable.context.selectedRangeGroupIds(),[],'an unavailable preferred group requires a new choice instead of selecting a different group');
+assert.equal(unavailable.mounts[0].open,true);
 const unselected=generationSelection('',[group11,group22]);
 assert.deepEqual(unselected.context.selectedRangeGroupIds(),[],'multiple available groups require a choice');
 assert.equal(unselected.mounts[0].open,true,'an unselected picker starts expanded');

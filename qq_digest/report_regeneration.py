@@ -43,10 +43,10 @@ def regenerate_report(*, config, kind, report_id, expected_version, reason, ai_c
         revisions = ReportRevisionService(archive)
         revisions.check_version(kind,report_id,expected_version)
         row = revisions.report(kind,report_id)
-        groups = {g.group_id:g for g in archive.enabled_groups()}
+        groups = {g.group_id:g for g in archive.summary_groups(enabled_only=True)}
         group = groups.get(row['group_id'])
         if group is None:
-            raise ValueError('该群未启用，请先启用后再生成')
+            raise ValueError('该群未启用或属于二手群，不能生成普通摘要')
         if expected_version:
             payload = revisions.version(kind,report_id,expected_version)['payload']
         else:

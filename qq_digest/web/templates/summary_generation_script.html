@@ -39,17 +39,17 @@
   }
   function loadRangeGroups() {
     if(rangeGroupsLoading)return;rangeGroupsLoading=true;
-    api('GET', '/api/groups').then(function(d) { rangeGroups = d.groups.filter(function(group) { return group.enabled; });rangeGroupsLoaded=true;renderRangeGroups();updateRangeSelectionSummary(); })
+    api('GET', '/api/groups?scope=summary').then(function(d) { rangeGroups = d.groups.filter(function(group) { return group.enabled; });rangeGroupsLoaded=true;renderRangeGroups();updateRangeSelectionSummary(); })
       .catch(function(e) { document.getElementById('range-group-list').textContent='群聊加载失败：'+e.message+'。收起后重新打开可重试。'; }).finally(function(){rangeGroupsLoading=false;});
   }
   var rangeGroupSelector=null;
   function renderRangeGroups(){
-    var host=document.getElementById('range-group-list');
+    var host=document.getElementById('range-group-list'),allowed=new Set(rangeGroups.map(function(group){return Number(group.group_id);}));
     if(!rangeGroupSelector){
-      host.textContent='';var ids=rangePreferredGroup&&rangePreferredGroup!=='__empty__'?rangePreferredGroup.split(',').map(Number):[];
-      if(!ids.length&&rangePreferredGroup!=='__empty__'&&rangeGroups.length===1)ids=[Number(rangeGroups[0].group_id)];
+      host.textContent='';var requested=rangePreferredGroup&&rangePreferredGroup!=='__empty__'?rangePreferredGroup.split(',').map(Number):[],ids=requested.filter(function(id){return allowed.has(id);});
+      if(!requested.length&&rangePreferredGroup!=='__empty__'&&rangeGroups.length===1)ids=[Number(rangeGroups[0].group_id)];
       rangeGroupSelector=GroupSelector.mount(host,{allowAll:false,selected:ids,groups:rangeGroups,open:!ids.length,checkboxClass:'range-group-checkbox',onChange:function(){rangeFormDirty=true;updateRangeSelectionSummary();}});
-    }else rangeGroupSelector.setGroups(rangeGroups);
+    }else{rangeGroupSelector.setGroups(rangeGroups);rangeGroupSelector.setSelected(rangeGroupSelector.ids().filter(function(id){return allowed.has(id);}));}
   }
   function filterRangeGroups(){if(rangeGroupSelector)rangeGroupSelector.setQuery(document.getElementById('range-group-search').value);}
   function selectVisibleRangeGroups(selected){if(rangeGroupSelector)rangeGroupSelector.chooseVisible(selected);}

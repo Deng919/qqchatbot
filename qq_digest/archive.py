@@ -457,6 +457,19 @@ class Archive:
         rows = self.connection.execute(query, params).fetchall()
         return [self._row_to_group(row) for row in rows]
 
+    def summary_groups(
+        self, *, enabled_only: bool = False, daily_summary: bool = False
+    ) -> list[GroupConfig]:
+        """Ordinary summary groups, classified by marketplace registration."""
+        query = ("SELECT g.* FROM groups g WHERE NOT EXISTS "
+                 "(SELECT 1 FROM market_groups m WHERE m.group_id=g.group_id)")
+        if enabled_only:
+            query += " AND g.enabled=1"
+        if daily_summary:
+            query += " AND g.daily_summary=1"
+        rows = self.connection.execute(query + " ORDER BY g.group_id").fetchall()
+        return [self._row_to_group(row) for row in rows]
+
     def _row_to_group(self, row) -> GroupConfig:
         return GroupConfig(
             group_id=row["group_id"],

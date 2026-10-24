@@ -292,6 +292,7 @@
   function clearReportFilters() { summaryAllDates(); }
   function changeReportPage(step) { summaryCancelDetail();reportPage += step; loadReports(); }
   function loadReports() {
+    if(summaryEmptySelection())return;
     if(summaryView==='points'){summaryLoadPoints();return;}
     var token = ++reportLoadToken;
     api('GET', '/api/reports?' + reportParams().toString()).then(function(d) {
