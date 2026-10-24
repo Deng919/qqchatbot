@@ -1,5 +1,5 @@
 <script>
-  var summaryView='points', summaryPointPage=1, summaryPointToken=0, summarySince=null;
+  var summaryView='points', summaryPointPage=1, summaryPointToken=0, summarySince;
   var summaryExpanded={}, summaryBrowseScroll=0, summaryPendingScroll=null, summarySourceToken=0, summarySourceOpener=null;
   var summarySaved=null, summaryStorageKey='qq-digest-summary-reading-v1',summaryDetailActive=false,summaryReportOpener=null;
   var summaryPreviousReading=null,summaryGeneratedReading=null,summaryNavigationToken=0,summarySinceRevision=0;
@@ -152,8 +152,10 @@
     var group=url.has('group_ids')?url.getAll('group_ids').join(','):url.has('group_id')?url.get('group_id'):saved.group||'';summarySelectGroups(group?group.split(','):[]);refreshDateHints();summaryApplyView();
     var groups=api('GET','/api/groups').then(function(data){var select=document.getElementById('report-group');data.groups.forEach(function(g){var option=Array.from(select.options).find(function(option){return option.value===String(g.group_id);});if(option)option.textContent=g.name;else{option=summaryNode('option','',g.name);option.value=g.group_id;select.appendChild(option);}});if(typeof inboxRenderGroups==='function')inboxRenderGroups(data.groups);}).catch(function(){summaryShowResult('群聊筛选加载失败，请刷新重试。','failed');});
     var navigation=performance.getEntriesByType('navigation')[0],restoreVisit=navigation&&navigation.type==='reload'&&Object.prototype.hasOwnProperty.call(saved,'since');
-    var visit=api('POST','/api/summary-reading/visit',{}).then(function(data){if(sinceRevision!==summarySinceRevision)return;summarySince=restoreVisit?saved.since:data.previous_viewed_at;if(navigationToken!==summaryNavigationToken&&summaryView==='points'&&document.getElementById('summary-read-filter').value==='new')summaryLoadPoints();}).catch(function(){if(sinceRevision!==summarySinceRevision)return;document.getElementById('summary-read-filter').querySelector('option[value="new"]').disabled=true;if(document.getElementById('summary-read-filter').value==='new')document.getElementById('summary-read-filter').value='all';summaryShowResult('无法读取上次打开时间，请使用全部或未读筛选。','failed');});
-    return Promise.all([groups,visit]).then(function(){if(navigationToken!==summaryNavigationToken)return;loadReports();var kind=url.get('kind'),id=Number(url.get('id'));if(['daily','range'].includes(kind)&&Number.isInteger(id)&&id>0)viewReport(kind,id);else if(url.get('generate')==='1')openRangeSummary();});
+    if(restoreVisit)summarySince=saved.since;
+    var newOption=document.getElementById('summary-read-filter').querySelector('option[value="new"]'),waitForVisit=document.getElementById('summary-read-filter').value==='new';newOption.disabled=true;
+    var visit=api('POST','/api/summary-reading/visit',{},{retryBusy:true}).then(function(data){newOption.disabled=false;if(sinceRevision!==summarySinceRevision)return;summarySince=restoreVisit?saved.since:data.previous_viewed_at;summarySave();if(navigationToken!==summaryNavigationToken&&summaryView==='points'&&document.getElementById('summary-read-filter').value==='new')summaryLoadPoints();}).catch(function(){if(sinceRevision!==summarySinceRevision){newOption.disabled=false;return;}if(document.getElementById('summary-read-filter').value==='new')document.getElementById('summary-read-filter').value='all';summaryShowResult('无法读取上次打开时间，请使用全部或未读筛选。','failed');});
+    return Promise.all([groups,waitForVisit?visit:Promise.resolve()]).then(function(){if(navigationToken!==summaryNavigationToken)return;loadReports();var kind=url.get('kind'),id=Number(url.get('id'));if(['daily','range'].includes(kind)&&Number.isInteger(id)&&id>0)viewReport(kind,id);else if(url.get('generate')==='1')openRangeSummary();});
   }
   window.addEventListener('pagehide',summarySave);document.addEventListener('keydown',function(event){if(event.key==='Escape'&&!document.getElementById('summary-source-panel').hidden)summaryCloseSource();});
   summaryInit();

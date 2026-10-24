@@ -405,12 +405,13 @@
           return '处理 ' + formatNumber(data.groups_processed) + ' 个群，'
             + formatNumber(data.messages_inserted) + ' 条消息';
         }
-        function api(method, url, body) {
+        function api(method, url, body, options) {
           if (url.includes('group_ids=__empty__') || (body && Array.isArray(body.group_ids) && !body.group_ids.length && !url.startsWith('/api/reminder-rules'))) {
             toast('请选择至少一个群聊','error');
             return Promise.reject(new Error('请选择至少一个群聊'));
           }
-          return fetch(url, {
+          options=options||{};var busyRetries=0;
+          function request(){return fetch(url, {
             method: method,
             headers: {'Content-Type': 'application/json'},
             body: body === undefined ? undefined : JSON.stringify(body)
@@ -422,15 +423,17 @@
             return response.json().catch(function() { return {}; }).then(function(data) {
               if (data.restart_required) showStorageHandoff(data.detail || data.message);
               if (!response.ok) {
+                if(response.status===409&&options.retryBusy&&!data.restart_required&&busyRetries<30){busyRetries++;return new Promise(function(resolve){setTimeout(resolve,500);}).then(request);}
                 var detail = data.detail;
                 if (detail && typeof detail === 'object') {
                   detail = data.detail.message;
                 }
-                var error=new Error(detail || ('请求失败（' + response.status + '）'));error.status=response.status;if(response.status===409)toast(error.message,'error');throw error;
+                var error=new Error(detail || ('请求失败（' + response.status + '）'));error.status=response.status;if(response.status===409&&!options.retryBusy)toast(error.message,'error');throw error;
               }
               return data;
             });
-          });
+          });}
+          return request();
         }
         function showStorageHandoff(message) {
           var banner = document.getElementById('storage-handoff-banner');
