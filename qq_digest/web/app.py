@@ -331,6 +331,7 @@ def create_app(
     session_hours: int = 12,
     config: Config | None = None,
     config_path: Path | None = None,
+    desktop_login: bool = False,
 ):
     # Daily scheduler state
     scheduler_state = {
@@ -469,6 +470,9 @@ def create_app(
     app.state.knowledge = knowledge
     app.state.password_hash = password_hash
     app.state.cookie = cookie
+    if desktop_login:
+        from .desktop_session import add_desktop_session_routes
+        add_desktop_session_routes(app, session_secret)
     app.state.config = config
     app.state.operations = operations
     operations.activity_root = lambda: app.state.config.data_dir if app.state.config is not None else None

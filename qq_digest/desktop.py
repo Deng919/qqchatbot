@@ -9,6 +9,7 @@ import sys
 import time
 import urllib.error
 import urllib.request
+from urllib.parse import urlsplit
 from dataclasses import dataclass
 from pathlib import Path
 from threading import Event, Thread
@@ -27,7 +28,7 @@ from .web.app import create_app
 
 from .distribution import is_public_distribution
 
-DESKTOP_BACKEND_ID = "2026-10-23-interaction-polish" + ('-deepseek-only' if is_public_distribution() else '')
+DESKTOP_BACKEND_ID = "2026-10-24-fast-start" + ('-deepseek-only' if is_public_distribution() else '')
 
 
 def resolve_config_path(install_dir: Path) -> Path:
@@ -49,6 +50,9 @@ def resolve_config_path(install_dir: Path) -> Path:
 
 def service_ready(url: str) -> bool:
     try:
+        address = urlsplit(url)
+        if address.hostname == '127.0.0.1' and local_port_available(address.port or 80):
+            return False
         with urllib.request.urlopen(url + "healthz", timeout=1.5) as response:
             return json.load(response) == {"status": "ok"}
     except (OSError, ValueError, urllib.error.URLError):
@@ -77,6 +81,17 @@ def available_port() -> int:
     with socket.socket() as sock:
         sock.bind(("127.0.0.1", 0))
         return int(sock.getsockname()[1])
+
+
+def local_port_available(port: int) -> bool:
+    with socket.socket() as sock:
+        if hasattr(socket, 'SO_EXCLUSIVEADDRUSE'):
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
+        try:
+            sock.bind(('127.0.0.1', port))
+            return True
+        except OSError:
+            return False
 
 
 @dataclass
@@ -134,6 +149,7 @@ def make_server(config_path: Path, *, port: int | None = None,
         session_hours=config.security.session_hours,
         config=config,
         config_path=config_path,
+        desktop_login=bridge is not None,
     )
     web_app.state.desktop_config_signature = config_signature(config_path)
     web_app.state.desktop_settings_api_version = 1
@@ -149,14 +165,14 @@ def make_server(config_path: Path, *, port: int | None = None,
 
 
 def show_window(runtime: DesktopService, *, gui, storage_path: Path,
-                bridge: DesktopBridge | None = None) -> None:
+                bridge: DesktopBridge | None = None, start_url: str | None = None) -> None:
     storage_path.mkdir(parents=True, exist_ok=True)
     gui.settings["OPEN_EXTERNAL_LINKS_IN_BROWSER"] = True
     backup_stop = Event()
     backup_thread = None
     try:
         window = gui.create_window(
-            "QQ Digest", runtime.url, width=1280, height=820,
+            "QQ Digest", start_url or runtime.url, width=1280, height=820,
             min_size=(820, 600), background_color="#f6f7f4", text_select=True,
         )
         if bridge is not None:
@@ -213,14 +229,16 @@ def main() -> int:
         if matching_service(preferred_url, config_path):
             runtime = DesktopService(url=preferred_url)
         else:
-            port = available_port() if service_ready(preferred_url) else config.web.port
+            port = config.web.port if local_port_available(config.web.port) else available_port()
             runtime = DesktopService.connect(
                 f"http://127.0.0.1:{port}/",
                 make_server=lambda: make_server(config_path, port=port, bridge=bridge),
             )
         bridge._owns_service = runtime.owned
         bridge._runtime_url = runtime.url
+        from .web.desktop_session import desktop_start_url
         show_window(runtime, gui=webview, bridge=bridge,
+                    start_url=desktop_start_url(runtime.url, config.resolve_session_secret()),
                     storage_path=cache_root() / 'WebView2')
         return 0
     except Exception as exc:
