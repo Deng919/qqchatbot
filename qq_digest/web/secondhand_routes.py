@@ -55,6 +55,20 @@ def add_secondhand_routes(app,*,archive,config,templates,require_login,operation
         units=source_units([archive._row_to_message(row)],service.blocked_ids())
         return [ref for unit in units if not unit.get('attachment_issue') for ref in unit['attachments'] if isinstance(ref,dict) and ref.get('kind')=='image']
 
+    def item_images(item,cache,limit):
+        identity=(item['group_id'],item['msg_id'])
+        if identity not in cache:
+            from ..secondhand_evidence import source_units
+            row=archive.connection.execute('SELECT m.*,g.enabled FROM messages m JOIN groups g USING(group_id) WHERE m.group_id=? AND m.msg_id=?',identity).fetchone()
+            cache[identity]=source_units([archive._row_to_message(row)],service.blocked_ids()) if row and row['enabled'] else []
+        unit=next((unit for unit in cache[identity] if not unit.get('attachment_issue') and unit['key']==item.get('source_key') and unit['path']==item.get('path')),None)
+        refs=unit['attachments'] if unit else []
+        item['images']=[{'key':str(ref['key']),'name':str(ref.get('name') or '原消息配图')[:200],
+                         'url':'/api/secondhand/image?'+urlencode({'group_id':identity[0],'msg_id':identity[1],'key':ref['key']}),
+                         'preview_url':'/api/secondhand/image?'+urlencode({'group_id':identity[0],'msg_id':identity[1],'key':ref['key'],'preview':'true'}) if config and config.ntqq.qq_number>0 else ''}
+                        for ref in refs if isinstance(ref,dict) and ref.get('kind')=='image' and ref.get('key') and len(str(ref['key']))<=150][:limit]
+        return item
+
     def execute(action,mutate=False):
         try:
             if mutate:
@@ -72,7 +86,12 @@ def add_secondhand_routes(app,*,archive,config,templates,require_login,operation
                       group_id:int|None=Query(None,gt=0,lt=2**63),direction:str='all',status:str='all',
                       min_price:float|None=Query(None,ge=0,le=1e9),max_price:float|None=Query(None,ge=0,le=1e9),
                       favorite:bool=False,page:int=Query(1,ge=1),page_size:int=Query(30,ge=1,le=100),grouped:bool=False,lane:str='sale',category:str='all'):
-        return execute(lambda:service.list_items(date_from=date_from,date_to=date_to,q=q,group_id=group_id,direction=direction,status=status,min_price=min_price,max_price=max_price,favorite=favorite,page=page,page_size=page_size,grouped=grouped,lane=lane,category=category))
+        def read():
+            result=service.list_items(date_from=date_from,date_to=date_to,q=q,group_id=group_id,direction=direction,status=status,min_price=min_price,max_price=max_price,favorite=favorite,page=page,page_size=page_size,grouped=grouped,lane=lane,category=category)
+            cache={}
+            for item in result['items']:item_images(item,cache,6)
+            return result
+        return execute(read)
 
     @app.get('/api/secondhand/groups',dependencies=[Depends(require_login)])
     async def groups():return {'groups':service.groups()}
@@ -96,7 +115,10 @@ def add_secondhand_routes(app,*,archive,config,templates,require_login,operation
     async def unblock(qq:int):return execute(lambda:(service.unblock(qq),{'ok':True})[1],True)
 
     @app.get('/api/secondhand/items/{item_id}',dependencies=[Depends(require_login)])
-    async def detail(item_id:str):return execute(lambda:service.detail(item_id))
+    async def detail(item_id:str):
+        def read():
+            result=service.detail(item_id);item_images(result['item'],{},100);return result
+        return execute(read)
 
     @app.get('/api/secondhand/source',dependencies=[Depends(require_login)])
     async def source(group_id:int,msg_id:str=Query(max_length=200),direction:str='around',cursor:str|None=None):
@@ -111,7 +133,7 @@ def add_secondhand_routes(app,*,archive,config,templates,require_login,operation
 
     @app.get('/api/secondhand/attachments',dependencies=[Depends(require_login)])
     async def attachments(group_id:int,msg_id:str=Query(max_length=200)):
-        row=archive.connection.execute('SELECT m.content_json,m.sender_qq,g.read_images FROM messages m JOIN market_groups s USING(group_id) JOIN groups g USING(group_id) WHERE m.group_id=? AND m.msg_id=?',(group_id,msg_id)).fetchone()
+        row=archive.connection.execute('SELECT m.content_json,m.sender_qq,g.read_images,g.enabled FROM messages m JOIN market_groups s USING(group_id) JOIN groups g USING(group_id) WHERE m.group_id=? AND m.msg_id=?',(group_id,msg_id)).fetchone()
         if row is None or row['sender_qq'] in service.blocked_ids():raise HTTPException(404,'来源不存在或已屏蔽')
         refs=source_images(group_id,msg_id);cache={r['attachment_key']:dict(r) for r in archive.connection.execute('SELECT * FROM message_attachments WHERE group_id=? AND msg_id=?',(group_id,msg_id))}
         items=[]
@@ -121,18 +143,19 @@ def add_secondhand_routes(app,*,archive,config,templates,require_login,operation
             current=cache.get(ref.get('key'),{})
             if current.get('source_md5')!=str(ref.get('md5','')).lower() or current.get('version')!=VERSION:current={}
             items.append({'key':ref.get('key'),'name':ref.get('name','图片'),'status':current.get('status','pending') if row['read_images'] else 'disabled','text':current.get('text','') if row['read_images'] else '',
-                          'url':'/api/secondhand/image?'+urlencode({'group_id':group_id,'msg_id':msg_id,'key':ref.get('key')}) if row['read_images'] else ''})
+                          'url':'/api/secondhand/image?'+urlencode({'group_id':group_id,'msg_id':msg_id,'key':ref.get('key')}) if row['enabled'] else ''})
         return {'items':items,'source_incomplete':bool(json.loads(row['content_json']).get('attachment_source_unavailable'))}
 
     @app.get('/api/secondhand/image',dependencies=[Depends(require_login)])
-    async def image(group_id:int,msg_id:str=Query(max_length=200),key:str=Query(max_length=150)):
+    async def image(group_id:int,msg_id:str=Query(max_length=200),key:str=Query(max_length=150),preview:bool=False):
         row=archive.connection.execute('SELECT m.content_json,m.sender_qq,g.read_images,g.enabled FROM messages m JOIN market_groups s USING(group_id) JOIN groups g USING(group_id) WHERE m.group_id=? AND m.msg_id=?',(group_id,msg_id)).fetchone()
         if row is None or row['sender_qq'] in service.blocked_ids():raise HTTPException(404,'来源不存在或已屏蔽')
-        if not row['read_images'] or not row['enabled']:raise HTTPException(403,'这个群的图片读取未开启')
+        if not row['enabled']:raise HTTPException(403,'这个群已停用')
         ref=next((ref for ref in source_images(group_id,msg_id) if ref.get('key')==key),None)
         if ref is None:raise HTTPException(404,'图片来源不存在')
         from ..attachments import AttachmentService
-        try:data,mime=AttachmentService(archive,config).original_image(ref)
+        reader=AttachmentService(archive,config)
+        try:data,mime=await guarded_to_thread(reader.preview_image if preview else reader.original_image,ref)
         except (OSError,ValueError,NotImplementedError) as exc:raise HTTPException(404,'图片未下载或无法核实来源') from exc
         return Response(data,media_type=mime,headers={'X-Content-Type-Options':'nosniff','Cache-Control':'no-store'})
 

@@ -9,6 +9,8 @@ Safety: opens databases in read-only URI mode, never writes to them.
 
 from __future__ import annotations
 
+import base64
+import binascii
 import sqlite3
 from collections.abc import Iterable
 from datetime import datetime
@@ -160,6 +162,29 @@ class NTQQCollector(Collector):
                         else:by_id[message.msg_id]=message
                 except (sqlite3.Error,CollectionIncompleteError):
                     for message in messages:message.content_json['attachment_source_unavailable']=True
+            # The media index can be newer than the decrypted message snapshot.
+            # It also retains pure-image messages absent from the text index.
+            try:
+                for message in self._collect_indexed_images(group_id, start, end):
+                    previous = by_id.get(message.msg_id)
+                    if previous is None:
+                        by_id[message.msg_id] = message
+                    elif previous.timestamp == message.timestamp:
+                        refs = list(previous.content_json.get('attachments', []))
+                        # The message element is authoritative when both source
+                        # snapshots already supply image identities for this ID.
+                        if any(ref.get('kind') == 'image' and ref.get('md5') for ref in refs):
+                            continue
+                        known = {ref.get('md5') for ref in refs if ref.get('kind') == 'image'}
+                        for ref in message.content_json['attachments']:
+                            if ref['md5'] not in known:
+                                refs.append({**ref, 'key': f"image:{ref['md5']}:{len(refs)}"})
+                                known.add(ref['md5'])
+                        by_id[message.msg_id] = previous.model_copy(update={
+                            'content_json': {**previous.content_json, 'attachments': refs}})
+            except sqlite3.Error:
+                for message in by_id.values():
+                    message.content_json['attachment_source_unavailable'] = True
             yield from sorted(by_id.values(),key=lambda message:(message.timestamp,message.msg_id))
             return
 
@@ -174,6 +199,60 @@ class NTQQCollector(Collector):
             msg_db.close()
 
         yield from self._fetch_blobs(matching_rows, group_id, now)
+
+    def _collect_indexed_images(
+        self, group_id: int, start: datetime, end: datetime
+    ) -> Iterable[NormalizedMessage]:
+        """Read explicit group-image records with exact message IDs and MD5s.
+
+        Current QQ stores the 16-byte digest as base64 in this index. Neither
+        image filenames nor neighboring text messages establish an association.
+        """
+        path = self.db_dir / 'files_in_chat.db'
+        if not path.is_file():
+            return
+        connection = sqlite3.connect(path.resolve().as_uri() + '?mode=ro', uri=True)
+        messages: dict[str, NormalizedMessage] = {}
+        now = datetime.now(self.timezone)
+        try:
+            rows = connection.execute(
+                'SELECT "40001","40020","40050","45402","45403","45406" '
+                'FROM files_in_chat_table WHERE "40021"=? AND "40010"=2 '
+                'AND "45002"=2 AND "40050">=? AND "40050"<=? '
+                'ORDER BY "40050","40001","45001"',
+                (str(group_id), int(start.timestamp()), int(end.timestamp())),
+            )
+            for msg_id, sender_uid, timestamp, name, local_path, encoded_md5 in rows:
+                if not isinstance(encoded_md5, (str, bytes)):
+                    continue
+                try:
+                    digest = base64.b64decode(encoded_md5, validate=True)
+                except (ValueError, binascii.Error):
+                    continue
+                if len(digest) != 16:
+                    continue
+                message = messages.get(str(msg_id))
+                moment = datetime.fromtimestamp(int(timestamp), tz=self.timezone)
+                uid = str(sender_uid or '')
+                if message is None:
+                    sender_qq = int(uid) if uid.isdigit() else None
+                    message = self._resolve_sender(NormalizedMessage(
+                        msg_id=str(msg_id), group_id=group_id, sender_qq=sender_qq,
+                        timestamp=moment, message_type='file', text='[图片]',
+                        content_json={'sender_uid': uid, 'attachments': []},
+                        source_id='ntqq_media_index', collected_at=now,
+                    ))
+                    messages[message.msg_id] = message
+                if message.timestamp != moment or message.content_json.get('sender_uid') != uid:
+                    continue
+                refs = message.content_json['attachments']
+                md5 = digest.hex()
+                if len(refs) < 100 and not any(ref['md5'] == md5 for ref in refs):
+                    refs.append({'key': f'image:{md5}:{len(refs)}', 'kind': 'image',
+                        'name': str(name or '图片')[:200], 'path': str(local_path or ''), 'md5': md5})
+        finally:
+            connection.close()
+        yield from messages.values()
 
     def _collect_searchable(
         self, group_id: int, start: datetime, end: datetime

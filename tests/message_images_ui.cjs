@@ -21,5 +21,12 @@ const find=(n,tag)=>n.tag===tag?n:n.children.map(c=>find(c,tag)).find(Boolean);
  assert.equal(requests.length,0,'Viewing never starts recognition');
  const retry=find(row,'button');const pending=retry.onclick();await new Promise(r=>setImmediate(r));controller.destroy();requests.shift().resolve({items:[]});await pending;
  assert.ok(host.textContent.includes('显示器800元'),'Late recognition does not replace a destroyed view');
+ async function contextImage(image){const host=new Node('main'),controller=scope.mountMessageContext(host,{url:'/context',groupId:123,citedId:'preview'});requests.shift().resolve({messages:[{...item,msg_id:'preview',images:[image]}],first_id:'preview',last_id:'preview'});await controller.ready;return host;}
+ const cached={...item.images[0],name:'<img onerror=alert(1)> 商品图',preview_url:item.images[0].url+'&preview=true'};
+ const cachedHost=await contextImage(cached),cachedImage=find(cachedHost,'img'),cachedLink=find(cachedHost,'a');
+ assert.equal(cachedImage.src,cached.preview_url,'message context prefers the explicit local cached preview');assert.equal(cachedLink.href,cached.preview_url);assert.equal(cachedLink.attrs['aria-label'],'查看本机预览：<img onerror=alert(1)> 商品图');assert.match(cachedHost.textContent,/本机预览/);assert.match(cachedImage.alt,/本机预览/);
+ cachedImage.onerror();assert.equal(cachedImage.src,cached.url,'a failed preview tries the strict original once');assert.equal(cachedLink.href,cached.url);assert.equal(cachedLink.attrs['aria-label'],'查看原图：<img onerror=alert(1)> 商品图');assert.doesNotMatch(cachedHost.textContent,/本机预览/);
+ cachedImage.onerror();assert.equal(cachedImage.removed,true);assert.match(cachedLink.textContent,/原图未下载或无法核实来源/);assert.equal(requests.length,0,'preview viewing and fallback never enable AI recognition');
+ for(const preview_url of ['https://external.invalid/preview.jpg','/api/groups/456/messages/a/images/original?key=p','/api/groups/123/messages/a/images/original?key=p\n']){const safeHost=await contextImage({...cached,preview_url});assert.equal(find(safeHost,'img').src,cached.url,'invalid or other-group previews use the safe original');assert.doesNotMatch(safeHost.textContent,/本机预览/);}
  console.log('Inline image placement, opt-in recognition, literal OCR and stale results verified');
 })().catch(e=>{console.error(e);process.exitCode=1;});

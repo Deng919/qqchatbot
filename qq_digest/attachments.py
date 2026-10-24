@@ -11,7 +11,7 @@ import stat
 from datetime import datetime, timezone
 from pathlib import Path
 
-from PIL import Image
+from PIL import Image,ImageOps
 
 from .attachment_readers import FILE_TYPES,MAX_CHARS,read_document
 from .ai.client import AILimitExceeded
@@ -132,12 +132,37 @@ class AttachmentService:
         mime=block['image_url']['url'].split(';',1)[0].removeprefix('data:')
         return data,mime
 
+    def preview_image(self,ref):
+        """A local cache preview is distinct from the verified original bytes."""
+        if ref.get('kind')!='image':raise ValueError('不是图片附件')
+        # Ignore arbitrary message paths: only this account's digest-named cache.
+        data=self._file_data(self._image_cache(ref))
+        try:
+            with Image.open(io.BytesIO(data)) as image:
+                if image.format not in IMAGE_TYPES:raise NotImplementedError('暂不支持此图片格式')
+                if max(image.size)>8192 or min(image.size)<1 or image.width*image.height>20_000_000:raise ValueError('图片尺寸超限')
+                image.verify()
+        except (Image.DecompressionBombError,SyntaxError) as exc:
+            raise ValueError('图片无法安全预览') from exc
+        with Image.open(io.BytesIO(data)) as image:
+            image.thumbnail((1600,1600));rgba=ImageOps.exif_transpose(image).convert('RGBA')
+            clean=Image.new('RGB',rgba.size,'white');clean.paste(rgba,mask=rgba.getchannel('A'))
+            output=io.BytesIO();clean.save(output,format='JPEG',quality=85)
+        return output.getvalue(),'image/jpeg'
+
     def _verified_data(self,ref):
         kind=ref['kind']
         value=str(ref.get('path') or '')
         if value.startswith(('\\\\','//')):raise ValueError('附件路径不可用')
         path=Path(value) if value else None
         if kind=='image' and (path is None or not path.exists()):path=self._image_cache(ref)
+        data=self._file_data(path)
+        expected=str(ref.get('md5') or '').lower()
+        if not re.fullmatch('[0-9a-f]{32}',expected):raise ValueError('无法核实附件来源')
+        if hashlib.md5(data).hexdigest()!=expected:raise ValueError('附件与原消息不匹配')
+        return data
+
+    def _file_data(self,path):
         if path is None:raise FileNotFoundError('附件未下载')
         if not path.is_absolute():raise ValueError('附件路径不可用')
         for part in (path,*path.parents):
@@ -145,11 +170,8 @@ class AttachmentService:
         info=path.stat()
         if not stat.S_ISREG(info.st_mode):raise ValueError('附件路径不可用')
         if info.st_size>MAX_BYTES:raise ValueError('附件超过 16 MB')
-        expected=str(ref.get('md5') or '').lower()
-        if not re.fullmatch('[0-9a-f]{32}',expected):raise ValueError('无法核实附件来源')
         with path.open('rb') as stream:data=stream.read(MAX_BYTES+1)
         if len(data)>MAX_BYTES:raise ValueError('附件超过 16 MB')
-        if hashlib.md5(data).hexdigest()!=expected:raise ValueError('附件与原消息不匹配')
         return data
 
     def _image_cache(self,ref):

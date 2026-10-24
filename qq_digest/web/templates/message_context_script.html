@@ -29,12 +29,14 @@ function mountMessageContext(host,options){
     (item.images||[]).forEach(function(image){
       var reading=false,box=node('section','message-image'),caption=node('p','message-image-caption'),recognized=node('div','message-image-text'),button=node('button','btn btn-sm');button.type='button';
       var prefix='/api/groups/'+options.groupId+'/messages/';
-      if(image.url&&image.url.startsWith(prefix)){
-        var link=node('a','message-image-link'),original=node('img','message-original-image');link.href=image.url;link.target='_blank';link.rel='noopener';link.setAttribute('aria-label','查看原图：'+image.name);
-        original.alt=image.name;original.loading='lazy';original.decoding='async';original.src=image.url;
-        original.onerror=function(){original.remove();link.textContent='原图未下载或无法核实来源，请先在 QQ 打开并下载图片。';};link.appendChild(original);box.appendChild(link);
+      function safeImageUrl(url){return typeof url==='string'&&url.startsWith(prefix)&&!/[\s\\#]/.test(url);}
+      var originalUrl=safeImageUrl(image.url)?image.url:'',previewUrl=safeImageUrl(image.preview_url)?image.preview_url:'',previewing=!!previewUrl;
+      if(originalUrl||previewUrl){
+        var link=node('a','message-image-link'),original=node('img','message-original-image');link.target='_blank';link.rel='noopener';original.loading='lazy';original.decoding='async';
+        function show(url){link.href=url;link.setAttribute('aria-label',(previewing?'查看本机预览：':'查看原图：')+image.name);original.alt=(previewing?'本机预览：':'')+image.name;original.src=url;}
+        original.onerror=function(){if(previewing){previewing=false;update();if(originalUrl&&originalUrl!==previewUrl){show(originalUrl);return;}}original.remove();link.textContent='原图未下载或无法核实来源，请先在 QQ 打开并下载图片。';};show(previewUrl||originalUrl);link.appendChild(original);box.appendChild(link);
       }
-      function update(){caption.textContent=reading?'正在识别图片…':image.name+' · '+({disabled:'图片识别未开启',pending:'尚未识别',success:'已识别',partial:'识别结果已截断',missing:'原图未下载',error:'识别失败',budget_paused:'达到调用上限',unsupported:'格式不支持'}[image.status]||image.status)+' · AI 结果请对照原图核实';recognized.textContent=image.text||image.error||'';button.textContent=!item.read_images?'开启本群识别并读取':image.text?'读取图片（优先使用缓存）':'识别图片';button.disabled=reading||item.images_enabled===false;}
+      function update(){caption.textContent=(previewing?'本机预览 · ':'')+(reading?'正在识别图片…':image.name+' · '+({disabled:'图片识别未开启',pending:'尚未识别',success:'已识别',partial:'识别结果已截断',missing:'原图未下载',error:'识别失败',budget_paused:'达到调用上限',unsupported:'格式不支持'}[image.status]||image.status)+' · AI 结果请对照原图核实');recognized.textContent=image.text||image.error||'';button.textContent=!item.read_images?'开启本群识别并读取':image.text?'读取图片（优先使用缓存）':'识别图片';button.disabled=reading||item.images_enabled===false;}
       imageUpdates.push(update);
       button.onclick=function(){
         if(!current()||version!==renderVersion||button.disabled)return Promise.resolve();reading=true;update();

@@ -49,14 +49,16 @@ def add_attachment_routes(app,*,archive,config,require_login,operations):
     async def images(request:Request,gid:int,msg_id:str):return listing(archive(request),gid,msg_id)
 
     @app.get('/api/groups/{gid}/messages/{msg_id}/images/original',dependencies=[Depends(require_login)])
-    async def original(request:Request,gid:int,msg_id:str,key:str=Query(max_length=150)):
+    async def original(request:Request,gid:int,msg_id:str,key:str=Query(max_length=150),preview:bool=False):
         ar=archive(request);listing(ar,gid,msg_id)
         group=policy(ar,gid)
         if not group or not group['enabled']:raise HTTPException(403,'这个群已停用')
         _,refs=image_source(ar,gid,msg_id)
         ref=next((r for r in refs if r['key']==key),None)
         if ref is None:raise HTTPException(404,'图片来源不存在')
-        try:data,mime=AttachmentService(ar,config(request)).original_image(ref)
+        if preview and not ar.connection.execute('SELECT 1 FROM market_groups WHERE group_id=?',(gid,)).fetchone():raise HTTPException(404,'此来源不支持二手图片预览')
+        reader=AttachmentService(ar,config(request))
+        try:data,mime=await guarded_to_thread(reader.preview_image if preview else reader.original_image,ref)
         except (OSError,ValueError,NotImplementedError) as exc:raise HTTPException(404,'原图未下载或无法核实来源') from exc
         return Response(data,media_type=mime,headers={'X-Content-Type-Options':'nosniff','Cache-Control':'no-store'})
 

@@ -1,4 +1,5 @@
 import hashlib
+import base64
 import sqlite3
 from datetime import datetime,timezone
 
@@ -76,3 +77,103 @@ def test_fts_collection_also_retains_images_from_message_database(ntqq_fts_dbs):
     image=next(m for m in result if m.msg_id=='9901')
     assert image.text=='[图片]' and image.content_json['attachments'][0]['kind']=='image'
     assert len({m.msg_id for m in result})==len(result)
+
+
+def indexed_images(db_dir, rows):
+    with sqlite3.connect(db_dir/'files_in_chat.db') as connection:
+        connection.execute('CREATE TABLE files_in_chat_table ('
+            '"45001" INTEGER PRIMARY KEY,"40001" INTEGER,"40021" TEXT,'
+            '"40020" TEXT,"40050" INTEGER,"40010" INTEGER,"45002" INTEGER,'
+            '"45402" TEXT,"45403" TEXT,"45406" TEXT)')
+        connection.executemany('INSERT INTO files_in_chat_table VALUES (?,?,?,?,?,?,?,?,?,?)',rows)
+
+
+def collect_index_window(db_dir):
+    return list(NTQQCollector(db_dir).collect(100,
+        datetime(2025,10,7,tzinfo=timezone.utc),datetime(2025,10,9,tzinfo=timezone.utc)))
+
+
+def test_fts_collection_recovers_exact_indexed_image_when_message_snapshot_is_stale(ntqq_fts_dbs):
+    indexed_images(ntqq_fts_dbs,[(1,9902,'100','u_sender',1759851750,2,2,
+        'photo.png','',base64.b64encode(b'x'*16).decode())])
+
+    images=[m for m in collect_index_window(ntqq_fts_dbs) if m.msg_id=='9902']
+
+    assert len(images)==1
+    assert images[0].text=='[图片]'
+    assert images[0].message_type=='file'
+    assert images[0].content_json['sender_uid']=='u_sender'
+    assert images[0].content_json['attachments']==[{
+        'key':'image:'+'78'*16+':0','kind':'image','name':'photo.png','path':'','md5':'78'*16}]
+
+
+def test_indexed_images_merge_only_exact_group_message_and_timestamp(ntqq_fts_dbs):
+    digest=base64.b64encode(b'x'*16).decode()
+    indexed_images(ntqq_fts_dbs,[
+        (1,8101,'100','u_sender',1759851722,2,2,'photo.png','',digest),
+        (2,8101,'100','u_sender',1759851722,2,2,'other.png','',base64.b64encode(b'y'*16).decode()),
+        (3,8102,'100','u_sender',1759851724,2,2,'wrong-time.png','',digest),
+        (4,8103,'200','u_sender',1759851724,2,2,'wrong-group.png','',digest),
+        (5,8104,'100','u_sender',1759851725,1,2,'not-group.png','',digest),
+        (6,8105,'100','u_sender',1759851726,2,4,'not-image.png','',digest),
+        (7,9903,'100','u_sender',1759851750,2,2,'invalid.png','','invalid'),
+        (8,9904,'100','u_sender',1759851750,2,2,'short.png','',base64.b64encode(b'x').decode()),
+    ])
+
+    messages={m.msg_id:m for m in collect_index_window(ntqq_fts_dbs)}
+
+    assert messages['8101'].text=='普通正文'
+    assert [ref['md5'] for ref in messages['8101'].content_json['attachments']]==['78'*16,'79'*16]
+    assert all(not any(ref['kind']=='image' for ref in messages[mid].content_json.get('attachments',[]))
+        for mid in ['8102','8103','8104','8105'])
+    assert '9903' not in messages and '9904' not in messages
+
+
+def test_indexed_image_recovery_survives_unreadable_message_metadata(ntqq_fts_dbs,monkeypatch):
+    from qq_digest.collector.base import CollectionIncompleteError
+    indexed_images(ntqq_fts_dbs,[(1,9902,'100','u_sender',1759851750,2,2,
+        'photo.png','',base64.b64encode(b'x'*16).decode())])
+    def broken(*args):
+        raise CollectionIncompleteError('broken metadata')
+    monkeypatch.setattr(NTQQCollector,'_scan_metadata',broken)
+
+    messages={m.msg_id:m for m in collect_index_window(ntqq_fts_dbs)}
+
+    assert messages['9902'].content_json['attachments'][0]['md5']=='78'*16
+    assert messages['8101'].content_json['attachment_source_unavailable'] is True
+
+
+def test_indexed_image_does_not_replace_or_duplicate_verified_blob_reference(ntqq_fts_dbs):
+    with sqlite3.connect(ntqq_fts_dbs/'nt_msg.db') as connection:
+        inner=make_varint_field(45002,2)+make_bytes_field(45302,b'x'*16)
+        connection.execute('INSERT INTO group_msg_table VALUES (?,?,?,?,?,?)',
+            (9902,'u_sender','100',100,1759851750,make_bytes_field(40800,inner)))
+    indexed_images(ntqq_fts_dbs,[
+        (1,9902,'100','u_sender',1759851750,2,2,'photo.png','',base64.b64encode(b'x'*16).decode()),
+        (2,9902,'100','u_sender',1759851750,2,2,'stale.png','',base64.b64encode(b'y'*16).decode())])
+
+    message=next(m for m in collect_index_window(ntqq_fts_dbs) if m.msg_id=='9902')
+
+    assert len(message.content_json['attachments'])==1
+    assert message.content_json['attachments'][0]['md5']=='78'*16
+
+
+def test_indexed_image_sender_resolves_profile_uid(ntqq_fts_dbs):
+    with sqlite3.connect(ntqq_fts_dbs/'profile_info.db') as connection:
+        connection.execute('CREATE TABLE profile_info_v6 ("1000" TEXT,"1002" INTEGER,"20002" TEXT)')
+        connection.execute('INSERT INTO profile_info_v6 VALUES (?,?,?)',('u_sender',45678,'昵称'))
+    indexed_images(ntqq_fts_dbs,[(1,9902,'100','u_sender',1759851750,2,2,
+        'photo.png','',base64.b64encode(b'x'*16).decode())])
+
+    message=next(m for m in collect_index_window(ntqq_fts_dbs) if m.msg_id=='9902')
+
+    assert message.sender_qq==45678 and message.content_json['sender_name']=='昵称'
+
+
+def test_broken_image_index_preserves_searchable_messages_as_incomplete(ntqq_fts_dbs):
+    (ntqq_fts_dbs/'files_in_chat.db').write_bytes(b'broken source')
+
+    messages={m.msg_id:m for m in collect_index_window(ntqq_fts_dbs)}
+
+    assert messages['8101'].text=='普通正文'
+    assert messages['8101'].content_json['attachment_source_unavailable'] is True
