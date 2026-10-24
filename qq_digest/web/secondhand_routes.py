@@ -1,7 +1,10 @@
 """Authenticated marketplace reads and coordinated explicit refreshes."""
 from __future__ import annotations
 
+import asyncio
 import json
+import time
+from contextlib import ExitStack
 from datetime import timedelta
 from pathlib import Path
 from threading import Lock
@@ -12,8 +15,11 @@ from pydantic import BaseModel, Field, StrictBool, StrictInt
 
 from ..archive import Archive
 from ..secondhand import SecondhandService,date_window,recent_window
-from ..operations import OperationBusy
+from ..operations import OperationBlocked, OperationBusy
 from .worker_threads import guarded_to_thread
+
+REFRESH_WAIT_SECONDS = 300
+REFRESH_RETRY_SECONDS = .5
 
 
 class Favorite(BaseModel):
@@ -233,10 +239,15 @@ def add_secondhand_routes(app,*,archive,config,templates,require_login,operation
         except ValueError as exc:raise HTTPException(422,str(exc)) from exc
         if config is None:raise HTTPException(503,'本地配置不可用')
         if not refresh_lock.acquire(False):raise HTTPException(409,'二手信息正在更新')
+        progress.update(running=True,message='等待当前任务结束后更新交易信息…',result=None)
         def worker():
             from ..secondhand_runner import refresh as run
             database=archive.connection.execute('PRAGMA database_list').fetchone()['file']
-            with operations.claim('collect'):
+            with ExitStack() as stack:
+                # Retry admission only; never repeat work after an update starts.
+                try:stack.enter_context(operations.claim('collect'))
+                except OperationBlocked:raise
+                except OperationBusy as exc:return exc
                 worker_archive=Archive.open(Path(database)) if database else archive
                 try:
                     progress.update(running=True,message='正在读取本地二手群…',result=None)
@@ -245,10 +256,22 @@ def add_secondhand_routes(app,*,archive,config,templates,require_login,operation
                     progress.update(result=result,message='本次更新已结束')
                     return result
                 finally:
-                    progress['running']=False
                     if worker_archive is not archive:worker_archive.close()
-        try:return await guarded_to_thread(worker)
+        try:
+            deadline=time.monotonic()+REFRESH_WAIT_SECONDS
+            while True:
+                result=await guarded_to_thread(worker)
+                if not isinstance(result,OperationBusy):return result
+                remaining=deadline-time.monotonic()
+                if remaining<=0:raise HTTPException(409,'等待超过 5 分钟，当前任务尚未结束，请稍后再更新交易信息')
+                names={'sync':'后台采集','collect':'消息采集','daily':'自动摘要','manual_summary':'摘要生成','refresh':'消息源更新','external':'其他程序的数据操作'}
+                active='、'.join(names.get(kind,'当前数据任务') for kind in result.active)
+                progress['message']=f'正在等待{active}结束，随后自动更新交易信息…'
+                await asyncio.sleep(min(REFRESH_RETRY_SECONDS,remaining))
         except OperationBusy as exc:raise HTTPException(409,str(exc)) from exc
+        except HTTPException:raise
         except ValueError as exc:raise HTTPException(422,str(exc)) from exc
         except Exception as exc:raise HTTPException(503,'二手信息更新失败，请检查本地源库和 AI 连接') from exc
-        finally:refresh_lock.release()
+        finally:
+            progress['running']=False
+            refresh_lock.release()

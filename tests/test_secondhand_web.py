@@ -1,6 +1,65 @@
 from tests.test_web import web_client
 
 
+def test_market_refresh_waits_for_collection_and_runs_once(web_client, monkeypatch):
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Event
+    client, _, _ = web_client
+    client.post('/login', data={'password': 'password123'})
+    operations = client.app.state.operations
+    waiting = Event()
+    calls = []
+    monkeypatch.setattr('qq_digest.secondhand_runner.refresh', lambda *a, **kw: calls.append(1) or {'status': 'success'})
+    original = operations.claim
+    from contextlib import contextmanager
+    @contextmanager
+    def observe(kind):
+        if kind == 'collect':waiting.set()
+        with original(kind):yield
+    monkeypatch.setattr(operations, 'claim', observe)
+    with ThreadPoolExecutor() as pool:
+        with original('sync'):
+            future = pool.submit(client.post, '/api/secondhand/refresh', json={})
+            assert waiting.wait(3)
+            progress = client.get('/api/secondhand/progress').json()
+            assert progress['running'] is True
+            assert '等待' in progress['message']
+            assert not calls and not future.done()
+            assert client.post('/api/secondhand/refresh', json={}).status_code == 409
+        assert future.result(timeout=5).status_code == 200
+    assert calls == [1]
+    assert client.get('/api/secondhand/progress').json()['running'] is False
+
+
+def test_market_refresh_does_not_retry_failures_after_start(web_client, monkeypatch):
+    from qq_digest.operations import OperationBusy
+    client, _, _ = web_client
+    client.post('/login', data={'password': 'password123'})
+    calls = []
+    def fail(*args, **kwargs):
+        calls.append(1)
+        raise OperationBusy('collect', ('external',))
+    monkeypatch.setattr('qq_digest.secondhand_runner.refresh', fail)
+    assert client.post('/api/secondhand/refresh', json={}).status_code == 409
+    assert calls == [1]
+    assert client.get('/api/secondhand/progress').json()['running'] is False
+
+
+def test_market_refresh_wait_has_limit_and_releases_admission(web_client, monkeypatch):
+    client, _, _ = web_client
+    client.post('/login', data={'password': 'password123'})
+    monkeypatch.setattr('qq_digest.web.secondhand_routes.REFRESH_WAIT_SECONDS', 0)
+    calls = []
+    monkeypatch.setattr('qq_digest.secondhand_runner.refresh', lambda *a, **kw: calls.append(1) or {'status': 'success'})
+    with client.app.state.operations.claim('sync'):
+        response = client.post('/api/secondhand/refresh', json={})
+        assert response.status_code == 409 and '等待超过' in response.json()['detail']
+        assert not calls
+        assert client.get('/api/secondhand/progress').json()['running'] is False
+    assert client.post('/api/secondhand/refresh', json={}).status_code == 200
+    assert calls == [1]
+
+
 def test_market_auth_default_week_and_page(web_client):
     client,_,_=web_client
     assert client.get('/api/secondhand').status_code==401
