@@ -42,6 +42,9 @@
   .inbox-workspace.inbox-list-only { grid-template-columns:minmax(0,1fr); }
   .inbox-list-only .inbox-list-column { border-right:0; }
   .inbox-list-only .inbox-reading-column { display:none; }
+  .inbox-workspace:has(#report-detail:not([hidden])) { grid-template-columns:minmax(0,1fr); }
+  .inbox-workspace:has(#report-detail:not([hidden])) .inbox-list-column { display:none; }
+  .inbox-workspace:has(#report-detail:not([hidden])) .inbox-reading-column { display:block; }
   .workspace-reading #summary-reading-controls { display:grid; grid-template-columns:minmax(200px,auto) minmax(190px,1fr) minmax(180px,240px); align-items:start; gap:10px 16px; padding:14px 24px; border-bottom:1px solid var(--border); background:#f9fbfd; flex-shrink:0; }
   .workspace-reading .summary-date-shortcuts { grid-column:1; grid-row:1; gap:5px; margin:0; }
   .workspace-reading .summary-date-shortcuts .btn { font-size:12px; min-height:34px; padding:5px 8px; }

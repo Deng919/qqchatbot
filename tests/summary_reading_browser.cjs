@@ -40,5 +40,30 @@ const otherGroup={group_id:22,group_name:'另一个群',total:1,unread:1,report_
  assert.equal(await page.locator('.summary-group-points').evaluate(n=>n.scrollTop),760,'a save completing after the user returns must retain their latest scrolling position');
  assert.equal(await page.locator('.inbox-list-column').evaluate(n=>n.scrollTop),300,'background refresh keeps scrolling performed while the response was pending');
  await page.setViewportSize({width:390,height:844});await page.evaluate(()=>{window.scrollTo(0,300);inboxSelectPoint('p2',true);});await page.locator('#inbox-back').click();assert.equal(await page.evaluate(()=>window.scrollY),300,'mobile back retains document reading position');
- console.log('Real browser delayed A save preserves B selection, server counts, desktop inner/outer scroll and mobile return');
+ for(const width of [1440,1000,390])for(const count of [1,18]){
+  await page.setViewportSize({width,height:900});
+  await page.evaluate(count=>{
+   window.requests=[];closeReport();inboxClearSelection();summaryView='groups';summarySelectGroups(['11']);
+   document.getElementById('report-from').value='2026-10-23';document.getElementById('report-to').value='2026-10-23';
+   summaryApplyView();summaryRenderGroups({total:count,page:1,page_size:30,reports:Array.from({length:count},(_,i)=>({report_id:i+1,report_kind:'daily',group_name:'研发群',window_start_date:'2026-10-23',window_end_date:'2026-10-23',created_at:'2026-10-23T12:00:00Z',preview:{available:true,overview:'概览正文。'.repeat(20),points:['讨论主题：要点正文。'.repeat(8)]}}))});
+   if(count>1)summaryScrollTo(260);
+  },count);
+  const opener=page.locator('.summary-item-footer button').nth(count>1?2:0);
+  await opener.click();const scroll=await page.evaluate(()=>summaryBrowseScroll);
+  await resolveRequest({group_id:11,group_name:'研发群',current_version:1,window_start_date:'2026-10-23',window_end_date:'2026-10-23',markdown:'# 完整摘要\n\n正文内容。\n'.repeat(25)});
+  await page.locator('#report-content h2').first().waitFor();
+  assert.equal(await page.locator('.inbox-list-column').isVisible(),false,'Full report hides duplicate preview at '+width+'px with '+count+' reports');
+  const sizes=await page.evaluate(()=>({workspace:document.getElementById('inbox-workspace').getBoundingClientRect().width,reading:document.querySelector('.inbox-reading-column').getBoundingClientRect().width}));
+  assert.ok(Math.abs(sizes.workspace-sizes.reading)<2,'Full report uses the whole reading area');
+  assert.equal(await page.locator('#report-group').inputValue(),'11');assert.equal(await page.locator('#report-from').inputValue(),'2026-10-23');
+  if(process.env.QA_DIR)await page.screenshot({path:process.env.QA_DIR+'/full-report-'+width+'-'+count+'.png'});
+  await page.locator('#report-detail .card-header button').click();
+  await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
+  assert.equal(await page.locator('.inbox-list-column').isVisible(),true,'Back restores the original report list');
+  assert.equal(await page.evaluate(()=>summaryScrollPosition()),scroll,'Back restores the list position');
+  assert.equal(await page.evaluate(()=>document.activeElement.textContent),'阅读完整摘要','Back restores keyboard focus');
+  assert.equal(await page.locator('#report-group').inputValue(),'11');assert.equal(await page.locator('#report-to').inputValue(),'2026-10-23');
+ }
+ assert.deepEqual(errors,[]);
+ console.log('Dashboard delayed saves and scroll; single/multiple full reports use all space at desktop/tablet/mobile widths, preserving return, focus and filters');
 }finally{await browser.close();}})().catch(e=>{console.error(e);process.exitCode=1;});
