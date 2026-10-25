@@ -1,0 +1,118 @@
+<script id="appearance-init">
+(function(){
+  var key='qq-digest-theme',choices=['system','light','dark'],preference='dark';
+  var system=window.matchMedia('(prefers-color-scheme: dark)');
+  try{var saved=localStorage.getItem(key);if(choices.includes(saved))preference=saved;}catch(error){}
+  function apply(value,persist){
+    preference=choices.includes(value)?value:'dark';
+    var resolved=preference==='system'?(system.matches?'dark':'light'):preference;
+    document.documentElement.dataset.theme=resolved;
+    document.documentElement.style.colorScheme=resolved;
+    document.querySelectorAll('[data-theme-select]').forEach(function(select){select.value=preference;});
+    if(persist){try{localStorage.setItem(key,preference);}catch(error){}}
+  }
+  apply(preference,false);
+  document.addEventListener('DOMContentLoaded',function(){
+    document.querySelectorAll('[data-theme-select]').forEach(function(select){
+      select.value=preference;select.addEventListener('change',function(){apply(select.value,true);});
+    });
+  });
+  system.addEventListener('change',function(){if(preference==='system')apply(preference,false);});
+  window.addEventListener('storage',function(event){if(event.key===key||event.key===null)apply(event.newValue,false);});
+})();
+</script>
+<style id="appearance-style">
+  :root { color-scheme:light; }
+  a,a:visited,a:hover,a:focus-visible { text-decoration:none; }
+  a:not(.btn):hover { color:var(--primary-dark); }
+  .appearance-control { display:flex; align-items:center; gap:10px; flex-shrink:0; margin:10px 10px 16px; color:var(--text-soft); font-size:12px; }
+  .appearance-control label { color:inherit; font-size:inherit; font-weight:450; white-space:nowrap; margin:0; }
+  .appearance-control select { min-width:0; width:auto; flex:1; min-height:34px; padding:5px 8px; font-size:12px; background:var(--surface); color:var(--text); border:1px solid var(--border-strong); border-radius:6px; }
+  .workspace-app .appearance-control { margin-top:auto; }
+  .workspace-app .inbox-sidebar-footer { margin-top:0; }
+  .login-header .appearance-control { margin:0 0 0 auto; color:var(--text-soft,#53625a); }
+  .login-header .appearance-control select { flex:none; }
+  :root[data-theme="dark"],:root[data-theme="dark"] .workspace-app {
+    --bg:#202020; --surface:#272727; --surface-subtle:#2e2e2e; --surface-strong:#303030;
+    --bg-soft:#2e2e2e; --border:#3b3b3b; --border-strong:#575757;
+    --text:#d4d4d4; --text-soft:#aaaaaa; --text-dim:#999999; --dim:#999999;
+    --header:#252525; --header-border:#3b3b3b;
+    --primary:#bcbcbc; --primary-dark:#dedede; --primary-soft:#303030; --primary-border:#666666;
+    --green:#97b8a2; --green-soft:#2a332d; --red:#d29b9b; --red-soft:#382b2b;
+    --orange:#d5b47f; --orange-soft:#383126;
+    --danger:var(--red); --warning:var(--orange);
+    color-scheme:dark;
+  }
+  :root[data-theme="dark"] body { background:var(--bg); color:var(--text); }
+  :root[data-theme="dark"] dialog { background:var(--surface); color:var(--text); border-color:var(--border); }
+  :root[data-theme="dark"] dialog::backdrop,:root[data-theme="dark"] #session-login-dialog::backdrop { background:rgb(0 0 0 / .6); }
+  :root[data-theme="dark"] #image-viewer { color:var(--text); }
+  :root[data-theme="dark"] #image-viewer::backdrop { background:rgb(0 0 0 / .86); }
+  :root[data-theme="dark"] #image-viewer .image-viewer-close { background:var(--surface); color:var(--text); border-color:var(--border-strong); }
+  :root[data-theme="dark"] #image-viewer .image-viewer-close:focus-visible { outline-color:var(--primary); }
+  :root[data-theme="dark"] :is(.global-header,.login-header) { background:var(--header); color:var(--text); border-color:var(--border); }
+  :root[data-theme="dark"] :is(.brand,.login-header span) { color:var(--text); }
+  :root[data-theme="dark"] .global-nav a { color:var(--text-soft); }
+  :root[data-theme="dark"] .global-nav a:hover { background:var(--surface-strong); color:var(--primary-dark); }
+  :root[data-theme="dark"] .global-nav a.active { background:var(--primary-soft); color:var(--text); }
+  :root[data-theme="dark"] :is(.workspace-context,#summary-reading-controls,.inbox-page-search,.table th) { background:var(--surface-subtle); color:var(--text-soft); }
+  :root[data-theme="dark"] :is(.inbox-row,.skip-link,.login-panel) { background:var(--surface); color:var(--text); }
+  :root[data-theme="dark"] :is(.inbox-row:hover,.inbox-group-button:hover,.summary-group-cover:hover,.table tbody tr:hover) { background:var(--surface-strong); }
+  :root[data-theme="dark"] :is(.inbox-row[aria-pressed="true"],.inbox-group-button[aria-pressed="true"]) { background:var(--primary-soft); color:var(--text); }
+  :root[data-theme="dark"] :is(.section-nav a.active,.workspace-more-menu a.active,.summary-view-tabs .active,.summary-date-shortcuts .active) { color:var(--text); }
+  :root[data-theme="dark"] .inbox-group-button::before { color:var(--text-dim); }
+  :root[data-theme="dark"] .inbox-placeholder-mark { color:var(--text-dim); }
+  :root[data-theme="dark"] .inbox-row[aria-pressed="true"] { box-shadow:inset 3px 0 0 #888; }
+  :root[data-theme="dark"] .inbox-row.is-unread .inbox-row-meta::before { background:#aaaaaa; }
+  :root[data-theme="dark"] option:checked { background:#3a3a3a; color:var(--text); }
+  :root[data-theme="dark"] .summary-group-stack::before { background:var(--surface-strong); }
+  :root[data-theme="dark"] .summary-group-stack::after { background:var(--surface-subtle); }
+  :root[data-theme="dark"] :is(.table th,.table td,.range-selection-summary,.range-group-option,.login-panel) { border-color:var(--border); }
+  :root[data-theme="dark"] :is(.status-line,.msg-item) { border-color:var(--border); }
+  :root[data-theme="dark"] :is(.btn:hover,.input:hover,select:hover,textarea:hover,.candidate-item:hover) { border-color:var(--border-strong); }
+  :root[data-theme="dark"] .btn-danger { border-color:var(--red); color:var(--red); }
+  :root[data-theme="dark"] .btn-danger:hover { border-color:var(--red); background:var(--red-soft); }
+  :root[data-theme="dark"] .toggle .slider { background:var(--surface-strong); }
+  :root[data-theme="dark"] .toggle .slider::before { background:#aaaaaa; }
+  :root[data-theme="dark"] .toggle input:checked + .slider { background:#3c3c3c; }
+  :root[data-theme="dark"] .toggle input:checked + .slider::before { background:#e4e4e4; }
+  :root[data-theme="dark"] .toggle input:focus-visible + .slider { outline-color:var(--primary); }
+  :root[data-theme="dark"] .badge-dim { background:var(--surface-strong); color:var(--text-soft); }
+  :root[data-theme="dark"] .btn-primary,:root[data-theme="dark"] .btn.btn-primary[data-action-mode="label"] { background:#3c3c3c; border-color:#626262; color:#e4e4e4; }
+  :root[data-theme="dark"] .btn-primary:hover,:root[data-theme="dark"] .btn.btn-primary[data-action-mode="label"]:hover { background:#474747; border-color:#777777; }
+  :root[data-theme="dark"] #action-icon-tooltip { background:var(--surface-strong); color:var(--text); box-shadow:0 4px 14px rgb(0 0 0 / .2); }
+  :root[data-theme="dark"] .setup-steps button[aria-current="step"] { background:#3c3c3c; border-color:#626262; color:#e4e4e4; }
+  :root[data-theme="dark"] :is(input,select,textarea) { color-scheme:dark; accent-color:var(--primary); }
+  :root[data-theme="dark"] ::placeholder { color:var(--text-dim); opacity:1; }
+  :root[data-theme="dark"] :focus-visible { outline-color:var(--primary); }
+  :root[data-theme="dark"] :is(.input,select,textarea):focus { outline-color:var(--primary); border-color:var(--primary); }
+  :root[data-theme="dark"] :is(.summary-warning,.summary-result[data-status="failed"],.coverage-notice[data-status="limited"],.group-result[data-error],.daily-coverage[data-status="limited"]) { background:var(--orange-soft); color:var(--orange); border-color:var(--orange); }
+  :root[data-theme="dark"] :is(.generation-progress-connection,.workspace-status[data-warning]) { color:var(--orange); }
+  :root[data-theme="dark"] .generation-progress progress,:root[data-theme="dark"] .generation-progress progress::-webkit-progress-bar { background:var(--surface-strong); }
+  :root[data-theme="dark"] .btn.btn[data-action-tone="danger"]:hover { background:var(--red-soft); color:var(--red); border-color:var(--red); }
+  :root[data-theme="dark"] mark { background:#574a2e; color:#d9c99e; }
+  :root[data-theme="dark"] .overview-links a { background:var(--surface-subtle); border-color:var(--border); }
+  :root[data-theme="dark"] .overview-links a:hover { background:var(--primary-soft); border-color:var(--border-strong); }
+  :root[data-theme="dark"] .health-dot.is-healthy { background:var(--green); box-shadow:0 0 0 4px var(--green-soft); }
+  :root[data-theme="dark"] .health-dot.is-warning { background:var(--orange); box-shadow:0 0 0 4px var(--orange-soft); }
+  :root[data-theme="dark"] .failure-badge { background:var(--orange-soft); color:var(--orange); }
+  :root[data-theme="dark"] .is-recovered .failure-badge { background:var(--green-soft); color:var(--green); }
+  :root[data-theme="dark"] :is(.is-pending,.is-ignored) .failure-badge { background:var(--surface-strong); color:var(--text-soft); }
+  :root[data-theme="dark"] .inspection-days a { background:var(--primary-soft); color:var(--primary); border-color:var(--border); }
+  :root[data-theme="dark"] .inspection-error { color:var(--red); }
+  :root[data-theme="dark"] .login-shell :is(label,.subtitle) { color:var(--text-soft); }
+  :root[data-theme="dark"] .login-header::before { background:var(--primary); box-shadow:inset 0 0 0 7px var(--primary),inset 0 0 0 9px var(--text); }
+  :root[data-theme="dark"] .login-shell button { background:#3c3c3c; border-color:#626262; color:#e4e4e4; }
+  :root[data-theme="dark"] .login-shell button:hover { background:#474747; border-color:#777777; }
+  :root[data-theme="dark"] .login-shell input { background:var(--surface-subtle); color:var(--text); border-color:var(--border-strong); }
+  :root[data-theme="dark"] .login-shell input:focus { outline-color:var(--primary); border-color:var(--primary); }
+  @media(max-width:900px) {
+    .workspace-app .appearance-control { display:inline-flex; margin:4px 0 3px; gap:8px; }
+    .workspace-app .appearance-control select { flex:none; min-width:112px; }
+  }
+  @media(max-width:480px) {
+    .login-header .appearance-control { gap:4px; }
+    .login-header .appearance-control label { display:none; }
+    .login-header .appearance-control select { max-width:112px; }
+  }
+</style>

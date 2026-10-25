@@ -42,9 +42,10 @@
     @media (max-width: 480px) { .login-header { padding: 0 18px; } .login-main { padding: 30px 18px; } .login-panel { padding: 26px; } }
     @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
   </style>
+  {% include "appearance.html" %}
 </head>
 <body class="login-shell">
-  <header class="login-header">群聊简报 <span>QQ Digest</span></header>
+  <header class="login-header">群聊简报 <span>QQ Digest</span>{% include "appearance_control.html" %}</header>
   <main class="login-main">
     <section class="login-panel" aria-labelledby="login-title">
       <h1 id="login-title">登录本地工作台</h1>
