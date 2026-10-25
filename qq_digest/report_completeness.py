@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime
 from pathlib import Path
 
 from .archive import Archive
@@ -28,8 +29,9 @@ def input_coverage(diagnostics: object, *, archive_mismatch: bool = False) -> di
         notes.append(f"预处理排除了 {source - included} 条空白、重复或无有效内容的消息。")
     if archive_mismatch:
         notes.append("采集返回量明显高于本时间窗的归档量，可能存在导入或时间范围异常，请检查采集记录。")
-    result.update(status="limited" if notes else "normal",
-                  label="输入存在限制" if notes else "输入已覆盖",
+    label = ("采集范围异常" if archive_mismatch else "部分消息未纳入" if truncated
+             else "消息较少" if included < 5 else "已过滤无效消息" if included < source else "输入已覆盖")
+    result.update(status="limited" if notes else "normal", label=label,
                   source_messages=source, included_messages=included, notes=notes)
     return result
 
@@ -114,16 +116,27 @@ class ReportCompletenessService:
         self._days[report_date] = result
         return result
 
-    def report(self, json_path: str, report_kind: str, report_date: str) -> dict:
+    def report(self, json_path: str, report_kind: str, report_date: str, *, group_id: int | None = None) -> dict:
         result = _read_input(json_path)
         result["scope"] = "仅基于所选群、日期范围内的本地归档消息，不能证明历史消息无遗漏。"
         result["daily"] = None
         if report_kind == "daily":
             day = self.daily(report_date)
             result["daily"] = day
-            result["notes"] = [*result["notes"], *day["notes"]]
-            if day["status"] == "limited" or result["status"] == "limited":
-                result.update(status="limited", label="报告存在限制")
-            elif day["status"] == "unknown":
-                result.update(status="unknown", label="范围无法确认")
+            # Whole-day results are context, never a warning about another group's report.
+            own = self.archive.connection.execute(
+                '''SELECT j.started_at,j.error,r.created_at FROM job_group_results g
+                   JOIN jobs j USING(job_id) JOIN reports r ON r.group_id=g.group_id AND r.report_date=?
+                   WHERE g.job_id=? AND g.group_id=? AND g.status='failed' ''',
+                (report_date, day['job_id'], group_id),
+            ).fetchone() if day['job_id'] is not None and group_id is not None else None
+            if own is not None:
+                try:older=datetime.fromisoformat(own['created_at']) < datetime.fromisoformat(own['started_at'])
+                except (ValueError,TypeError):older=False
+                try:failures=json.loads(own['error'])
+                except (ValueError,TypeError):failures=[]
+                stage=next((item.get('stage') for item in failures if isinstance(item,dict) and item.get('group_id')==group_id),None) if isinstance(failures,list) else None
+                if older and stage!='notification':
+                    result.update(status='limited',label={'summary':'本次生成失败','collection':'本次采集失败'}.get(stage,'该群任务有异常'))
+                    result['notes'].append('该群在当天最新任务中未全部成功，当前显示之前已保存的报告。')
         return result

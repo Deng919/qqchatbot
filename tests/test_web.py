@@ -277,6 +277,27 @@ def test_report_completeness_is_exposed_in_list_detail_and_health(web_client, tm
     assert "daily-coverage" in client.get("/overview").text
 
 
+def test_report_api_separates_other_group_failure_and_own_failure(web_client,tmp_path):
+    client,_,_=web_client
+    archive=client.app.state.archive
+    archive.upsert_groups([GroupConfig(group_id=456,name='另一群')])
+    md,js=tmp_path/'normal.md',tmp_path/'normal.json'
+    md.write_text('# 正常摘要',encoding='utf-8')
+    js.write_text(json.dumps({'diagnostics':{'source_messages':20,'included_messages':20,'context_truncated':False}}),encoding='utf-8')
+    rid=archive.record_report(group_id=123,report_date='2026-09-29',markdown_path=md,json_path=js,candidate_ids=[])
+    client.post('/login',data={'password':'password123'})
+    for failed_group,expected in [(456,'normal'),(123,'limited')]:
+        job=archive.start_job('daily_digest',target_date='2026-09-29')
+        archive.finish_job(job,'partial_success',json.dumps([{'group_id':failed_group,'stage':'summary'}]),group_outcomes={gid:'failed' if gid==failed_group else 'success' for gid in (123,456)})
+        listed=client.get('/api/reports').json()['reports'][0]['completeness']
+        assert listed['status']==expected
+        assert listed['daily']['failed_groups']==1
+        assert listed==client.get(f'/api/reports/daily/{rid}').json()['completeness']
+        assert listed==client.get(f'/api/reports/{rid}').json()['completeness']
+        if expected=='normal':assert listed['notes']==[]
+        else:assert listed['label']=='本次生成失败'
+
+
 @pytest.mark.parametrize("contents", ["broken", "[]", "{}"])
 def test_broken_or_legacy_json_is_readable_with_unknown_scope(web_client, tmp_path, contents):
     client, _, _ = web_client

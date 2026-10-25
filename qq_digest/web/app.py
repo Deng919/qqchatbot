@@ -1445,7 +1445,7 @@ def create_app(
                 "reference_message_count": _reference_message_count(row["json_path"]),
                 "preview": load_report_preview(row["json_path"]),
                 "completeness": completeness.report(
-                    row["json_path"], row["report_kind"], row["window_end_date"]
+                    row["json_path"], row["report_kind"], row["window_end_date"], group_id=row["group_id"]
                 ),
             }
             for row in rows
@@ -1487,7 +1487,7 @@ def create_app(
         markdown = md_path.read_text(encoding="utf-8") if md_path.exists() else "报告文件不存在"
         return {"markdown": markdown, "report_date": row["report_date"],
                 "completeness": ReportCompletenessService(ar).report(
-                    row["json_path"], "daily", row["report_date"])}
+                    row["json_path"], "daily", row["report_date"], group_id=row["group_id"])}
 
     @app.get("/api/reports/{report_kind}/{report_id}")
     async def api_typed_report_detail(
@@ -1543,7 +1543,7 @@ def create_app(
             "group_id": row["group_id"],
             "evidence_items": evidence_items or [],
             "completeness": ReportCompletenessService(ar).report(
-                revision_payload, report_kind, end_date
+                revision_payload, report_kind, end_date, group_id=row["group_id"]
             ),
         }
 

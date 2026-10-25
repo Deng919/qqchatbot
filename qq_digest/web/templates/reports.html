@@ -136,6 +136,7 @@
   .coverage-notice[data-status="limited"] { border-color: #e9cf9a; background: #fffaef; }
   .coverage-notice p { margin: 8px 0 0; font-size: 13px; line-height: 1.7; }
   .coverage-notice ul { padding-left: 20px; font-size: 13px; line-height: 1.7; }
+  .report-daily-coverage { border-top: 1px solid var(--border); margin-top: 16px; padding-top: 12px; }
   .report-coverage-badge { display: block; margin-top: 6px; width: fit-content; white-space: nowrap; }
   .report-filters { grid-template-columns: repeat(4, minmax(130px, 1fr)) auto; align-items: end; }
   .report-pages { display: flex; gap: 12px; align-items: center; justify-content: flex-end; margin-top: 15px; color: var(--text-soft); font-size: 12px; }
@@ -338,6 +339,7 @@
   function closeReport() { var wasOpen=!document.getElementById('report-detail').hidden;reportSelectionToken += 1; sourceRequestToken += 1; closeReportQA(); qaReport = null; revisionReport=null; revisionLoadToken+=1; document.getElementById('report-detail').hidden = true; document.getElementById('report-layout').classList.remove('has-detail'); document.getElementById('report-source-context').hidden = true;if(wasOpen)summaryLeaveDetail(); }
   function coverageBadge(data) {
     data = data || {};
+    if(data.status==='normal')return '';
     var color = data.status === 'normal' ? 'badge-green' : data.status === 'limited' ? 'badge-orange' : 'badge-dim';
     return '<span class="badge report-coverage-badge ' + color + '">' + escapeHtml(data.label || '范围无法确认') + '</span>';
   }
@@ -345,14 +347,18 @@
     data = data || {};
     document.getElementById('summary-coverage-label').textContent='消息范围与统计 · '+(data.label||'未记录统计');
     var host = document.getElementById('report-completeness'); host.textContent = ''; host.dataset.status = data.status || 'unknown';
-    var title = document.createElement('strong'); title.textContent = '覆盖范围 · ' + (data.label || '无法确认'); host.appendChild(title);
+    var title = document.createElement('strong'); title.textContent = '本报告 · ' + (data.label || '无法确认'); host.appendChild(title);
     var counts = document.createElement('p'); counts.textContent = Number.isInteger(data.source_messages) && Number.isInteger(data.included_messages)
       ? '归档输入 ' + data.source_messages + ' 条 · 实际纳入 ' + data.included_messages + ' 条' : '未记录有效的消息输入统计'; host.appendChild(counts);
-    if (data.daily && data.daily.participating_groups) {
-      var day = document.createElement('p'); day.textContent = '当日最新任务：参与 ' + data.daily.participating_groups + ' 个群 · 可读取报告 ' + data.daily.report_groups + ' 个群 · 失败 ' + data.daily.failed_groups + ' 个群'; host.appendChild(day);
-    }
     if ((data.notes || []).length) {
       var list = document.createElement('ul'); data.notes.forEach(function(note) { var li = document.createElement('li'); li.textContent = note; list.appendChild(li); }); host.appendChild(list);
+    }
+    if(data.daily){
+      var daySection=document.createElement('section');daySection.className='report-daily-coverage';daySection.setAttribute('aria-label','当天整体情况');
+      var dayTitle=document.createElement('strong');dayTitle.textContent='当天整体情况';daySection.appendChild(dayTitle);
+      if(data.daily.participating_groups){var day=document.createElement('p');day.textContent='参与 '+data.daily.participating_groups+' 个群 · 可读取报告 '+data.daily.report_groups+' 个群 · 失败 '+data.daily.failed_groups+' 个群';daySection.appendChild(day);}
+      if((data.daily.notes||[]).length){var dayNotes=document.createElement('ul');data.daily.notes.forEach(function(note){var li=document.createElement('li');li.textContent=note;dayNotes.appendChild(li);});daySection.appendChild(dayNotes);}
+      host.appendChild(daySection);
     }
     var scope = document.createElement('p'); scope.className = 'header-meta'; scope.textContent = data.scope || '仅基于本地归档消息。'; host.appendChild(scope);
   }

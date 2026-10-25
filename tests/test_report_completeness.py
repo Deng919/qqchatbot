@@ -19,6 +19,17 @@ def test_normal_input_only_claims_local_input_scope():
     assert result["notes"] == []
 
 
+@pytest.mark.parametrize('source,included,truncated,mismatch,label', [
+    (3,3,False,False,'消息较少'),
+    (20,10,True,False,'部分消息未纳入'),
+    (20,2,True,False,'部分消息未纳入'),
+    (20,18,False,False,'已过滤无效消息'),
+    (20,20,False,True,'采集范围异常'),
+])
+def test_input_labels_name_the_actual_reason(source,included,truncated,mismatch,label):
+    assert coverage(source,included,truncated,archive_mismatch=mismatch)['label']==label
+
+
 def test_low_sample_and_truncation_are_visible():
     result = coverage(20, 2, True)
     assert result["status"] == "limited"
@@ -77,6 +88,52 @@ def test_partial_daily_run_stays_limited_even_with_old_report(archived):
     assert result["report_groups"] == 2
     assert result["participating_groups"] == 3
     assert any("失败" in note for note in result["notes"])
+
+
+def test_normal_report_does_not_inherit_other_groups_limits(archived):
+    archive,directory=archived
+    normal=write_report(archive,directory,1)
+    write_report(archive,directory,2,{'diagnostics':{'source_messages':3,'included_messages':3,'context_truncated':False}})
+    job=archive.start_job('daily_digest',target_date='2026-09-29')
+    archive.finish_job(job,'success',group_outcomes={1:'success',2:'success',3:'skipped'})
+    report=service(archive).report(str(normal),'daily','2026-09-29')
+    assert report['status']=='normal' and report['notes']==[]
+    assert report['label']=='输入已覆盖'
+    assert report['daily']['status']=='limited' and report['daily']['notes']
+
+
+def test_unknown_daily_scope_does_not_replace_valid_report_input(archived):
+    archive,directory=archived
+    path=write_report(archive,directory,1)
+    report=service(archive).report(str(path),'daily','2026-09-29')
+    assert report['status']=='normal' and report['notes']==[]
+    assert report['daily']['status']=='unknown'
+
+
+def test_only_own_failed_attempt_marks_an_existing_report(archived):
+    archive,directory=archived
+    path=write_report(archive,directory,1)
+    job=archive.start_job('daily_digest',target_date='2026-09-29')
+    archive.finish_job(job,'partial_success',json.dumps([{'group_id':1,'stage':'summary'}]),group_outcomes={1:'failed',2:'success'})
+    failed=service(archive).report(str(path),'daily','2026-09-29',group_id=1)
+    assert failed['status']=='limited' and failed['label']=='本次生成失败'
+    assert any('之前' in note for note in failed['notes'])
+    other=service(archive).report(str(path),'daily','2026-09-29',group_id=2)
+    assert other['status']=='normal' and other['notes']==[]
+
+
+@pytest.mark.parametrize('scenario',['cached_notification','published_notification','regenerated'])
+def test_report_is_not_marked_failed_after_notification_or_recovery(archived,scenario):
+    archive,directory=archived
+    path=write_report(archive,directory,1)
+    job=archive.start_job('daily_digest',target_date='2026-09-29')
+    if scenario=='published_notification':path=write_report(archive,directory,1)
+    stage='notification' if scenario=='cached_notification' else 'summary'
+    archive.finish_job(job,'partial_success',json.dumps([{'group_id':1,'stage':stage}]),group_outcomes={1:'failed'})
+    if scenario=='regenerated':path=write_report(archive,directory,1)
+    result=service(archive).report(str(path),'daily','2026-09-29',group_id=1)
+    assert result['status']=='normal' and result['notes']==[]
+    assert result['daily']['status']=='limited'
 
 
 def test_successful_retry_clears_day_failure_but_not_input_warning(archived):
