@@ -39,7 +39,7 @@
     if(event.button!==0||event.ctrlKey||event.metaKey||event.shiftKey||event.altKey)return;
     if((location.pathname==='/'||location.pathname==='/reports')&&typeof summarySetView==='function'){
       event.preventDefault();summarySetView(summaryView==='groups'?'groups':'points');
-      var url=new URL(location.href);url.searchParams.delete('kind');url.searchParams.delete('id');history.replaceState(null,'',url.pathname+url.search);
+      var url=new URL(location.href);url.searchParams.delete('kind');url.searchParams.delete('id');history.replaceState(history.state,'',url.pathname+url.search);
       requestAnimationFrame(function(){summaryScrollTo(0);});
     }
   }

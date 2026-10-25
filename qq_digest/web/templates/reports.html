@@ -289,9 +289,9 @@
     }).catch(function(error){toast('重新生成失败：'+error.message,'error');}).finally(function(){revisionBusy=false;document.getElementById('report-regenerate').textContent='保留旧版并重新生成';revisionControls();});
   }
   function reportParams() { var p = new URLSearchParams(); p.set('page', reportPage); p.set('kind', document.getElementById('report-kind').value);summaryGroupParams(p,document.getElementById('report-group').value); [['date_from','report-from'],['date_to','report-to']].forEach(function(row) { var value = document.getElementById(row[1]).value; if (value) p.set(row[0], value); }); summaryReportKeyParams(p);return p; }
-  function filterReports(keepGenerated) { if(!keepGenerated&&summaryGeneratedReading)summaryGeneratedReading.keys=null;summaryCancelDetail();reportPage = 1; summaryPointPage=1; summaryPendingScroll=null;summaryApplyView();summarySave();loadReports(); }
+  function filterReports(keepGenerated) { summaryHistoryPush();if(!keepGenerated&&summaryGeneratedReading)summaryGeneratedReading.keys=null;summaryCancelDetail();reportPage = 1; summaryPointPage=1; summaryPendingScroll=null;summaryApplyView();summarySave();loadReports(); }
   function clearReportFilters() { summaryAllDates(); }
-  function changeReportPage(step) { summaryCancelDetail();reportPage += step; loadReports(); }
+  function changeReportPage(step) { summaryHistoryPush();summaryCancelDetail();reportPage += step; summarySave();loadReports(); }
   function loadReports() {
     if(summaryEmptySelection())return;
     if(summaryView==='points'){summaryLoadPoints();return;}
@@ -326,7 +326,7 @@
     closeReportQA(); qaReport = null;
     revisionReport=null; revisionPage=1; revisionLoadToken+=1; revisionControls();
     api('GET', '/api/reports/' + kind + '/' + Number(reportId)).then(function(d) {
-      if (selectionToken !== reportSelectionToken) return;
+      if (selectionToken !== reportSelectionToken || window.workspaceHistoryRestoring) return;
       qaReport = {kind: kind, id: Number(reportId), current_version:d.current_version, group_id:d.group_id, group_name: d.group_name, start: d.window_start_date, end: d.window_end_date};
       document.getElementById('report-detail').hidden = false; document.getElementById('report-layout').classList.add('has-detail'); summaryRenderMarkdown(d.markdown);
       summaryEnterDetail(d,kind,Number(reportId));

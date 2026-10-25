@@ -16,11 +16,13 @@
   function summaryScrollTo(top){var host=summaryScrollHost();if(host)host.scrollTop=top;else window.scrollTo({top:top,behavior:'instant'});}
   function summaryValues() { return {view:summaryView,group:document.getElementById('report-group').value,from:document.getElementById('report-from').value,to:document.getElementById('report-to').value,kind:document.getElementById('report-kind').value,read:document.getElementById('summary-read-filter').value,pointPage:summaryPointPage,reportPage:reportPage,since:summarySince,expanded:summaryExpanded,scroll:summaryPendingScroll!==null?summaryPendingScroll:document.getElementById('report-detail').hidden?summaryScrollPosition():summaryBrowseScroll}; }
   function summarySave() {
+    if(window.workspaceHistoryRestoring)return;
     var state=summaryValues(); try { sessionStorage.setItem(summaryStorageKey,JSON.stringify(Object.assign({},state,{previousReading:summaryPreviousReading,generatedReading:summaryGeneratedReading}))); } catch(e) {}
     var url=new URL(location.href); [['view',state.view],['date_from',state.from],['date_to',state.to],['report_kind',state.kind],['read',state.read]].forEach(function(pair){if(pair[1])url.searchParams.set(pair[0],pair[1]);else url.searchParams.delete(pair[0]);});
     if(!state.from&&!state.to)url.searchParams.set('all_dates','true');else url.searchParams.delete('all_dates');
-    url.searchParams.delete('group_id');url.searchParams.delete('group_ids');summaryGroupParams(url.searchParams,state.group);history.replaceState(null,'',url.pathname+url.search);
+    url.searchParams.delete('group_id');url.searchParams.delete('group_ids');summaryGroupParams(url.searchParams,state.group);history.replaceState(Object.assign({},history.state,{qqDigestReading:Object.assign({},state,{previousReading:summaryPreviousReading,generatedReading:summaryGeneratedReading})}),'',url.pathname+url.search);
   }
+  function summaryHistoryPush(){if(typeof workspaceHistoryPush==='function')workspaceHistoryPush();}
   function summaryApplyView() {
     document.getElementById('summary-reading-controls').hidden=summaryDetailActive;
     ['points','groups','manage'].forEach(function(view){var button=document.getElementById('summary-'+view+'-tab');button.classList.toggle('active',summaryView===view);button.setAttribute('aria-pressed',String(summaryView===view));});
@@ -37,17 +39,17 @@
     if(typeof inboxApplyView==='function')inboxApplyView();
   }
   function summaryCancelDetail(){if(typeof inboxClearSelection==='function')inboxClearSelection();summaryNavigationToken++;summaryPointToken++;reportLoadToken++;closeReport();if(!document.getElementById('summary-source-panel').hidden)summaryCloseSource();}
-  function summarySetView(view) { if(!['points','groups','manage'].includes(view))return; summaryCancelDetail();summaryView=view; summaryPointToken++;reportLoadToken++;summaryPendingScroll=null;summaryApplyView();summarySave();loadReports(); }
+  function summarySetView(view) { if(!['points','groups','manage'].includes(view))return; if(view!==summaryView||summaryDetailActive)summaryHistoryPush();summaryCancelDetail();summaryView=view; summaryPointToken++;reportLoadToken++;summaryPendingScroll=null;summaryApplyView();summarySave();loadReports(); }
   function summarySetDates(mode) { var d=recentWeekDates();document.getElementById('report-from').value=mode==='today'?d.end:d.start;document.getElementById('report-to').value=d.end;refreshDateHints();filterReports(); }
-  function summaryAllDates() { summaryCancelDetail();document.getElementById('report-group').value='';document.getElementById('report-kind').value='all';document.getElementById('summary-read-filter').value='all';document.getElementById('report-from').value='';document.getElementById('report-to').value='';refreshDateHints();filterReports(); }
+  function summaryAllDates() { document.getElementById('report-group').value='';document.getElementById('report-kind').value='all';document.getElementById('summary-read-filter').value='all';document.getElementById('report-from').value='';document.getElementById('report-to').value='';refreshDateHints();filterReports(); }
   function summaryReturnToReading(){
-    if(!summaryPreviousReading)return;var saved=summaryPreviousReading;summaryCancelDetail();summaryPreviousReading=null;summaryGeneratedReading=null;
+    if(!summaryPreviousReading)return;summaryHistoryPush();var saved=summaryPreviousReading;summaryCancelDetail();summaryPreviousReading=null;summaryGeneratedReading=null;
     summaryView=['points','groups','manage'].includes(saved.view)?saved.view:'points';summarySelectGroups(saved.group?saved.group.split(','):[]);
     document.getElementById('report-from').value=saved.from;document.getElementById('report-to').value=saved.to;document.getElementById('report-kind').value=saved.kind;document.getElementById('summary-read-filter').value=saved.read;
     summaryPointPage=saved.pointPage;reportPage=saved.reportPage;summarySinceRevision++;summarySince=saved.since;summaryExpanded=saved.expanded||{};summaryPendingScroll=saved.scroll;summaryPointToken++;reportLoadToken++;refreshDateHints();summaryApplyView();summarySave();loadReports();
   }
-  function summaryFilterPoints() { summaryCancelDetail();summaryPointPage=1;summarySave();summaryLoadPoints(); }
-  function summaryChangePage(step) { summaryCancelDetail();if(summaryView==='points'){summaryPointPage+=step;summaryLoadPoints();}else{reportPage+=step;loadReports();}summarySave(); }
+  function summaryFilterPoints() { summaryHistoryPush();summaryCancelDetail();summaryPointPage=1;summarySave();summaryLoadPoints(); }
+  function summaryChangePage(step) { summaryHistoryPush();summaryCancelDetail();if(summaryView==='points'){summaryPointPage+=step;summaryLoadPoints();}else{reportPage+=step;loadReports();}summarySave(); }
   function summaryPages(data) {
     var page=data.page,total=data.total,limit=data.page_size,max=Math.max(1,Math.ceil(total/limit));
     document.getElementById('summary-reading-pages').hidden=total<=limit;
@@ -120,12 +122,15 @@
     });summaryPages(data);summarySave();summaryRestoreScroll();
   }
   function summaryEnterDetail(data,kind,id) {
+    if(window.workspaceHistoryRestoring)return;
+    var current=new URLSearchParams(location.search);if(current.get('kind')!==kind||current.get('id')!==String(id))summaryHistoryPush();
     summaryDetailActive=true;summarySave();summaryApplyView();
     document.getElementById('summary-report-title').textContent=data.group_name+' · '+data.window_start_date+(data.window_start_date===data.window_end_date?'':' 至 '+data.window_end_date);
-    var url=new URL(location.href);url.searchParams.set('kind',kind);url.searchParams.set('id',id);history.replaceState(null,'',url.pathname+url.search);document.getElementById('report-detail').scrollIntoView({block:'start',behavior:'instant'});
+    var url=new URL(location.href);url.searchParams.set('kind',kind);url.searchParams.set('id',id);history.replaceState(history.state,'',url.pathname+url.search);document.getElementById('report-detail').scrollIntoView({block:'start',behavior:'instant'});
   }
   function summaryLeaveDetail() {
-    summaryDetailActive=false;document.getElementById('summary-reading-controls').hidden=false;summaryApplyView();var url=new URL(location.href);url.searchParams.delete('kind');url.searchParams.delete('id');history.replaceState(null,'',url.pathname+url.search);requestAnimationFrame(function(){if(summaryReportOpener&&summaryReportOpener.isConnected)summaryReportOpener.focus({preventScroll:true});summaryScrollTo(summaryBrowseScroll);summarySave();});
+    if(window.workspaceHistoryRestoring)return;
+    summaryDetailActive=false;document.getElementById('summary-reading-controls').hidden=false;summaryApplyView();var url=new URL(location.href);url.searchParams.delete('kind');url.searchParams.delete('id');history.replaceState(history.state,'',url.pathname+url.search);requestAnimationFrame(function(){if(summaryReportOpener&&summaryReportOpener.isConnected)summaryReportOpener.focus({preventScroll:true});summaryScrollTo(summaryBrowseScroll);summarySave();});
   }
   function summaryOpenSource(item,opener) {
     summarySourceOpener=opener;document.getElementById('summary-source-panel').hidden=false;document.getElementById('summary-source-backdrop').hidden=false;
@@ -155,7 +160,7 @@
   function summaryReadRangeResults(start,end,groups,keys) { if(!Array.isArray(keys)||!keys.length||keys.some(function(key){return !/^(daily|range):[1-9][0-9]*$/.test(key);})){summaryShowResult('本次摘要标识不可用，请从运行记录核对。','failed');return;} var before=summaryValues();if(!summaryPreviousReading||!summaryGeneratedReading||before.group!==summaryGeneratedReading.group||before.from!==summaryGeneratedReading.from||before.to!==summaryGeneratedReading.to){summaryPreviousReading=JSON.parse(JSON.stringify(before));}summaryGeneratedReading={group:groups.join(','),from:start,to:end,keys:Array.from(new Set(keys))};document.getElementById('report-kind').value='all';document.getElementById('summary-read-filter').value='all';document.getElementById('report-from').value=start;document.getElementById('report-to').value=end;summarySelectGroups(groups.map(String));summaryView='points';refreshDateHints();filterReports(true);closeRangeSummary(); }
   function summaryInit() {
     try{summarySaved=JSON.parse(sessionStorage.getItem(summaryStorageKey)||'null');}catch(e){}
-    var saved=summarySaved||{},url=new URLSearchParams(location.search),dates=recentWeekDates(),navigationToken=summaryNavigationToken,sinceRevision=summarySinceRevision;
+    var saved=(history.state&&history.state.qqDigestReading)||summarySaved||{},url=new URLSearchParams(location.search),dates=recentWeekDates(),navigationToken=summaryNavigationToken,sinceRevision=summarySinceRevision;
     summaryPreviousReading=saved.previousReading||null;summaryGeneratedReading=saved.generatedReading||null;
     summaryView=url.get('view')||saved.view||'points';if(!['points','groups','manage'].includes(summaryView))summaryView='points';
     document.getElementById('report-from').value=url.has('date_from')?url.get('date_from'):(saved.from!==undefined?saved.from:dates.end);document.getElementById('report-to').value=url.has('date_to')?url.get('date_to'):(saved.to!==undefined?saved.to:dates.end);
@@ -174,7 +179,7 @@
       summarySave();
       if(typeof inboxRenderGroups==='function')inboxRenderGroups(data.groups);
     }).catch(function(){summaryShowResult('群聊筛选加载失败，请刷新重试。','failed');});
-    var navigation=performance.getEntriesByType('navigation')[0],restoreVisit=navigation&&navigation.type==='reload'&&Object.prototype.hasOwnProperty.call(saved,'since');
+    var navigation=performance.getEntriesByType('navigation')[0],restoreVisit=((history.state&&history.state.qqDigestReading)||(navigation&&navigation.type==='reload'))&&saved.since!==undefined;
     if(restoreVisit)summarySince=saved.since;
     var newOption=document.getElementById('summary-read-filter').querySelector('option[value="new"]'),waitForVisit=document.getElementById('summary-read-filter').value==='new';newOption.disabled=true;
     var visit=api('POST','/api/summary-reading/visit',{},{retryBusy:true}).then(function(data){newOption.disabled=false;if(sinceRevision!==summarySinceRevision)return;summarySince=restoreVisit?saved.since:data.previous_viewed_at;summarySave();if(navigationToken!==summaryNavigationToken&&summaryView==='points'&&document.getElementById('summary-read-filter').value==='new')summaryLoadPoints();}).catch(function(){if(sinceRevision!==summarySinceRevision){newOption.disabled=false;return;}if(document.getElementById('summary-read-filter').value==='new')document.getElementById('summary-read-filter').value='all';summaryShowResult('无法读取上次打开时间，请使用全部或未读筛选。','failed');});

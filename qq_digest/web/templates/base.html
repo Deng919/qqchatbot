@@ -369,7 +369,7 @@
          style="margin:16px 28px;padding:12px 16px;border:1px solid var(--orange);border-radius:var(--radius);background:var(--orange-soft);color:var(--text)">{{ storage_handoff.get('message', '') }}。当前内容可以继续查看，变更和自动任务已暂停。</div>
     <header class="page-toolbar">
       <div class="page-toolbar-inner">
-        <div class="page-heading"><h1>{% block page_title %}{% endblock %}</h1>{% block page_description %}{% endblock %}</div>
+        <div class="page-heading">{% include "workspace_history.html" %}<div><h1>{% block page_title %}{% endblock %}</h1>{% block page_description %}{% endblock %}</div></div>
         <div class="actions">{% block actions %}{% endblock %}</div>
       </div>
     </header>
