@@ -45,8 +45,8 @@ def test_bookmarks_auth_and_independent_switch(browsing_client):
     assert client.put('/api/features', json={'values': {'bookmarks': False}, 'expected_revision': state['revision']}).status_code == 200
     assert client.get('/api/bookmarks').status_code == 403
     assert save(client, kind='message', group_id=11, msg_id='bookmark-message').status_code == 403
-    assert client.get('/bookmarks', follow_redirects=False).headers['location'] == '/settings?feature=bookmarks'
-    assert 'href="/bookmarks"' not in client.get('/').text.split('</header>')[0]
+    assert 'id="knowledge-list"' in client.get('/bookmarks').text
+    assert 'href="/bookmarks"' in client.get('/').text.split('</header>')[0]
 
 
 def test_message_snapshot_dedup_state_conflict_and_reopen(browsing_client):

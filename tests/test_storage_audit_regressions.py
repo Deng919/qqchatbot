@@ -45,8 +45,6 @@ def test_desktop_rejects_empty_session_secret_before_opening_archive(tmp_path, m
             server = make_server(config)
         assert opened == []
     finally:
-        if server is not None:
-            server.config.app.state.close_topic_tracking()
         for archive in opened:
             archive.close()
 

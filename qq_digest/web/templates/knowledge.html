@@ -1,23 +1,23 @@
 {% extends "base.html" %}
-{% block title %}知识库 - QQ Digest{% endblock %}
-{% block page_title %}知识库{% endblock %}
+{% block title %}收藏 - QQ Digest{% endblock %}
+{% block page_title %}收藏{% endblock %}
 {% block page_description %}{% endblock %}
 {% block content %}
 {% include "message_context_script.html" %}
 
 <section id="knowledge-browse">
-  <form class="knowledge-filters" onsubmit="knowledgeFilter(event)" aria-label="知识筛选">
+  <form class="knowledge-filters" onsubmit="knowledgeFilter(event)" aria-label="资料筛选">
     <div class="field"><label for="knowledge-q">关键词</label><input id="knowledge-q" class="input" type="search" maxlength="100" placeholder="标题、正文或说明"></div>
     <div class="field"><label for="knowledge-group">来源群</label><select id="knowledge-group" data-group-selector="filter" class="input"><option value="">全部群</option></select></div>
     <div class="field"><label for="knowledge-type">分类</label><select id="knowledge-type" class="input"><option value="">全部分类</option><option value="resource">资源</option><option value="experience">经验</option></select></div>
-    <button class="btn btn-primary" type="submit">筛选知识</button>
+    <button class="btn btn-primary" type="submit">筛选资料</button>
   </form>
-  <p id="knowledge-count" class="header-meta" role="status">正在读取知识库…</p>
+  <p id="knowledge-count" class="header-meta" role="status">正在读取资料…</p>
   <div id="knowledge-list" class="knowledge-list" aria-busy="true"></div>
   <div id="knowledge-pages" class="actions" hidden><button id="knowledge-prev" class="btn btn-sm" type="button" onclick="knowledgePage(-1)">上一页</button><span id="knowledge-page-label"></span><button id="knowledge-next" class="btn btn-sm" type="button" onclick="knowledgePage(1)">下一页</button></div>
 </section>
 <section id="knowledge-detail" class="card" hidden aria-busy="false">
-  <div class="card-header"><h2 id="knowledge-title"></h2><button class="btn btn-sm" type="button" onclick="knowledgeReturn()">返回知识库</button></div>
+  <div class="card-header"><h2 id="knowledge-title"></h2><button class="btn btn-sm" type="button" onclick="knowledgeReturn()">返回资料列表</button></div>
   <div class="card-body"><p id="knowledge-meta" class="header-meta"></p><div id="knowledge-body"></div><section id="knowledge-sources"><h3>原消息与上下文</h3><p id="knowledge-source-note" class="header-meta"></p><div id="knowledge-source-choices" class="actions"></div><div id="knowledge-source-body"></div></section></div>
 </section>
 <style>

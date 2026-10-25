@@ -239,6 +239,5 @@ def background_lifespan(
             task.cancel()
         if background_tasks:
             await asyncio.gather(*background_tasks, return_exceptions=True)
-        await guarded_to_thread(app.state.close_topic_tracking)
 
     return lifespan

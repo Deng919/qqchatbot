@@ -84,18 +84,18 @@ def test_feature_switches_auth_validation_routes_and_reopen(web_client):
     assert client.put('/api/features', json={}).status_code == 401
     client.post('/login', data={'password': 'password123'})
     state = client.get('/api/features').json()
-    patch = {'values': {'catchup': False, 'tasks': False, 'failures': False, 'review': False,
+    patch = {'values': {'catchup': False, 'failures': False, 'review': False,
                         'report_qa': False, 'report_revisions': False, 'history_inspection': False},
              'expected_revision': state['revision']}
     result = client.put('/api/features', json=patch)
     assert result.status_code == 200
-    for page in ('tasks', 'failures', 'candidates'):
+    for page in ('failures', 'candidates'):
         response = client.get('/'+page, follow_redirects=False)
         assert response.status_code == 303 and response.headers['location'].startswith('/settings')
         assert client.get('/api/'+page).status_code == 403
     assert client.get('/catchup', follow_redirects=False).headers['location'] == '/reports?view=points'
     assert client.get('/api/catchup').status_code == 403
-    for path in ('/api/tasks/from-message', '/api/reports/daily/1/ask',
+    for path in ('/api/reports/daily/1/ask',
                  '/api/reports/daily/1/regenerate', '/api/history-inspection/run',
                  f'/candidates/{candidate_id}/confirm'):
         assert client.post(path, json={}).status_code == 403
@@ -112,9 +112,9 @@ def test_feature_switches_auth_validation_routes_and_reopen(web_client):
     assert 'href="/settings"' in page and 'href="/reports"' in page
     scheduler = client.get('/api/scheduler').json()
     assert scheduler['enabled'] is True
-    result = client.put('/api/features', json={'values': {'review': True, 'tasks': True, 'auto_daily': False}, 'expected_revision': 1})
+    result = client.put('/api/features', json={'values': {'review': True, 'auto_daily': False}, 'expected_revision': 1})
     assert result.status_code == 200
-    assert client.get('/api/tasks').status_code == 200
+    assert client.get('/api/tasks').status_code == 404
     assert client.get(f'/api/candidates/{candidate_id}').status_code == 200
     assert client.get('/api/scheduler').json()['enabled'] is False
 
@@ -458,69 +458,6 @@ def test_catchup_requires_login_and_persists_read_state(web_client, tmp_path):
     assert client.post("/api/catchup/read", json={"key": "bad", "read": True}).status_code == 422
 
 
-def test_task_inbox_requires_login_and_supports_confirmation_and_edit(web_client, tmp_path):
-    client, _, _ = web_client
-    assert client.get("/tasks", follow_redirects=False).status_code == 303
-    assert client.get("/api/tasks").status_code == 401
-    assert client.get("/api/tasks/suggestions").status_code == 401
-    assert client.post("/api/tasks/from-message", json={
-        "group_id": 123, "msg_id": "m1", "title": "任务", "owner": "",
-    }).status_code == 401
-    assert client.patch("/api/tasks/1", json={
-        "title": "任务", "owner": "", "status": "open", "expected_revision": 0,
-    }).status_code == 401
-
-    today = datetime.now(ZoneInfo("Asia/Shanghai")).date().isoformat()
-    source_time = datetime.now(ZoneInfo("Asia/Shanghai"))
-    archive = client.app.state.archive
-    archive.ingest([NormalizedMessage(
-        msg_id="task-source", group_id=123, sender_qq=1001,
-        timestamp=source_time, collected_at=source_time,
-        text="小王确认本周提交文档",
-    )])
-    payload_path = tmp_path / "task-report.json"
-    payload_path.write_text(json.dumps({
-        "evidence_version": 1, "overview": "", "main_topics": [],
-        "conclusions": [], "resources": [],
-        "tasks": [{"owner": "小王", "description": "提交文档", "deadline": "本周",
-                   "message_ids": ["task-source"]}],
-        "open_questions": [],
-    }, ensure_ascii=False), encoding="utf-8")
-    archive.record_report(group_id=123, report_date=today,
-                          markdown_path=tmp_path / "task-report.md",
-                          json_path=payload_path, candidate_ids=[])
-
-    client.post("/login", data={"password": "password123"})
-    assert "待办收件箱" in client.get("/tasks").text
-    suggested = client.get("/api/tasks/suggestions").json()["items"]
-    assert len(suggested) == 1
-    assert suggested[0]["source_ids"] == ["task-source"]
-    key = suggested[0]["key"]
-    confirmed = client.post(f"/api/tasks/suggestions/{key}/decision", json={
-        "action": "confirm", "title": "提交最终文档", "owner": "小王", "due_date": today,
-    })
-    assert confirmed.status_code == 200
-    task = confirmed.json()["task"]
-    assert task["source_ids"] == ["task-source"]
-    assert task["due_bucket"] == "today"
-    assert client.get("/api/tasks/suggestions").json()["items"] == []
-    assert client.get("/api/tasks").json()["counts"]["today"] == 1
-    edited = client.patch(f"/api/tasks/{task['task_id']}", json={
-        "title": "已提交", "owner": "小王", "due_date": today, "status": "completed",
-        "expected_revision": task['revision'],
-    })
-    assert edited.status_code == 200
-    assert edited.json()["task"]["status"] == "completed"
-    assert edited.json()["task"]["source_ids"] == ["task-source"]
-    assert client.get("/api/tasks?status=completed").json()["items"][0]["title"] == "已提交"
-    assert client.post("/api/tasks/from-message", json={
-        "group_id": 123, "msg_id": "missing", "title": "伪造", "owner": "",
-    }).status_code == 400
-    created = client.post("/api/tasks/from-message", json={
-        "group_id": 123, "msg_id": "task-source", "title": "从消息创建", "owner": "",
-    })
-    assert created.status_code == 200
-    assert created.json()["task"]["source_ids"] == ["task-source"]
 
 
 def test_desktop_settings_api_uses_local_bridge_after_login(web_client):

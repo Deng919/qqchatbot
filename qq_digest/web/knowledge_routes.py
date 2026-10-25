@@ -1,6 +1,7 @@
 """Core knowledge access is independent of the optional candidate review UI."""
 from typing import Annotated, Literal
 import sqlite3
+from urllib.parse import urlencode
 
 from fastapi import Depends, HTTPException, Query, Request, Path
 from fastapi.responses import RedirectResponse
@@ -55,7 +56,8 @@ def add_knowledge_routes(app, *, archive, knowledge, config, templates, require_
     async def knowledge_page(request:Request):
         try: require_login(request)
         except HTTPException: return RedirectResponse('/login',status_code=303)
-        return templates.TemplateResponse(request,'knowledge.html',{})
+        params=[('view','knowledge'),*((key,value) for key,value in request.query_params.multi_items() if key!='view')]
+        return RedirectResponse('/bookmarks?'+urlencode(params),status_code=303)
 
     @app.get('/api/knowledge',dependencies=[Depends(require_login)])
     async def list_knowledge(q:str=Query('',max_length=100),group_id:int|None=Query(None,ge=-(2**63),lt=2**63),

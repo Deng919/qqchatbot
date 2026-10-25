@@ -48,7 +48,7 @@ def test_save_and_browse_with_review_disabled_preserves_full_source(browsing_cli
     assert client.get(f'/api/knowledge/{item_id}/sources/unrelated').status_code == 404
     assert client.get('/api/candidates').status_code == 403
     assert client.get('/knowledge').status_code == 200
-    assert 'href="/knowledge"' in client.get('/search').text
+    assert 'href="/bookmarks"' in client.get('/search').text
     hit=client.get('/api/search?q=配置&kind=knowledge').json()['results'][0]
     assert hit['url'] == f'/knowledge?item_id={item_id}'
 

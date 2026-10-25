@@ -9,8 +9,12 @@
   <a href="{{ url }}" data-settings-section="{{ key }}" {% if key == 'reminders' and not features.get('reminders',false) %}hidden{% endif %} {% if key == settings_section %}aria-current="page" class="active"{% endif %}>{{ label }}</a>
   {% endfor %}
 </nav>
-{% elif page_path in ['/knowledge','/candidates'] %}
-<nav class="section-nav" aria-label="知识库分类"><a href="/knowledge" {% if page_path == '/knowledge' %}aria-current="page" class="active"{% endif %}>已保存</a>{% if features.get('review',true) %}<a href="/candidates" {% if page_path == '/candidates' %}aria-current="page" class="active"{% endif %}>待确认</a>{% endif %}</nav>
+{% elif page_path in ['/bookmarks','/candidates'] %}
+<nav class="section-nav" aria-label="收藏分类">
+{% if features.get('bookmarks',true) %}<a href="/bookmarks" {% if page_path == '/bookmarks' and collection_view|default('saved') == 'saved' %}aria-current="page" class="active"{% endif %}>已收藏</a>{% endif %}
+<a href="/bookmarks?view=knowledge" {% if page_path == '/bookmarks' and collection_view|default('saved') == 'knowledge' %}aria-current="page" class="active"{% endif %}>整理的资料</a>
+{% if features.get('review',true) %}<a href="/candidates" {% if page_path == '/candidates' %}aria-current="page" class="active"{% endif %}>待确认</a>{% endif %}
+</nav>
 {% elif page_path in ['/search','/archive-qa'] %}
 <nav class="section-nav" aria-label="查找方式"><a href="/search" {% if page_path == '/search' %}aria-current="page" class="active"{% endif %}>关键词查找</a><a href="/archive-qa" {% if page_path == '/archive-qa' %}aria-current="page" class="active"{% endif %}>归档问答</a></nav>
 {% elif page_path in ['/groups','/collect'] %}
@@ -18,8 +22,6 @@
   <a href="/groups" {% if page_path == '/groups' %}aria-current="page" class="active"{% endif %}>关注的群聊</a>
   <a href="/collect" {% if page_path == '/collect' %}aria-current="page" class="active"{% endif %}>更新与高级维护</a>
 </nav>
-{% elif page_path in ['/tasks','/topics'] %}
-<a class="section-back" href="/reports">← 返回摘要阅读</a>
 {% endif %}
 <style>
   [hidden] { display:none !important; }
@@ -44,12 +46,12 @@
   function updateWorkspaceTools() {
     document.querySelectorAll('[data-settings-section=reminders]').forEach(function(link){link.hidden=featureFlags.reminders!==true;});
     var host=document.getElementById('workspace-tools-area');host.textContent='';
-    var items=workspaceLinks.filter(function(item){return ['reading','knowledge','features'].includes(item[0])||(Object.prototype.hasOwnProperty.call(featureFlags,item[0])?featureFlags[item[0]]:item[3]);});
+    var items=workspaceLinks.filter(function(item){return ['reading','bookmarks','features'].includes(item[0])||(Object.prototype.hasOwnProperty.call(featureFlags,item[0])?featureFlags[item[0]]:item[3]);});
     document.querySelectorAll('[data-bookmark-action]').forEach(function(button){button.hidden=featureFlags.bookmarks===false;});
     var query=new URLSearchParams(location.search);
     function makeLink(item) {
       var link=document.createElement('a');link.href=item[2];link.textContent=item[1];
-      var reading=item[0]==='reading',manage=item[0]==='features',selected=reading?(location.pathname==='/'||location.pathname==='/reports'):(item[0]==='knowledge'&&location.pathname==='/candidates')||location.pathname===item[2].split('?')[0]&&(!manage||query.get('section')==='features'||query.has('feature')||query.get('saved')==='features');
+      var reading=item[0]==='reading',manage=item[0]==='features',selected=reading?(location.pathname==='/'||location.pathname==='/reports'):(item[0]==='bookmarks'&&location.pathname==='/candidates')||location.pathname===item[2].split('?')[0]&&(!manage||query.get('section')==='features'||query.has('feature')||query.get('saved')==='features');
       if(reading){link.setAttribute('data-summary-home','');link.onclick=navigateSummaryReading;}
       if(manage)link.classList.add('extension-manage');
       if(selected){link.classList.add('active');link.setAttribute('aria-current','page');}

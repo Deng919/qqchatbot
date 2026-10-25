@@ -33,8 +33,8 @@ def test_review_and_failures_have_parent_entries_and_honor_switches(web_client):
         assert 'href="/candidates"' not in header and 'href="/failures"' not in header
         assert 'href="/reports?view=points"' in header
     assert 'href="/candidates"' in knowledge
-    assert re.search(r'href="/knowledge"[^>]*aria-current="page"', tools(review))
-    assert re.search(r'id="nav-search"[^>]*aria-current="page"', review)
+    assert re.search(r'href="/bookmarks"[^>]*aria-current="page"', tools(review))
+    assert re.search(r'id="nav-reports"[^>]*aria-current="page"', review)
     assert 'href="/failures"' in client.get('/overview').text
     assert 'href="/overview"' in client.get('/failures').text
     state = client.get('/api/features').json()

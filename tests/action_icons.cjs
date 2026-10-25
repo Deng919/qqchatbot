@@ -40,8 +40,6 @@ const fs = require('node:fs'), assert = require('node:assert/strict');
     await page.evaluate(()=>{const recent=document.createElement('div');recent.id='find-recent';['删除','收藏','constructor','toString'].forEach(label=>{const b=document.createElement('button');b.type='button';b.className='btn';b.textContent=label;recent.appendChild(b);});document.body.appendChild(recent);});
     await page.waitForTimeout(50);
     assert.equal(await page.locator('#find-recent [data-action-icon]').count(),0,'recent search queries stay readable even when they match action names');
-    await page.evaluate(()=>{const suggestions=document.createElement('div');suggestions.id='topics-suggestions';const b=document.createElement('button');b.type='button';b.className='btn';b.textContent='收藏';suggestions.appendChild(b);document.body.appendChild(suggestions);});
-    await page.waitForTimeout(50);assert.equal(await page.locator('#topics-suggestions [data-action-icon]').count(),0,'destination topic titles remain visible');
     await page.evaluate(()=>{const b=document.createElement('button');b.type='button';b.className='btn';b.id='unknown';b.textContent='constructor';document.body.appendChild(b);});
     await page.waitForTimeout(50);assert.equal(await page.locator('#unknown').getAttribute('data-action-icon'),null,'inherited object keys are not actions');
     await page.evaluate(()=>document.querySelector('dialog').showModal());await page.locator('#block').hover();await tip.waitFor({state:'visible'});assert.equal(await tip.textContent(),'屏蔽此人');

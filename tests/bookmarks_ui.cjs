@@ -24,6 +24,10 @@ const item=id=>({bookmark_id:id,kind:'message',status:'pending',revision:0,snaps
   second.resolve(item(2));await tick();first.resolve(item(1));await tick();assert.equal(get('bookmark-title').textContent,'收藏 2','Late detail cannot replace newer selection');
   assert.equal(get('bookmark-body').textContent,item(2).snapshot.text,'Source content is plain text');
   scope.bookmarksOpen(3);const abandoned=requests.shift();scope.bookmarksClose();abandoned.resolve(item(3));await tick();assert.equal(get('bookmark-dialog').open,false);
+  const organized=[];scope.openKnowledgeSave=(group,id)=>organized.push({group,id});
+  scope.bookmarksOpen(4);requests.shift().resolve({...item(4),origin_available:true,snapshot:{...item(4).snapshot,group_id:11,target:{msg_id:'original-source'}}});await tick();
+  const organize=get('bookmark-origin-actions').children.find(n=>n.textContent==='整理成资料');assert.ok(organize,'Saved source can be organized without leaving Collections');
+  organize.onclick();assert.equal(get('bookmark-dialog').open,false);assert.deepEqual(organized,[{group:11,id:'original-source'}]);
   const b=node(),target={kind:'message',group_id:11,msg_id:'m1'};const saving=scope.saveBookmark(target,b);scope.saveBookmark(target,b);assert.equal(requests.length,1,'Double click saves once');
   requests.shift().reject(Error('disk full'));await saving;assert.equal(b.disabled,false,'Failure allows retry');
   const retry=scope.saveBookmark(target,b);requests.shift().resolve({reused:true});await retry;assert.equal(b.textContent,'已收藏');assert.equal(b.disabled,true);

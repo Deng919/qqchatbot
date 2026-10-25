@@ -40,9 +40,8 @@ def runtime(tmp_path):
     bridge._operations = app.state.operations
     client = TestClient(app)
     client.post('/login', data={'password': 'password123'})
-    app.state.features.update({'topics': True, 'reminders': True}, 0)
+    app.state.features.update({'reminders': True}, 0)
     yield client, bridge, tmp_path
-    app.state.close_topic_tracking()
     archive.close()
 
 
@@ -58,7 +57,7 @@ def test_handoff_blocks_all_writes_keeps_reads_and_new_runtime_writable(runtime,
             'destination': str(root / 'new-data'), 'sha256': preview['sha256']})
     assert response.status_code == 200, response.text
     assert response.json()['restart_required'] is True
-    for method, url, body in [('PATCH', '/api/groups/123', {}), ('POST', '/api/tasks/from-message', {}),
+    for method, url, body in [('PATCH', '/api/groups/123', {}),
         ('PUT', '/api/ai-settings/key', {'api_key': 'synthetic'}),
         ('POST', '/api/desktop-settings/backup-schedule', {'schedule': 'off'}),
         ('DELETE', '/api/reminder-rules/1', None)]:
@@ -69,8 +68,8 @@ def test_handoff_blocks_all_writes_keeps_reads_and_new_runtime_writable(runtime,
     assert state['read_only'] and state['restart_required']
     assert 'storage-handoff-banner' in client.get('/settings').text
     assert client.get('/api/groups').status_code == 200
-    assert client.get('/api/topics').status_code == 200
-    assert client.get('/api/tasks').status_code == 200
+    assert client.get('/api/topics').status_code == 404
+    assert client.get('/api/tasks').status_code == 404
     assert client.get('/api/reminders').status_code == 200
     assert client.get('/api/reminder-rules').status_code == 200
     operations = client.app.state.operations

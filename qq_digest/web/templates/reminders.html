@@ -17,14 +17,14 @@
 </section>
 <section id="reminders-rules" hidden>
   <div class="reminder-heading"><h2>我的规则</h2><button class="btn btn-primary" type="button" onclick="remindersEdit()">新建规则</button></div>
-  <p class="header-meta">关键词、资源和故障只提醒新增内容；到期任务检查现有待办。</p>
+  <p class="header-meta">关键词、资源和故障只提醒新增内容。</p>
   <div id="reminder-rules-list"></div>
 </section>
 <dialog id="reminder-dialog" class="reminder-dialog" aria-labelledby="reminder-edit-title">
   <form id="reminder-form" onsubmit="remindersSave(event)" oninput="remindersChanged()" onchange="remindersChanged()">
     <div class="reminder-heading"><h2 id="reminder-edit-title">新建提醒规则</h2><button class="btn btn-sm" type="button" onclick="remindersClose()">关闭</button></div>
     <div class="field"><label for="reminder-name">规则名称</label><input class="input" id="reminder-name" maxlength="100" required></div>
-    <div class="field"><label for="reminder-kind">提醒类型</label><select id="reminder-kind" onchange="remindersKind()"><option value="keyword">关键词</option><option value="resource">新资源候选</option><option value="task_due">待办到期</option><option value="failure">运行故障</option></select></div>
+    <div class="field"><label for="reminder-kind">提醒类型</label><select id="reminder-kind" onchange="remindersKind()"><option value="keyword">关键词</option><option value="resource">新资源候选</option><option value="failure">运行故障</option></select></div>
     <div class="field" id="reminder-keyword-field"><label for="reminder-keywords">关键词（每行一个，最多 20 个）</label><textarea class="input" id="reminder-keywords" rows="3" placeholder="教程&#10;发布"></textarea></div>
     <div class="field"><label for="reminder-groups">群范围</label><select id="reminder-groups" data-group-selector="filter" data-group-limit="500" multiple size="4"></select></div>
     <fieldset><legend>提醒渠道</legend><label><input id="reminder-in-app" type="checkbox" checked> 程序内提醒</label> <label><input id="reminder-windows" type="checkbox" checked> Windows 通知</label></fieldset>

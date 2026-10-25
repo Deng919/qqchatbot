@@ -49,14 +49,12 @@ from .history_inspection import add_history_inspection_routes
 from .report_revisions import add_report_revision_routes
 from .features import add_feature_routes
 from .summary_reading_routes import add_summary_reading_routes
-from .task_routes import add_task_routes
 from .message_routes import add_message_routes
 from .report_related_routes import add_report_related_routes
 from .search_routes import add_search_routes
 from .archive_qa_routes import add_archive_qa_routes
 from .summary_generation_routes import add_summary_generation_routes
 from .knowledge_routes import add_knowledge_routes
-from .topic_routes import add_topic_routes
 from .reminder_routes import add_reminder_routes
 from .bookmark_routes import add_bookmark_routes
 from .background_tasks import background_lifespan
@@ -492,7 +490,6 @@ def create_app(
     from .secondhand_routes import add_secondhand_routes
     add_secondhand_routes(app,archive=archive,config=config,templates=templates,require_login=require_login,operations=operations)
     add_summary_reading_routes(app, archive=archive, config=config, require_login=require_login)
-    add_task_routes(app, archive=archive, config=config, templates=templates, require_login=require_login)
     add_message_routes(app, archive=archive, config=config, require_login=require_login)
     add_report_related_routes(app, archive=_archive, config=_config, require_login=require_login)
     from .failure_ignore_routes import add_failure_ignore_routes
@@ -509,8 +506,6 @@ def create_app(
     add_search_routes(app, archive=archive, config=config, require_login=require_login)
     add_archive_qa_routes(app, archive=archive, config=config, templates=templates,
         require_login=require_login, operations=operations)
-    add_topic_routes(app, archive=archive, config=config, templates=templates,
-                     require_login=require_login, operations=operations)
     add_reminder_routes(app, archive=archive, config=config, templates=templates,
                         require_login=require_login, operations=operations)
     add_bookmark_routes(app, archive=archive, config=config, templates=templates,

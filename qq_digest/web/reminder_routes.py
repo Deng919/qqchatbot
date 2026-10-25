@@ -23,7 +23,7 @@ EntityId = Annotated[int, Path(ge=1, lt=2**63)]
 class RuleValues(BaseModel):
     model_config = {'extra': 'forbid'}
     name: str = Field(min_length=1, max_length=100, strict=True)
-    kind: Literal['keyword', 'resource', 'task_due', 'failure']
+    kind: Literal['keyword', 'resource', 'failure']
     enabled: StrictBool = True
     group_ids: list[Annotated[int, Field(strict=True, ge=-(2**63), lt=2**63)]] = Field(default_factory=list, max_length=500)
     keywords: list[Annotated[str, Field(strict=True, min_length=1, max_length=100)]] = Field(default_factory=list, max_length=20)

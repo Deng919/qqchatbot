@@ -17,7 +17,7 @@ CACHE = Path(r"D:\Cache\QQDigestDesktop")
 RELEASE = Path(r"D:\Apps\QQDigestDesktop")
 TEMPLATES = (
     "base.html", "candidates.html", "collect.html",
-    "dashboard.html", "failures.html", "groups.html", "login.html", "reports.html", "search.html", "tasks.html",
+    "dashboard.html", "failures.html", "groups.html", "login.html", "reports.html", "search.html",
     "settings.html", "summary_reading_controls.html", "summary_reading_style.html",
     "summary_reading_script.html",
     "inbox_workspace_style.html", "inbox_reading_script.html",
@@ -32,7 +32,6 @@ TEMPLATES = (
     "find_style.html", "find_helpers.html", "find_script.html",
     "message_context_script.html", "attachment_controls.html",
     "knowledge.html", "knowledge_script.html", "knowledge_save.html",
-    "topics.html", "topics_script.html",
     "reminders.html", "reminders_script.html",
     "bookmarks.html", "bookmarks_script.html", "bookmark_actions.html", "action_icons.html",
     "first_use.html", "first_use_script.html",

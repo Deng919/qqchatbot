@@ -394,10 +394,6 @@ def test_lifespan_stops_and_awaits_all_tasks(runtime, monkeypatch, bot):
         async def stop(self):
             events.append('listener-stop')
 
-    def close_topics():
-        assert all(task.done() for task in tasks)
-        events.append('topics-close')
-
     monkeypatch.setattr(background, 'daily_scheduler_loop', daily)
     monkeypatch.setattr(background, 'message_sync_loop', sync)
     monkeypatch.setattr(background, 'history_inspection_loop', inspection)
@@ -405,7 +401,7 @@ def test_lifespan_stops_and_awaits_all_tasks(runtime, monkeypatch, bot):
     monkeypatch.setattr(background, 'notification_queue_loop', notifications)
     monkeypatch.setattr('qq_digest.notify.WebSocketListener', Listener)
     app = SimpleNamespace(state=SimpleNamespace(features=runtime.features,
-        reminder_sink=sink, close_topic_tracking=close_topics))
+        reminder_sink=sink))
     lifespan = background.background_lifespan(
         config=runtime.config, archive=runtime.archive,
         candidates=CandidateService(runtime.archive), knowledge=KnowledgeWriter(runtime.config.knowledge_dir),
@@ -427,7 +423,6 @@ def test_lifespan_stops_and_awaits_all_tasks(runtime, monkeypatch, bot):
     if bot:
         assert events.index('listener-stop') < min(events.index('stop:' + name)
             for name in ('daily', 'sync', 'inspection', 'reminders', 'bot', 'notifications'))
-    assert events[-1] == 'topics-close'
 
 
 def test_routes_observe_background_state_and_conflicting_work(runtime, monkeypatch):

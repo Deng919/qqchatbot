@@ -40,13 +40,6 @@ def candidate(service, link="https://example.com", status="pending", kind="resou
     return cur.lastrowid
 
 
-def task(service, due="2026-10-05"):
-    message(service, "tasksource")
-    c = service.archive.connection
-    cur = c.execute("""INSERT INTO tasks(group_id,title,due_date,source_ids,primary_source_id,created_at,updated_at)
-        VALUES(123,'完成任务',?,'["tasksource"]','tasksource',?,?)""", (due, NOW.isoformat(), NOW.isoformat()))
-    c.commit()
-    return cur.lastrowid
 
 
 def fault(service, at=NOW, error="读取失败", group_id=123, retry=None, status="failed"):
@@ -94,22 +87,6 @@ def test_resource_baseline_link_dedupe_and_ignored(service):
     assert service.scan(now=NOW)["created"] == 3
 
 
-def test_tasks_timezone_current_due_and_changed_queue(service):
-    ident = task(service)
-    values = rule("task_due")
-    values.update(quiet_start="00:00", quiet_end="23:59")
-    service.save_rule(values, now=NOW)
-    assert service.scan(now=NOW)["created"] == 1
-    assert service.list_events()["total"] == 0
-    service.archive.connection.execute("UPDATE tasks SET due_date='2026-10-06' WHERE task_id=?", (ident,))
-    service.archive.connection.commit()
-    assert service.scan(now=NOW + timedelta(days=1))["created"] == 1
-    service.archive.connection.execute("UPDATE tasks SET status='completed' WHERE task_id=?", (ident,))
-    service.archive.connection.commit()
-    calls = []
-    service.dispatch_windows(lambda *args: calls.append(args) or True, now=NOW + timedelta(days=2))
-    assert calls == []
-    assert service.list_events()["total"] == 0
 
 
 def test_failure_baseline_retry_aggregation_scope_and_recovery(service):
@@ -272,19 +249,6 @@ def test_windows_only_records_retry_and_disabled_rules(service):
     assert service.dispatch_windows(lambda *a: pytest.fail("disabled sent"), now=NOW)["sent"] == 0
 
 
-def test_configured_timezone_due_date_and_reopen_dedupe(service):
-    task_id = task(service)
-    before_day = datetime(2026, 10, 4, 16, tzinfo=timezone.utc)
-    service.save_rule(rule("task_due"), now=before_day)
-    assert ReminderService(service.archive, "UTC").scan(now=before_day)["created"] == 0
-    assert service.scan(now=before_day)["created"] == 1
-    c = service.archive.connection
-    c.execute("UPDATE tasks SET status='canceled' WHERE task_id=?", (task_id,))
-    c.commit()
-    service.scan(now=before_day)
-    c.execute("UPDATE tasks SET status='open' WHERE task_id=?", (task_id,))
-    c.commit()
-    assert service.scan(now=before_day)["created"] == 0
 
 
 def test_message_rowid_never_reused_after_group_deletion(service):

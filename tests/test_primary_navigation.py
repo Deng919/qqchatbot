@@ -43,24 +43,24 @@ def test_optional_tools_are_visible_in_header_and_follow_feature_switches(web_cl
     assert re.search(r'<a href="/reports\?view=points"[^>]*>阅读摘要</a>', markup)
     more = re.search(r'<details[^>]+id="workspace-more"[^>]*>(.*?)</details>', markup, re.S)
     assert more is not None
-    for path in ('/knowledge', '/bookmarks', '/tasks', '/settings?section=features'):
+    for path in ('/bookmarks', '/settings?section=features'):
         assert 'href="'+path+'"' in more.group(1)
         assert 'href="'+path+'"' not in markup.split('<details', 1)[0]
     assert 'href="/candidates"' not in tools.group(1) and 'href="/failures"' not in tools.group(1)
     assert 'href="/topics"' not in tools.group(1) and 'href="/reminders"' not in tools.group(1)
     state = client.get('/api/features').json()
-    client.put('/api/features',json={'values':{'topics':True,'reminders':True},'expected_revision':state['revision']})
-    page = client.get('/topics').text
+    client.put('/api/features',json={'values':{'reminders':True},'expected_revision':state['revision']})
+    page = client.get('/reminders').text
     tools = re.search(r'<nav[^>]+id="workspace-tools-area"[^>]*>(.*?)</nav>', page, re.S).group(1)
-    assert re.search(r'href="/topics"[^>]*aria-current="page"', tools)
+    assert re.search(r'href="/reminders"[^>]*aria-current="page"', tools)
     assert 'href="/reminders"' in tools
     state = client.get('/api/features').json()
-    client.put('/api/features',json={'values':{'tasks':False,'review':False,'failures':False,'topics':False,'reminders':False},'expected_revision':state['revision']})
+    client.put('/api/features',json={'values':{'review':False,'failures':False,'reminders':False},'expected_revision':state['revision']})
     page = client.get('/').text
     assert 'href="/tasks"' not in page and 'href="/candidates"' not in page
     assert 'href="/failures"' not in page
     assert 'href="/topics"' not in page and 'href="/reminders"' not in page
-    assert 'href="/knowledge"' in page and 'href="/settings?section=features"' in page
+    assert 'href="/bookmarks"' in page and 'href="/settings?section=features"' in page
 
 
 def test_settings_categories_and_group_details(web_client):

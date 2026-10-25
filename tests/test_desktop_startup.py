@@ -19,7 +19,6 @@ def desktop_app(tmp_path):
                       'ai:\n  base_url: https://invalid.example\n  model: test\n  api_key_env: UNUSED_QA_KEY\n', 'utf-8')
     app = make_server(config, bridge=SimpleNamespace()).config.app
     yield app
-    app.state.close_topic_tracking()
     app.state.archive.close()
 
 
@@ -147,5 +146,4 @@ def test_regular_web_service_has_no_desktop_login(tmp_path):
         response = client(app).post('/api/desktop-session', json={'token': proof()})
         assert response.status_code == 404
     finally:
-        app.state.close_topic_tracking()
         app.state.archive.close()

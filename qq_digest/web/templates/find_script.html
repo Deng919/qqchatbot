@@ -1,6 +1,6 @@
 <script>
 var findBrowse=new URLSearchParams(location.search).get('browse')==='1',currentSearchPage=1,searchToken=0,findContextToken=0,findContextOpener=null,findContextTarget=null,findQuery='',findSubmitted=null,findGroupsFailed=false;
-var findKindLabels={message:'聊天消息',report:'摘要',knowledge:'知识',all:'全部内容'};
+var findKindLabels={message:'聊天消息',report:'摘要',knowledge:'资料',all:'全部内容'};
 var findMessageTypes={text:'文字',link:'链接',file:'文件',reply:'回复',forward:'转发',system:'系统',unknown:'未知'};
 function findNode(id){return document.getElementById(id);}
 function findDay(d){return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
@@ -36,7 +36,7 @@ function showSearchContext(button){findContextOpener=button;findContextTarget={g
 function loadFindContext(){var token=++findContextToken,target=findContextTarget,q=findQuery,body=findNode('find-context-body');findNode('find-context-meta').textContent=target.name;findNode('find-context-actions').textContent='';
   return mountMessageContext(body,{groupId:target.group,citedId:target.id,url:'/api/search/messages/'+encodeURIComponent(target.group)+'/'+encodeURIComponent(target.id)+'/context',
     isCurrent:function(){return token===findContextToken&&!findNode('find-context').hidden;},highlight:function(text){return findHighlight(text,q);},
-    onLoaded:function(){findNode('find-context-actions').textContent='';if(featureFlags.tasks!==false){var a=document.createElement('a');a.className='btn btn-sm';a.textContent='加入待办';a.href='/tasks?'+new URLSearchParams({group_id:target.group,msg_id:target.id});findNode('find-context-actions').appendChild(a);}}}).ready;
+    onLoaded:function(){findNode('find-context-actions').textContent='';}}).ready;
 }
 document.addEventListener('keydown',function(event){var panel=findNode('find-context');if(panel.hidden)return;if(event.key==='Escape'){event.preventDefault();closeFindContext();}else if(event.key==='Tab'){var nodes=Array.from(panel.querySelectorAll('button,a[href],input,select,[tabindex="0"]')).filter(function(n){return !n.disabled&&n.getClientRects().length;});var first=nodes[0],last=nodes[nodes.length-1];if(event.shiftKey&&(document.activeElement===first||!panel.contains(document.activeElement))){event.preventDefault();last.focus();}else if(!event.shiftKey&&(document.activeElement===last||!panel.contains(document.activeElement))){event.preventDefault();first.focus();}}});
 (function restoreSearch(){var p=new URLSearchParams(location.search);setMessageDates(p.has('q')?'all':'week');[['q','search-q'],['date_from','search-from'],['date_to','search-to'],['sender_qq','search-sender'],['message_type','search-message-type']].forEach(function(pair){if(p.has(pair[0]))findNode(pair[1]).value=p.get(pair[0]);});if(findKindLabels[p.get('kind')])findNode('search-kind').value=p.get('kind');if(findBrowse)findNode('search-kind').value='message';currentSearchPage=Math.max(1,Number(p.get('page'))||1);renderFindRecent();updateFindControls();['search-group','search-from','search-to','search-sender','search-message-type'].forEach(function(id){findNode(id).addEventListener('change',updateFindControls);});

@@ -1,6 +1,5 @@
 import json
 from datetime import datetime, timezone
-from pathlib import Path
 
 import pytest
 
@@ -10,7 +9,6 @@ from qq_digest.candidates import CandidateService
 from qq_digest.knowledge_library import KnowledgeLibrary
 from qq_digest.models import GroupConfig, NormalizedMessage
 from qq_digest.search import search_archive
-from qq_digest.topic_tracking import TopicTrackingService
 
 
 @pytest.fixture
@@ -70,14 +68,6 @@ def test_candidate_and_knowledge_scope_precedes_limits(seeded):
     assert {i['group_id'] for i in first['items'] + second['items']} == {11, 33}
 
 
-def test_topic_scope_precedes_count_and_pagination(seeded):
-    service = TopicTrackingService(seeded)
-    service.refresh()
-    one = service.list_topics(group_ids=[11, 33], page_size=1)
-    two = service.list_topics(group_ids=[11, 33], page_size=1, page=2)
-    assert one['total'] == two['total'] == 2
-    assert one['topics'][0]['topic_id'] != two['topics'][0]['topic_id']
-    assert {g['group_id'] for p in (one, two) for t in p['topics'] for g in t['groups']} == {11, 33}
 
 
 def test_qa_preview_freezes_selected_scope_and_sources(seeded):
@@ -113,7 +103,6 @@ def test_all_query_services_reject_ambiguous_or_empty_selection(seeded, scope):
         lambda: search_archive(seeded, query='配置', **scope),
         lambda: CandidateService(seeded).query(**scope),
         lambda: KnowledgeLibrary(seeded, None).list_items(**scope),
-        lambda: TopicTrackingService(seeded).list_topics(**scope),
         lambda: ArchiveQAService(seeded).preview(owner='owner', question='配置方案？',
             date_from='2026-10-06', date_to='2026-10-07', **scope),
     ):
@@ -135,23 +124,19 @@ def route_client(seeded):
     from qq_digest.operations import OperationCoordinator
     from qq_digest.web.search_routes import add_search_routes
     from qq_digest.web.knowledge_routes import add_knowledge_routes
-    from qq_digest.web.topic_routes import add_topic_routes
     from qq_digest.web.archive_qa_routes import add_archive_qa_routes
     app = FastAPI()
     args = dict(archive=seeded, config=None, require_login=lambda: None)
     ops = OperationCoordinator()
     add_search_routes(app, **args)
     add_knowledge_routes(app, **args, knowledge=None, templates=None, operations=ops)
-    add_topic_routes(app, **args, templates=None, operations=ops)
     add_archive_qa_routes(app, **args, templates=None, operations=ops)
-    app.state.topic_tracking.refresh()
     with TestClient(app) as client:
         yield client
-    app.state.close_topic_tracking()
 
 
 @pytest.mark.parametrize(('url', 'key', 'total'), [
-    ('/api/search', 'results', 50), ('/api/knowledge', 'items', 24), ('/api/topics', 'topics', 2),
+    ('/api/search', 'results', 50), ('/api/knowledge', 'items', 24),
 ])
 def test_routes_use_repeated_group_ids_and_reject_conflicts(route_client, url, key, total):
     response = route_client.get(url, params=[('q', '配置'), ('group_ids', 11), ('group_ids', 33)])
@@ -175,52 +160,3 @@ def test_qa_route_validates_json_scope_before_preview(route_client):
                      {'group_id': 22}, {'group_ids': [2**63]}):
         response = route_client.post('/api/archive-qa/preview', json={**payload, **override})
         assert response.status_code == 422
-
-
-def test_topic_order_uses_latest_discussion_in_selected_groups(seeded):
-    from tests.test_topic_tracking import publish
-    tmp_path = Path(seeded.connection.execute('PRAGMA database_list').fetchone()['file']).parent
-    publish(seeded, tmp_path, group=11, date='2026-10-01', titles=('跨群部署项目甲',))
-    publish(seeded, tmp_path, group=22, date='2026-10-09', titles=('跨群部署项目甲',))
-    publish(seeded, tmp_path, group=33, date='2026-10-08', titles=('跨群部署项目乙',))
-    service = TopicTrackingService(seeded)
-    service.refresh()
-    result = service.list_topics(q='跨群', group_ids=[11, 33], page_size=1)
-    assert result['total'] == 2
-    assert result['topics'][0]['title'] == '跨群部署项目乙'
-
-
-@pytest.mark.parametrize(('dates', 'count', 'last_date', 'progress'), [
-    ({}, 2, '2026-10-05', '选中群较新进展'),
-    ({'date_to': '2026-10-02'}, 1, '2026-10-01', '选中日期进展'),
-])
-def test_topic_list_cards_scope_stats_and_progress_but_detail_keeps_full_topic(seeded, dates, count, last_date, progress):
-    from tests.test_topic_tracking import publish
-    tmp_path = Path(seeded.connection.execute('PRAGMA database_list').fetchone()['file']).parent
-    title = '跨群共享部署项目'
-    for group, day, summary in ((11, '2026-10-01', '选中日期进展'),
-                                (11, '2026-10-05', '选中群较新进展'),
-                                (22, '2026-10-09', '未选中群进展')):
-        mid = f'{group}-{day}'
-        publish(seeded, tmp_path, group=group, date=day, ids=[mid], payload={
-            'evidence_version': 1,
-            'main_topics': [{'topic': title, 'summary': summary, 'message_ids': [mid]}],
-            'conclusions': [{'text': summary + '结论', 'message_ids': [mid]}],
-            'open_questions': [{'text': summary + '问题', 'message_ids': [mid]}],
-        })
-    service = TopicTrackingService(seeded)
-    service.refresh()
-    card = service.list_topics(q=title, group_ids=[11], **dates)['topics'][0]
-    assert card['discussion_count'] == count
-    assert card['groups'] == [{'group_id': 11, 'name': '群11'}]
-    assert card['first_date'] == '2026-10-01' and card['last_date'] == last_date
-    assert card['latest_progress'] == progress
-    for field in ('latest_conclusions', 'open_questions'):
-        assert len(card[field]) == 1
-        assert card[field][0]['group_id'] == 11
-        assert card[field][0]['date_label'] == last_date
-        assert card[field][0]['text'].startswith(progress)
-    full = service.detail(card['topic_id'])
-    assert full['discussion_count'] == full['total'] == 3
-    assert {g['group_id'] for g in full['groups']} == {11, 22}
-    assert full['last_date'] == '2026-10-09' and full['latest_progress'] == '未选中群进展'

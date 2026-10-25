@@ -57,10 +57,11 @@ def add_bookmark_routes(app, *, archive, config, templates, require_login, opera
         except OSError as exc: raise HTTPException(503, '收藏保存失败，请检查存储位置后重试') from exc
 
     @app.get('/bookmarks')
-    async def page(request: Request):
+    async def page(request: Request, view: Literal['saved', 'knowledge'] = 'saved'):
         try: require_login(request)
         except HTTPException: return RedirectResponse('/login', status_code=303)
-        return templates.TemplateResponse(request, 'bookmarks.html', {})
+        if not app.state.features.enabled('bookmarks'):view = 'knowledge'
+        return templates.TemplateResponse(request, 'knowledge.html' if view == 'knowledge' else 'bookmarks.html', {'collection_view':view})
 
     @app.get('/api/bookmarks', dependencies=[Depends(require_login)])
     async def list_items(status: Literal['pending', 'completed', 'all'] = 'pending',
