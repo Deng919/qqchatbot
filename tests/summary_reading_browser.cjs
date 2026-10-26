@@ -20,7 +20,7 @@ const otherGroup={group_id:22,group_name:'另一个群',total:1,unread:1,report_
  await page.waitForFunction(()=>document.querySelector('.summary-group-cover').getAttribute('aria-expanded')==='true');
  assert.equal(await page.locator('.summary-group-toggle').first().textContent(),'');
  async function resolveRequest(value){await page.waitForFunction(()=>requests.length>0);return page.evaluate(value=>{const request=requests.shift();request.resolve(value);return request.url;},value);}
- async function pages(saved){for(let pageNumber=1;pageNumber<=3;pageNumber++){const start=(pageNumber-1)*30,items=Array.from({length:30},(_,i)=>({...item(start+i),read:saved&&start+i===0}));await resolveRequest({items,total:90,page:pageNumber,page_size:30});}}
+ async function pages(saved){for(let pageNumber=1;pageNumber<=3;pageNumber++){const start=(pageNumber-1)*30,items=Array.from({length:30},(_,i)=>({...item(start+i),read:(saved&&start+i===0)||start+i===1}));await resolveRequest({items,total:90,page:pageNumber,page_size:30});}}
  await pages(false);await page.waitForFunction(()=>document.querySelector('.summary-group-points').children.length===90);
  await page.locator('.summary-group-points').evaluate(n=>n.scrollTop=380);
  await page.locator('.inbox-list-column').evaluate(n=>n.scrollTop=180);assert.equal(await page.locator('.inbox-list-column').evaluate(n=>n.scrollTop),180);

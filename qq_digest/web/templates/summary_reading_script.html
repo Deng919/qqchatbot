@@ -42,7 +42,7 @@
         var item=data.items.find(function(point){return point.key===reference.key;});
         if(!item){if(data.items.length&&data.page*data.page_size<data.total)return load(page+1);throw new Error('这条要点已不存在或暂时不可用');}
         var at=inboxItems.findIndex(function(point){return point.key===item.key;});if(at<0)inboxItems.push(item);else inboxItems[at]=item;
-        inboxMobileOpen=open;inboxSelectPoint(item.key,false);summarySave();
+        inboxMobileOpen=open;inboxSelectPoint(item.key,false,open&&!summaryDetailActive);summarySave();
       });
     }
     return load(1).catch(function(error){if(!current())return;summaryShowResult('要点恢复失败：'+error.message,'failed');document.getElementById('summary-run-actions').appendChild(summaryButton('重试',function(){summaryRestorePoint(open);}));});

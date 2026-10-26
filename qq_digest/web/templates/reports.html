@@ -334,6 +334,7 @@
       renderReportCompleteness(d.completeness);
       ['report-completeness','report-evidence'].forEach(function(id) { document.getElementById(id).hidden=false; });
       loadReportRevisions(selectionToken);
+      if(typeof inboxAutoReadReport==='function')inboxAutoReadReport(kind,Number(reportId),d.group_id,function(){return selectionToken===reportSelectionToken&&summaryDetailActive;});
     }).catch(function(e) { if (selectionToken === reportSelectionToken) summaryShowResult('摘要打开失败：'+e.message,'failed'); });
   }
   function closeReport() { var wasOpen=!document.getElementById('report-detail').hidden;reportSelectionToken += 1; sourceRequestToken += 1; closeReportQA(); qaReport = null; revisionReport=null; revisionLoadToken+=1; document.getElementById('report-detail').hidden = true; document.getElementById('report-layout').classList.remove('has-detail'); document.getElementById('report-source-context').hidden = true;if(wasOpen)summaryLeaveDetail(); }

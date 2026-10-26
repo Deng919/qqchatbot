@@ -13,15 +13,16 @@ async function scenario(filter){
  inboxRenderDashboard({total:1,point_total:2,unread:2,items:[{...group}]});
  const card=find(n('summary-points'),x=>x.tagName==='details'||x.className==='summary-group-stack');card.open=true;card.events.toggle();
  requests.shift().resolve({items:[{...a},{...b}],total:2,page:1,page_size:30});await settle();
- inboxSelectPoint('a',true);n('inbox-detail-actions').children.at(-1).onclick();const save=requests.shift();
- inboxBackToList();inboxSelectPoint('b',true);save.resolve({});await settle();
+ inboxSelectPoint('a',true);const save=requests.shift();
+ inboxBackToList();inboxSelectPoint('b',true);const newerSave=requests.shift();save.resolve({});await settle();
  assert.equal(inboxSelectedKey,'b','delayed read save must preserve the newer selection');
+ const staleRefresh=requests.shift();newerSave.resolve({});await settle();
+ staleRefresh.resolve({grouped:true,total:0,point_total:0,unread:0,page:1,page_size:30,items:[]});await settle();
  const refresh=requests.shift();assert.ok(refresh,'a delayed save must refresh unread counts even after selecting another point');
  assert.match(refresh.url,/grouped=true/);assert.equal(new URLSearchParams(refresh.url.split('?')[1]).get('read_filter'),filter,'refresh retains the current read filter');
- const total=filter==='unread'?1:2;refresh.resolve({grouped:true,total:1,point_total:total,unread:1,page:1,page_size:30,items:[{...group,total,unread:1}]});await settle();
- assert.equal(inboxSelectedKey,'b');assert.match(n('inbox-detail-title').textContent,/第二条/);assert.match(n('summary-points').textContent,/有 1 条未读/,'group count reflects the saved state');
- const expanded=requests.shift();assert.ok(expanded,'expanded group reloads in the current scope');assert.equal(new URLSearchParams(expanded.url.split('?')[1]).get('read_filter'),filter);
- expanded.resolve({items:filter==='unread'?[{...b}]:[{...a,read:true},{...b}],total,page:1,page_size:30});await settle();
+ const total=filter==='unread'?0:2;refresh.resolve({grouped:true,total:total?1:0,point_total:total,unread:0,page:1,page_size:30,items:total?[{...group,total,unread:0}]:[]});await settle();
+ assert.equal(inboxSelectedKey,'b');assert.match(n('inbox-detail-title').textContent,/第二条/);
+ if(total){const expanded=requests.shift();assert.ok(expanded,'expanded group reloads in the current scope');assert.equal(new URLSearchParams(expanded.url.split('?')[1]).get('read_filter'),filter);expanded.resolve({items:[{...a,read:true},{...b,read:true}],total,page:1,page_size:30});await settle();assert.match(n('summary-points').textContent,/全部已读/);}
  assert.equal(inboxSelectedKey,'b');assert.equal(inboxMobileOpen,true,'background refresh must keep the newer detail open');
  assert.equal(inboxDashboardButtons.some(entry=>entry.key==='a'),filter!=='unread','saved point follows the active unread filter');
  if(filter==='all')assert.match(inboxDashboardButtons.find(entry=>entry.key==='a').button.textContent,/已读/);

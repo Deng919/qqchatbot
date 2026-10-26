@@ -16,7 +16,7 @@ const find=(node,p)=>p(node)?node:node.children.map(c=>find(c,p)).find(Boolean),
  assert.equal(requests.length,0,'expanding never writes read state');const point=find(card,x=>x.className==='inbox-row');point.onclick();assert.equal(inboxSelectedKey,'a');assert.equal(n('inbox-workspace').classList.contains('inbox-dashboard-detail'),true);
  inboxBackToList();assert.equal(n('inbox-workspace').classList.contains('inbox-list-only'),true);assert.equal(card.open,true,'back preserves the expanded deck');
  inboxFilterPage('产品');assert.equal(card.hidden,true);inboxFilterPage('');assert.equal(card.hidden,false);
- card.open=false;card.events.toggle();card.open=true;card.events.toggle();assert.equal(requests.length,0,'reopening reuses loaded points');
+ card.open=false;card.events.toggle();card.open=true;card.events.toggle();assert.equal(requests.length,1,'reopening reuses loaded points while the automatic read save is pending');assert.equal(requests[0].method,'POST');
  inboxSelectPoint('a',true);n('inbox-detail-actions').children.at(-1).onclick();assert.equal(requests[0].body.read,true);requests.shift().resolve({});await settle();
  inboxRenderDashboard({total:1,point_total:1,unread:0,items:[{group_id:11,group_name:'研发',total:1,unread:0,report_count:1,preview:[]}]});
  requests.shift().resolve({items:[{...inboxItems[0],read:true}],total:1,page:1,page_size:30});await settle();
