@@ -1,8 +1,14 @@
-<div class="appearance-control">
-  <label for="theme-mode">外观</label>
-  <select id="theme-mode" data-theme-select aria-label="界面主题">
-    <option value="system">跟随系统</option>
-    <option value="light">浅色</option>
-    <option value="dark">夜间</option>
-  </select>
-</div>
+<fieldset class="appearance-options" aria-label="界面主题">
+  <label class="theme-option">
+    <span class="theme-preview theme-preview-light" aria-hidden="true"><span class="theme-preview-bar"></span><span class="theme-preview-sidebar"></span><span class="theme-preview-content"><i></i><i></i><i></i></span></span>
+    <span class="theme-option-label"><span>浅色</span><input type="radio" name="theme-mode" value="light" data-theme-choice></span>
+  </label>
+  <label class="theme-option">
+    <span class="theme-preview theme-preview-dark" aria-hidden="true"><span class="theme-preview-bar"></span><span class="theme-preview-sidebar"></span><span class="theme-preview-content"><i></i><i></i><i></i></span></span>
+    <span class="theme-option-label"><span>夜间</span><input type="radio" name="theme-mode" value="dark" data-theme-choice></span>
+  </label>
+  <label class="theme-option">
+    <span class="theme-preview theme-preview-system" aria-hidden="true"><span class="theme-preview-bar"></span><span class="theme-preview-sidebar"></span><span class="theme-preview-content"><i></i><i></i><i></i></span></span>
+    <span class="theme-option-label"><span>跟随系统</span><input type="radio" name="theme-mode" value="system" data-theme-choice></span>
+  </label>
+</fieldset>

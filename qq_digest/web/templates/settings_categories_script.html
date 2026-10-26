@@ -1,6 +1,6 @@
 <script>
   function showSettingsCategory(section,updateUrl) {
-    if(!['ai','automatic','features','storage','backup'].includes(section))section='ai';
+    if(!['ai','appearance','automatic','features','storage','backup'].includes(section))section='ai';
     document.querySelectorAll('[data-settings-panel]').forEach(function(panel){panel.hidden=panel.dataset.settingsPanel!==section;});
     document.querySelectorAll('[data-settings-section]').forEach(function(link){var selected=link.dataset.settingsSection===section;link.classList.toggle('active',selected);if(selected)link.setAttribute('aria-current','page');else link.removeAttribute('aria-current');});
     document.getElementById('desktop-required').hidden=!['automatic','storage','backup'].includes(section)||!document.getElementById('desktop-required').dataset.unavailable;

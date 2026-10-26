@@ -6,6 +6,10 @@
 {% block content %}
 <div class="desktop-settings">
   <div data-settings-panel="ai">{% include "ai_connection_settings.html" %}</div>
+  <section class="card setting-card" data-settings-panel="appearance" aria-labelledby="appearance-title">
+    <div class="setting-heading"><div><h2 id="appearance-title">外观</h2><p>选择后自动保存</p></div></div>
+    {% include "appearance_control.html" %}
+  </section>
   <section class="card setting-card" data-settings-panel="automatic" aria-labelledby="automatic-title">
     <div class="setting-heading"><div><h2 id="automatic-title">自动运行</h2></div></div>
     <form id="automatic-form"><fieldset id="automatic-options" disabled style="border:0;padding:0;margin:0"><div id="automatic-list">正在读取自动运行设置…</div></fieldset><p id="automatic-schedule" class="setting-help"></p><button class="btn btn-primary" id="automatic-save" disabled>保存自动运行设置</button><p id="automatic-result" class="setting-result" role="status" hidden></p></form>

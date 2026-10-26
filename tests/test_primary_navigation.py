@@ -67,7 +67,7 @@ def test_settings_categories_and_group_details(web_client):
     client, _, _ = web_client
     login(client)
     page = client.get('/settings').text
-    for label in ('AI 连接','自动运行','界面与功能','存储与导出','备份与恢复','运行记录'):
+    for label in ('AI 连接','外观','自动运行','功能开关','存储与导出','备份与恢复','运行记录'):
         assert label in page
     assert 'id="automatic-form"' in page and 'id="features-form"' in page
     assert 'id="deepseek-key-form"' in page
