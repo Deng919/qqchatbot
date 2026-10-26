@@ -1,0 +1,20 @@
+const {chromium}=require('playwright'),fs=require('fs'),assert=require('node:assert/strict');
+const partial=fs.readFileSync('qq_digest/web/templates/workspace_history.html','utf8');
+(async()=>{const browser=await chromium.launch({headless:true});try{
+ const context=await browser.newContext(),page=await context.newPage();page.setDefaultTimeout(5000);
+ await context.route('http://draft.test/**',r=>r.fulfill({contentType:'text/html',body:'<!doctype html><html><body>'+partial+'<input id="draft"><a id="other" href="/a">另一页</a><script>document.addEventListener("qq-digest-check-unsaved",function(e){if(document.getElementById("draft").value)e.preventDefault();});</script></body></html>'}));
+ let allow=false,dialogs=0;page.on('dialog',async dialog=>{dialogs++;await(allow?dialog.accept():dialog.dismiss());});
+ await page.goto('http://draft.test/a');await page.goto('http://draft.test/b');await page.locator('#draft').fill('synthetic-unsaved-value');
+ await page.locator('#workspace-back').click();await page.waitForTimeout(150);
+ assert.equal(new URL(page.url()).pathname,'/b','Canceling back must retain the edited page');assert.equal(dialogs,1);assert.equal(await page.locator('#draft').inputValue(),'synthetic-unsaved-value');
+ allow=true;dialogs=0;await page.locator('#workspace-back').click();await page.waitForURL('**/a');assert.equal(dialogs,1,'One navigation asks once');
+ await page.locator('#workspace-forward').click();await page.waitForURL('**/b');await page.locator('#draft').fill('');
+ await page.evaluate(()=>history.pushState({},'', '/b?detail=1'));await page.locator('#draft').fill('same-document-draft');allow=false;dialogs=0;
+ await page.locator('#workspace-back').click();await page.waitForTimeout(150);assert.equal(new URL(page.url()).search,'?detail=1');assert.equal(dialogs,1);assert.notEqual(await page.evaluate(()=>window.workspaceHistoryRestoring),true);
+ allow=true;dialogs=0;await page.locator('#workspace-back').click();await page.waitForURL('http://draft.test/b');await page.locator('#draft').waitFor();assert.equal(dialogs,1,'Same-document restoration does not ask twice');
+ await page.locator('#draft').fill('link-draft');allow=false;dialogs=0;await page.locator('#other').click();await page.waitForTimeout(100);assert.equal(new URL(page.url()).pathname,'/b');assert.equal(dialogs,1);
+ dialogs=0;await page.reload().catch(()=>{});assert.equal(await page.locator('#draft').inputValue(),'link-draft');assert.equal(dialogs,1,'Refresh protects an edited draft');
+ allow=true;dialogs=0;await page.reload();await page.locator('#draft').waitFor();assert.equal(dialogs,1,'Accepted reload has one confirmation');
+ await page.locator('#draft').fill('');dialogs=0;await page.locator('#other').click();await page.waitForURL('**/a');assert.equal(dialogs,0,'Unchanged forms navigate freely');
+ console.log('Draft guards: canceled/accepted back, forward, same-document restore, links, reload and untouched forms verified');
+}finally{await browser.close();}})().catch(error=>{console.error(error);process.exitCode=1;});

@@ -11,7 +11,7 @@
     <p id="inspection-status" role="status">正在读取巡检记录...</p>
     <p class="inspection-note">补采后请重新检查。源库缺失或无法读取时，不能核实缺口。</p>
     <details><summary>巡检设置</summary>
-      <form id="inspection-settings" class="inspection-settings" onsubmit="saveInspectionSettings(event)" oninput="inspectionSettingsDirty = true">
+      <form id="inspection-settings" class="inspection-settings" onsubmit="saveInspectionSettings(event)" oninput="updateInspectionDirty()">
         <label class="inspection-check"><input type="checkbox" id="inspection-enabled"> 程序运行时自动巡检</label>
         <div class="field"><label for="inspection-days">检查最近几天</label><input class="input" type="number" id="inspection-days" min="1" max="31" value="7" required></div>
         <div class="field"><label for="inspection-interval">巡检间隔（小时）</label><input class="input" type="number" id="inspection-interval" min="1" max="168" value="24" required></div>
@@ -67,7 +67,9 @@
   @media (max-width: 700px) { .inspection-settings { grid-template-columns: repeat(2,minmax(0,1fr)); } .inspection-check, .inspection-settings button { grid-column: 1 / -1; } .inspection-body { padding: 4px 15px 15px; } }
 </style>
 <script>
-  var inspectionPage = 1, inspectionLoadToken = 0, inspectionBusy = false, inspectionSettingsDirty = false, inspectionInitialized = false;
+  var inspectionPage = 1, inspectionLoadToken = 0, inspectionBusy = false, inspectionSettingsDirty = false, inspectionInitialized = false, inspectionSavedSettings = null;
+  function updateInspectionDirty(){inspectionSettingsDirty=!!inspectionSavedSettings&&(document.getElementById('inspection-enabled').checked!==!!inspectionSavedSettings.enabled||document.getElementById('inspection-days').value!==String(inspectionSavedSettings.lookback_days)||document.getElementById('inspection-interval').value!==String(inspectionSavedSettings.interval_hours));}
+  document.addEventListener('qq-digest-check-unsaved',function(event){if(inspectionSettingsDirty)event.preventDefault();});
   function changeInspectionPage(step) { inspectionPage += step; loadHistoryInspection(); }
   function inspectionTime(value) { return value ? new Date(value).toLocaleString('zh-CN') : '尚无记录'; }
   function loadHistoryInspection() {
@@ -87,6 +89,7 @@
         document.getElementById('inspection-enabled').checked = data.settings.enabled;
         document.getElementById('inspection-days').value = data.settings.lookback_days;
         document.getElementById('inspection-interval').value = data.settings.interval_hours;
+        inspectionSavedSettings = data.settings;
         inspectionInitialized = true;
       }
       document.getElementById('inspection-pages').hidden = data.total <= data.page_size;
@@ -113,8 +116,8 @@
   function saveInspectionSettings(event) {
     event.preventDefault(); var button = document.getElementById('inspection-save'); button.disabled = true;
     api('PUT', '/api/history-inspection/settings', {enabled:document.getElementById('inspection-enabled').checked,
-      lookback_days:Number(document.getElementById('inspection-days').value),interval_hours:Number(document.getElementById('inspection-interval').value)}).then(function() {
-      inspectionSettingsDirty = false; toast('巡检设置已保存', 'success'); loadHistoryInspection();
+      lookback_days:Number(document.getElementById('inspection-days').value),interval_hours:Number(document.getElementById('inspection-interval').value)}).then(function(settings) {
+      inspectionSavedSettings = settings; updateInspectionDirty(); toast('巡检设置已保存', 'success'); loadHistoryInspection();
     }).catch(function(error) { toast('保存失败：' + error.message,'error'); }).finally(function() { button.disabled = false; });
   }
   function runHistoryInspection() {

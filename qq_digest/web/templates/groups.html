@@ -161,7 +161,7 @@ var discoveredBatchGroups=[];
     var name = group ? group.name : String(groupId);
     if (!confirm('确认彻底删除“' + name + '”？归档消息、摘要和候选重点会同时删除。')) return;
     api('DELETE', '/api/groups/' + groupId).then(function(data) {
-      if(selectedGroupId===groupId)closeGroupDetail();groupResult('已删除群聊及 '+formatNumber(data.deleted.messages||0)+' 条归档消息。');loadGroups();
+      if(selectedGroupId===groupId)closeGroupDetail(true);groupResult('已删除群聊及 '+formatNumber(data.deleted.messages||0)+' 条归档消息。');loadGroups();
     }).catch(function(error) { toast('删除失败：' + error.message, 'error'); });
   }
   loadGroups();

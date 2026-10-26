@@ -1,7 +1,7 @@
 <script>
   var summaryView='points', summaryPointPage=1, summaryPointToken=0, summarySince;
   var summaryExpanded={}, summaryBrowseScroll=0, summaryPendingScroll=null, summarySourceToken=0, summarySourceOpener=null;
-  var summarySaved=null, summaryStorageKey='qq-digest-summary-reading-v1',summaryDetailActive=false,summaryReportOpener=null;
+  var summarySaved=null, summaryStorageKey='qq-digest-summary-reading-v1',summaryDetailActive=false,summaryReportOpener=null,summaryPointReference=null;
   var summaryPreviousReading=null,summaryGeneratedReading=null,summaryNavigationToken=0,summarySinceRevision=0;
   function summaryNode(tag,cls,text) { var n=document.createElement(tag); if(cls)n.className=cls; if(text!==undefined)n.textContent=text; return n; }
   function summaryCleanText(text) {
@@ -14,7 +14,7 @@
   function summaryScrollHost(){return window.matchMedia&&window.matchMedia('(min-width: 901px)').matches?document.getElementById(summaryView==='manage'?'report-layout':'summary-reading-section').parentElement:null;}
   function summaryScrollPosition(){var host=summaryScrollHost();return host?(host.clientHeight===0?summaryBrowseScroll:host.scrollTop):window.scrollY;}
   function summaryScrollTo(top){var host=summaryScrollHost();if(host)host.scrollTop=top;else window.scrollTo({top:top,behavior:'instant'});}
-  function summaryValues() { return {view:summaryView,group:document.getElementById('report-group').value,from:document.getElementById('report-from').value,to:document.getElementById('report-to').value,kind:document.getElementById('report-kind').value,read:document.getElementById('summary-read-filter').value,pointPage:summaryPointPage,reportPage:reportPage,since:summarySince,expanded:summaryExpanded,scroll:summaryPendingScroll!==null?summaryPendingScroll:document.getElementById('report-detail').hidden?summaryScrollPosition():summaryBrowseScroll}; }
+  function summaryValues() { return {point:summaryPointReference,view:summaryView,group:document.getElementById('report-group').value,from:document.getElementById('report-from').value,to:document.getElementById('report-to').value,kind:document.getElementById('report-kind').value,read:document.getElementById('summary-read-filter').value,pointPage:summaryPointPage,reportPage:reportPage,since:summarySince,expanded:summaryExpanded,scroll:summaryPendingScroll!==null?summaryPendingScroll:document.getElementById('report-detail').hidden?summaryScrollPosition():summaryBrowseScroll}; }
   function summarySave() {
     if(window.workspaceHistoryRestoring)return;
     var state=summaryValues(); try { sessionStorage.setItem(summaryStorageKey,JSON.stringify(Object.assign({},state,{previousReading:summaryPreviousReading,generatedReading:summaryGeneratedReading}))); } catch(e) {}
@@ -23,6 +23,30 @@
     url.searchParams.delete('group_id');url.searchParams.delete('group_ids');summaryGroupParams(url.searchParams,state.group);history.replaceState(Object.assign({},history.state,{qqDigestReading:Object.assign({},state,{previousReading:summaryPreviousReading,generatedReading:summaryGeneratedReading})}),'',url.pathname+url.search);
   }
   function summaryHistoryPush(){if(typeof workspaceHistoryPush==='function')workspaceHistoryPush();}
+  function summaryBackInScope(){
+    if(typeof workspaceHistoryTarget!=='function'||typeof workspaceGo!=='function')return false;
+    var entry=workspaceHistoryTarget(-1);if(!entry)return false;
+    var previous=new URL(entry.url),current=new URL(location.href),fields=['view','group_id','group_ids','date_from','date_to','report_kind','read','all_dates'];
+    if(previous.pathname!==current.pathname||fields.some(function(key){return previous.searchParams.getAll(key).join(',')!==current.searchParams.getAll(key).join(',');}))return false;
+    workspaceGo(-1);return true;
+  }
+  function summaryBackFromReport(){if(summaryBackInScope())return;closeReport();if(summaryPointReference&&inboxItems.some(function(item){return item.key===summaryPointReference.key;})){inboxMobileOpen=true;inboxSelectPoint(summaryPointReference.key,false);summarySave();}else inboxBackToList();}
+  function summaryRestorePoint(open){
+    var reference=summaryPointReference;if(!reference||typeof inboxReadRevision==='undefined')return Promise.resolve();
+    var revision=inboxReadRevision;
+    function current(){return revision===inboxReadRevision&&summaryPointReference===reference;}
+    function load(page){
+      var params=new URLSearchParams({all_dates:'true',read_filter:'all',group_id:String(reference.group_id),report_keys:reference.report_kind+':'+reference.report_id,page:String(page),page_size:'100'});
+      return api('GET','/api/summary-reading?'+params).then(function(data){
+        if(!current())return;
+        var item=data.items.find(function(point){return point.key===reference.key;});
+        if(!item){if(data.items.length&&data.page*data.page_size<data.total)return load(page+1);throw new Error('这条要点已不存在或暂时不可用');}
+        var at=inboxItems.findIndex(function(point){return point.key===item.key;});if(at<0)inboxItems.push(item);else inboxItems[at]=item;
+        inboxMobileOpen=open;inboxSelectPoint(item.key,false);summarySave();
+      });
+    }
+    return load(1).catch(function(error){if(!current())return;summaryShowResult('要点恢复失败：'+error.message,'failed');document.getElementById('summary-run-actions').appendChild(summaryButton('重试',function(){summaryRestorePoint(open);}));});
+  }
   function summaryApplyView() {
     document.getElementById('summary-reading-controls').hidden=summaryDetailActive;
     ['points','groups','manage'].forEach(function(view){var button=document.getElementById('summary-'+view+'-tab');button.classList.toggle('active',summaryView===view);button.setAttribute('aria-pressed',String(summaryView===view));});
@@ -39,8 +63,8 @@
     if(typeof inboxApplyView==='function')inboxApplyView();
   }
   function summaryCancelDetail(){if(typeof inboxClearSelection==='function')inboxClearSelection();summaryNavigationToken++;summaryPointToken++;reportLoadToken++;closeReport();if(!document.getElementById('summary-source-panel').hidden)summaryCloseSource();}
-  function summarySetView(view) { if(!['points','groups','manage'].includes(view))return; if(view!==summaryView||summaryDetailActive)summaryHistoryPush();summaryCancelDetail();summaryView=view; summaryPointToken++;reportLoadToken++;summaryPendingScroll=null;summaryApplyView();summarySave();loadReports(); }
-  function summarySetDates(mode) { var d=recentWeekDates();document.getElementById('report-from').value=mode==='today'?d.end:d.start;document.getElementById('report-to').value=d.end;refreshDateHints();filterReports(); }
+  function summarySetView(view) { if(!['points','groups','manage'].includes(view))return; if(view!==summaryView||summaryDetailActive||summaryPointReference)summaryHistoryPush();summaryCancelDetail();summaryView=view; summaryPointToken++;reportLoadToken++;summaryPendingScroll=null;summaryApplyView();summarySave();loadReports(); }
+  function summarySetDates(mode) { var d=recentWeekDates(),from=mode==='today'?d.end:d.start;if(!summaryDetailActive&&!summaryPointReference&&document.getElementById('report-from').value===from&&document.getElementById('report-to').value===d.end)return;document.getElementById('report-from').value=from;document.getElementById('report-to').value=d.end;refreshDateHints();filterReports(); }
   function summaryAllDates() { document.getElementById('report-group').value='';document.getElementById('report-kind').value='all';document.getElementById('summary-read-filter').value='all';document.getElementById('report-from').value='';document.getElementById('report-to').value='';refreshDateHints();filterReports(); }
   function summaryReturnToReading(){
     if(!summaryPreviousReading)return;summaryHistoryPush();var saved=summaryPreviousReading;summaryCancelDetail();summaryPreviousReading=null;summaryGeneratedReading=null;
@@ -161,13 +185,15 @@
   function summaryInit() {
     try{summarySaved=JSON.parse(sessionStorage.getItem(summaryStorageKey)||'null');}catch(e){}
     var saved=(history.state&&history.state.qqDigestReading)||summarySaved||{},url=new URLSearchParams(location.search),dates=recentWeekDates(),navigationToken=summaryNavigationToken,sinceRevision=summarySinceRevision;
-    summaryPreviousReading=saved.previousReading||null;summaryGeneratedReading=saved.generatedReading||null;
+    summaryPreviousReading=saved.previousReading||null;summaryGeneratedReading=saved.generatedReading||null;var point=saved.point;summaryPointReference=point&&typeof point.key==='string'&&Number.isSafeInteger(Number(point.group_id))&&Number(point.group_id)>0&&['daily','range'].includes(point.report_kind)&&Number.isSafeInteger(Number(point.report_id))&&Number(point.report_id)>0?{key:point.key,group_id:Number(point.group_id),report_kind:point.report_kind,report_id:Number(point.report_id)}:null;
     summaryView=url.get('view')||saved.view||'points';if(!['points','groups','manage'].includes(summaryView))summaryView='points';
     document.getElementById('report-from').value=url.has('date_from')?url.get('date_from'):(saved.from!==undefined?saved.from:dates.end);document.getElementById('report-to').value=url.has('date_to')?url.get('date_to'):(saved.to!==undefined?saved.to:dates.end);
     if(url.get('all_dates')==='true'){document.getElementById('report-from').value='';document.getElementById('report-to').value='';}
     document.getElementById('report-kind').value=url.get('report_kind')||saved.kind||'all';document.getElementById('summary-read-filter').value=url.get('read')||saved.read||'all';if(!document.getElementById('summary-read-filter').value)document.getElementById('summary-read-filter').value='all';
     summaryPointPage=Number.isInteger(saved.pointPage)&&saved.pointPage>0?saved.pointPage:1;reportPage=Number.isInteger(saved.reportPage)&&saved.reportPage>0?saved.reportPage:1;summaryExpanded=saved.expanded&&typeof saved.expanded==='object'?saved.expanded:{};summaryPendingScroll=Number.isFinite(saved.scroll)?saved.scroll:null;summaryBrowseScroll=summaryPendingScroll||0;
-    var group=url.has('group_ids')?url.getAll('group_ids').join(','):url.has('group_id')?url.get('group_id'):saved.group||'';summarySelectGroups(group?group.split(','):[]);refreshDateHints();summaryApplyView();
+    var group=url.has('group_ids')?url.getAll('group_ids').join(','):url.has('group_id')?url.get('group_id'):saved.group||'';summarySelectGroups(group?group.split(','):[]);
+    if(summaryPointReference){var scope=summaryValues(),differentScope=summaryView!=='points'||['group','from','to','kind','read'].some(function(key){return String(scope[key]||'')!==String(saved[key]||'');}),differentReport=url.has('kind')&&(url.get('kind')!==summaryPointReference.report_kind||Number(url.get('id'))!==summaryPointReference.report_id);if(differentScope||differentReport)summaryPointReference=null;}
+    refreshDateHints();summaryApplyView();
     var groups=api('GET','/api/groups?scope=summary').then(function(data){
       var select=document.getElementById('report-group'),current=select.value,eligible=new Set(data.groups.map(function(g){return String(g.group_id);}));
       function normalizeGroup(value){if(!value)return '';var selected=value.split(',').filter(function(id){return eligible.has(id);});return selected.length?selected.join(','):'__empty__';}
@@ -183,7 +209,7 @@
     if(restoreVisit)summarySince=saved.since;
     var newOption=document.getElementById('summary-read-filter').querySelector('option[value="new"]'),waitForVisit=document.getElementById('summary-read-filter').value==='new';newOption.disabled=true;
     var visit=api('POST','/api/summary-reading/visit',{},{retryBusy:true}).then(function(data){newOption.disabled=false;if(sinceRevision!==summarySinceRevision)return;summarySince=restoreVisit?saved.since:data.previous_viewed_at;summarySave();if(navigationToken!==summaryNavigationToken&&summaryView==='points'&&document.getElementById('summary-read-filter').value==='new')summaryLoadPoints();}).catch(function(){if(sinceRevision!==summarySinceRevision){newOption.disabled=false;return;}if(document.getElementById('summary-read-filter').value==='new')document.getElementById('summary-read-filter').value='all';summaryShowResult('无法读取上次打开时间，请使用全部或未读筛选。','failed');});
-    return Promise.all([groups,waitForVisit?visit:Promise.resolve()]).then(function(){if(navigationToken!==summaryNavigationToken)return;loadReports();var kind=url.get('kind'),id=Number(url.get('id'));if(['daily','range'].includes(kind)&&Number.isInteger(id)&&id>0)viewReport(kind,id);else if(url.get('generate')==='1')openRangeSummary();});
+    return Promise.all([groups,waitForVisit?visit:Promise.resolve()]).then(function(){if(navigationToken!==summaryNavigationToken)return;loadReports();var kind=url.get('kind'),id=Number(url.get('id'));var full=['daily','range'].includes(kind)&&Number.isInteger(id)&&id>0;if(full)viewReport(kind,id);else if(url.get('generate')==='1')openRangeSummary();if(summaryView==='points'&&summaryPointReference)summaryRestorePoint(!full);});
   }
   window.addEventListener('pagehide',summarySave);document.addEventListener('keydown',function(event){if(event.key==='Escape'&&!document.getElementById('summary-source-panel').hidden)summaryCloseSource();});
   summaryInit();

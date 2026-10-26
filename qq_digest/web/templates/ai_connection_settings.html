@@ -91,13 +91,15 @@
     event.preventDefault();
     var field = document.getElementById('deepseek-api-key');
     var button = document.getElementById('deepseek-save-btn');
+    if (button.disabled) return;
     button.disabled = true;
+    field.disabled = true;
     api('PUT', '/api/ai-settings/key', {api_key: field.value}).then(function() {
       field.value = '';
       toast('API Key 已保存到本机', 'success');
       loadAISettings();
     }).catch(function(error) { toast('保存失败：' + error.message, 'error'); })
-      .finally(function() { button.disabled = false; });
+      .finally(function() { button.disabled = false; field.disabled = false; });
   }
   function testDeepSeekConnection() {
     var button = document.getElementById('deepseek-test-btn');
@@ -108,6 +110,9 @@
       .finally(function() { button.disabled = false; });
   }
   loadAISettings();
+  document.addEventListener('qq-digest-check-unsaved',function(event){
+    if(document.getElementById('deepseek-api-key').value || (typeof aiConnectionDirty!=='undefined'&&aiConnectionDirty) || (typeof aiPurposeDirty!=='undefined'&&aiPurposeDirty) || (typeof usageDraftDirty!=='undefined'&&usageDraftDirty))event.preventDefault();
+  });
 </script>
 {% include "ai_usage_settings.html" %}
 

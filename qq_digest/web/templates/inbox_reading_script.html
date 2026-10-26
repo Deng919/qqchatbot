@@ -19,11 +19,11 @@
     inboxN('inbox-workspace').classList.toggle('inbox-dashboard-detail',dashboardDetail);
     inboxGroupButtons.forEach(function(entry){entry.button.setAttribute('aria-pressed',String(inboxN('report-group').value===entry.value));});
   }
-  function inboxClearSelection(){inboxReadRevision++;inboxDashboardRevision++;inboxSelectedKey=null;inboxItems=[];inboxQuery='';inboxMobileOpen=false;inboxDashboardActive=false;inboxN('inbox-page-query').value='';inboxN('summary-points').textContent='正在读取讨论…';inboxApplyView();}
-  function inboxBackToList(){inboxMobileOpen=false;inboxApplyView();inboxDashboardCards.forEach(function(entry){entry.restorePosition();});if(inboxMobile()||inboxDashboardActive)inboxN('summary-points').focus();if(inboxDashboardActive&&typeof summaryScrollTo==='function')summaryScrollTo(summaryBrowseScroll);}
+  function inboxClearSelection(){inboxReadRevision++;inboxDashboardRevision++;summaryPointReference=null;inboxSelectedKey=null;inboxItems=[];inboxQuery='';inboxMobileOpen=false;inboxDashboardActive=false;inboxN('inbox-page-query').value='';inboxN('summary-points').textContent='正在读取讨论…';inboxApplyView();}
+  function inboxBackToList(){if(summaryBackInScope())return;summaryPointReference=null;inboxMobileOpen=false;inboxApplyView();inboxDashboardCards.forEach(function(entry){entry.restorePosition();});if(inboxMobile()||inboxDashboardActive)inboxN('summary-points').focus();if(inboxDashboardActive&&typeof summaryScrollTo==='function')summaryScrollTo(summaryBrowseScroll);summarySave();}
   function inboxSelectPoint(key,explicit){
     var item=inboxItems.find(function(point){return point.key===key;});if(!item)return;
-    if(explicit){if(typeof summaryScrollPosition==='function')summaryBrowseScroll=summaryScrollPosition();inboxDashboardCards.forEach(function(entry){entry.rememberPosition();});closeReport();inboxMobileOpen=true;}inboxSelectedKey=key;
+    if(explicit){if(!inboxMobileOpen||inboxSelectedKey!==key){summarySave();summaryHistoryPush();}if(typeof summaryScrollPosition==='function')summaryBrowseScroll=summaryScrollPosition();inboxDashboardCards.forEach(function(entry){entry.rememberPosition();});closeReport();inboxMobileOpen=true;summaryPointReference={key:item.key,group_id:item.group_id,report_kind:item.report_kind||'daily',report_id:Number(item.report_id)};}inboxSelectedKey=key;
     var parts=inboxTextParts(item);inboxN('inbox-detail-section').textContent=item.section;
     inboxN('inbox-detail-meta').textContent=item.group_name+' · '+(item.date_label||item.report_date)+' · '+(item.read?'已读':'未读');
     inboxN('inbox-detail-title').textContent=parts.title;inboxN('inbox-detail-body').textContent=parts.body;
@@ -41,7 +41,7 @@
         summaryLoadPoints(true);
       }).catch(function(e){read.disabled=false;summaryShowResult('已读状态保存失败：'+e.message,'failed');});
     });actions.appendChild(read);
-    inboxRenderRows();inboxApplyView();if(explicit){var mobile=inboxMobile();inboxN('inbox-detail-title').focus({preventScroll:!mobile});if(!mobile)inboxN('inbox-point-detail').parentElement.scrollTop=0;}
+    inboxRenderRows();inboxApplyView();if(explicit){summarySave();var mobile=inboxMobile();inboxN('inbox-detail-title').focus({preventScroll:!mobile});if(!mobile)inboxN('inbox-point-detail').parentElement.scrollTop=0;}
   }
   function inboxVisibleItems(){var query=inboxQuery.trim().toLocaleLowerCase();return inboxItems.filter(function(item){return !query||(item.group_name+' '+item.section+' '+summaryCleanText(item.text)).toLocaleLowerCase().includes(query);});}
   function inboxRenderRows(){
@@ -66,7 +66,7 @@
   function inboxFilterDashboard(){var query=inboxQuery.trim().toLocaleLowerCase(),visible=0;inboxDashboardCards.forEach(function(entry){entry.card.hidden=!!query&&!entry.name.toLocaleLowerCase().includes(query);if(!entry.card.hidden)visible++;});var note=inboxN('inbox-dashboard-no-match');if(note)note.hidden=visible>0||!inboxDashboardCards.length;}
   function inboxRenderDashboard(data){
     var positions=new Map();if(inboxDashboardActive)inboxDashboardCards.forEach(function(entry){entry.rememberPosition();positions.set(entry.card.dataset.groupId,entry.scrollTop);});
-    inboxDashboardActive=true;var selected=inboxItems.find(function(item){return item.key===inboxSelectedKey;}),revision=++inboxDashboardRevision,host=inboxN('summary-points');host.textContent='';inboxDashboardCards=[];inboxDashboardButtons=[];inboxItems=inboxMobileOpen&&selected?[selected]:[];
+    inboxDashboardActive=true;var selected=inboxItems.find(function(item){return item.key===inboxSelectedKey;}),revision=++inboxDashboardRevision,host=inboxN('summary-points');host.textContent='';inboxDashboardCards=[];inboxDashboardButtons=[];inboxItems=(inboxMobileOpen||summaryPointReference)&&selected?[selected]:[];
     var overview=summaryNode('div','summary-dashboard-overview');[['群聊',data.total],['摘要要点',data.point_total],['范围内未读',data.unread]].forEach(function(pair){var metric=summaryNode('div','summary-dashboard-metric');metric.appendChild(summaryNode('strong','',String(pair[1])));metric.appendChild(summaryNode('span','',pair[0]));overview.appendChild(metric);});host.appendChild(overview);
     var grid=summaryNode('div','summary-dashboard-grid');host.appendChild(grid);
     if(!data.items.length)summaryEmpty(grid,inboxN('summary-read-filter').value!=='all');
@@ -102,7 +102,7 @@
   }
   function inboxRenderGroups(groups){
     var host=inboxN('inbox-group-list');host.textContent='';inboxGroupButtons=[];
-    [{group_id:'',name:'全部群聊'}].concat(groups).forEach(function(group){var value=String(group.group_id),button=summaryButton(group.name+(group.enabled===false?' · 已停用':''),function(){summarySelectGroups(value?[value]:[]);filterReports();},'inbox-group-button');
+    [{group_id:'',name:'全部群聊'}].concat(groups).forEach(function(group){var value=String(group.group_id),button=summaryButton(group.name+(group.enabled===false?' · 已停用':''),function(){if(inboxN('report-group').value===value&&!summaryDetailActive&&!summaryPointReference)return;summarySelectGroups(value?[value]:[]);filterReports();},'inbox-group-button');
       host.appendChild(button);inboxGroupButtons.push({value:value,button:button});
     });inboxApplyView();
   }

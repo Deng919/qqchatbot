@@ -140,6 +140,7 @@
     }
     function activate() { if (!card.hidden && !loaded && !loading && !action && !unavailable) load(false); }
     fields.forEach(function(id) { node(id).addEventListener(id === 'storage-enabled' ? 'change' : 'input', editDraft); });
+    document.addEventListener('qq-digest-check-unsaved', function(event) { if (dirty) event.preventDefault(); });
     node('storage-policy-form').addEventListener('submit', save);
     node('storage-refresh').addEventListener('click', function() { if (!loading) load(false); });
     node('storage-policy-reload').addEventListener('click', function() { if (!loading) load(true); });

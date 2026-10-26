@@ -11,6 +11,7 @@ let reportCloses=0;global.closeReport=()=>{reportCloses++;summaryDetailActive=fa
 global.summarySelectGroups=ids=>node('report-group').value=ids.join(',');global.filterReports=()=>{};global.summaryEmpty=host=>host.textContent='empty';
 let readingRefreshes=0;global.summaryLoadPoints=()=>{readingRefreshes++;};global.summaryShowResult=()=>{};
 const requests=[];global.api=(method,url,body)=>new Promise(resolve=>requests.push({method,url,body,resolve}));
+Object.assign(global,{summaryPointReference:null,summarySave:global.summarySave||(()=>{}),summaryHistoryPush:()=>{},summaryBackInScope:()=>false});
 vm.runInThisContext(fs.readFileSync('qq_digest/web/templates/inbox_reading_script.html','utf8').replace(/<\/?script>/g,''));
 const item=(key,text)=>({key,text,group_name:'群 <img>',group_id:11,report_id:1,report_kind:'range',section:'讨论',date_label:'2026-10-18',read:false,status:'legacy',source_ids:[]});
 const settle=()=>new Promise(setImmediate);

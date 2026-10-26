@@ -56,5 +56,17 @@ for(const file of ['bookmark_actions.html','message_context_script.html','find_h
   assert.equal(restoredParams.get('sender_qq'),'1001');assert.equal(restoredParams.get('message_type'),'file');
   assert.equal(restoredParams.get('page'),'2');
   restored.resolve({results:[],total:0,page:2,page_size:20});await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(requests.length,1,'Search shrinking to a single page reloads the last valid page before rendering empty results');
+  const clamped=requests.shift();assert.equal(new URLSearchParams(clamped.url.split('?')[1]).get('page'),'1');clamped.resolve({results:[],total:0,page:1,page_size:20});await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(scope.currentSearchPage,1);
+  scope.location.search='?group_id=11&msg_id=old-message';get('search-q').value='';
+  vm.runInContext(fs.readFileSync('qq_digest/web/templates/find_script.html','utf8').replace(/<\/?script>/g,''),scope);
+  const delayedGroups=requests.shift();get('search-q').value='新查询';const newerSearch=scope.loadSearch();requests.shift().resolve({results:[],total:0,page:1,page_size:20});await newerSearch;
+  delayedGroups.resolve({groups:[]});await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(requests.length,0,'Late group restoration cannot open the original deep-link context after a new search');assert.equal(get('find-context').hidden,true);
+  scope.location.search='?group_id=11&msg_id=old-message';get('search-q').value='';
+  vm.runInContext(fs.readFileSync('qq_digest/web/templates/find_script.html','utf8').replace(/<\/?script>/g,''),scope);
+  const closeGroups=requests.shift();scope.closeFindContext();closeGroups.resolve({groups:[]});await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(requests.length,0,'Closing context also invalidates an initial pending deep-link open');
   console.log('Empty entry, stale results, context state and preserved search scope verified');
 })().catch(error=>{console.error(error);process.exitCode=1;});

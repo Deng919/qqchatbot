@@ -4,7 +4,7 @@ const nodes=new Map();
 function node(id){if(!nodes.has(id))nodes.set(id,{value:'',checked:false,hidden:true,disabled:false,textContent:'',innerHTML:'',focus(){},scrollIntoView(){},toggleAttribute(){}});return nodes.get(id);}
 const groups=[{group_id:123,name:'A',daily_summary:true,category:'tech',keywords:[],collection_window_days:30,important_candidates:true}];
 let calls=[];
-const context={document:{getElementById:node,querySelector:()=>node('advanced')},configuredGroups:groups,formatNumber:String,repairUrl:()=>'',escapeHtml:String,renderConfiguredGroups(){},api:async(method,path,body)=>{calls.push(body);return{};},URLSearchParams};
+const context={document:{getElementById:node,querySelector:()=>node('advanced'),addEventListener(){}},configuredGroups:groups,formatNumber:String,repairUrl:()=>'',escapeHtml:String,renderConfiguredGroups(){},api:async(method,path,body)=>{calls.push(body);return{};},URLSearchParams};
 vm.createContext(context);vm.runInContext(source,context);
 (async()=>{
   context.openGroupDetail(123);

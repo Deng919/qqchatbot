@@ -19,7 +19,7 @@ const tick=()=>new Promise(setImmediate);
 function setup(visible=false) {
   const nodes=Object.fromEntries(ids.map(id=>[id,new Node()]));nodes['storage-management'].hidden=!visible;
   const link=new Node();link.dataset.settingsSection='storage';const calls=[];let observer;
-  const context={document:{getElementById:id=>nodes[id],createElement:()=>new Node(),querySelectorAll:()=>[link]},console,Date,Number,Promise,setTimeout:()=>1,clearTimeout(){},MutationObserver:class {constructor(callback){observer=callback;}observe(){}},api:(method,url,body)=>new Promise((resolve,reject)=>calls.push({method,url,body,resolve,reject})),toast(){}};
+  const context={document:{getElementById:id=>nodes[id],createElement:()=>new Node(),querySelectorAll:()=>[link],addEventListener(){}},console,Date,Number,Promise,setTimeout:()=>1,clearTimeout(){},MutationObserver:class {constructor(callback){observer=callback;}observe(){}},api:(method,url,body)=>new Promise((resolve,reject)=>calls.push({method,url,body,resolve,reject})),toast(){}};
   vm.createContext(context);vm.runInContext(fs.readFileSync(path,'utf8').replace(/<\/?script>/g,''),context);
   return {nodes,calls,context,activate(){nodes['storage-management'].hidden=false;observer();},link};
 }

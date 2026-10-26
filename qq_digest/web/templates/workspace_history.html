@@ -11,6 +11,8 @@
   <button id="workspace-forward" class="workspace-history-button" type="button" aria-label="前进" disabled onclick="workspaceGo(1)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14m-7-7 7 7-7 7"/></svg></button>
 </nav>
 <script>
+  var workspaceNavigationApproved=false;
+  function workspaceHasUnsaved(){return !document.dispatchEvent(new Event('qq-digest-check-unsaved',{cancelable:true}));}
   function workspaceHistoryTarget(step) {
     if(!window.navigation)return null;
     var entries=navigation.entries(),at=entries.findIndex(function(entry){return entry.key===navigation.currentEntry.key;}),entry=entries[at+step];
@@ -28,6 +30,18 @@
     if(state.qqDigestReading&&typeof summaryScrollPosition==='function')state.qqDigestReading=Object.assign({},state.qqDigestReading,{scroll:summaryScrollPosition()});
     history.replaceState(state,'',location.href);history.pushState(state,'',location.href);
   }
+  if(window.navigation){
+    navigation.addEventListener('navigate',function(event){
+      if(event.navigationType==='replace'||event.hashChange||event.downloadRequest||window.workspaceHistoryRestoring||workspaceNavigationApproved||!event.cancelable)return;
+      if(workspaceHasUnsaved()&&!confirm('有未保存的修改，确定离开并放弃这些修改？')){event.preventDefault();return;}
+      if(!event.destination.sameDocument||event.navigationType==='traverse'||event.navigationType==='reload')workspaceNavigationApproved=true;
+    });
+    navigation.addEventListener('navigateerror',function(){if(!window.workspaceHistoryRestoring)workspaceNavigationApproved=false;});
+  }
+  window.addEventListener('beforeunload',function(event){
+    if(workspaceNavigationApproved||window.workspaceHistoryRestoring){workspaceNavigationApproved=false;return;}
+    if(workspaceHasUnsaved()){event.preventDefault();event.returnValue='';}
+  });
   if(window.navigation)navigation.addEventListener('currententrychange',function(event){
     if(event.navigationType==='traverse'&&event.from.sameDocument){window.workspaceHistoryRestoring=true;location.reload();return;}
     workspaceHistoryUpdate();

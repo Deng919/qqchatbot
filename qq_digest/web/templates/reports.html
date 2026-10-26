@@ -40,7 +40,7 @@
     <div class="report-pages" id="report-pages" hidden><button class="btn btn-sm" id="report-prev" type="button" onclick="changeReportPage(-1)">上一页</button><span id="report-page-label"></span><button class="btn btn-sm" id="report-next" type="button" onclick="changeReportPage(1)">下一页</button></div>
   </section>
   <section class="card report-detail" id="report-detail" hidden>
-    <div class="card-header"><span id="summary-report-title" class="summary-report-title">完整摘要</span><button class="btn btn-sm" aria-label="返回摘要阅读" type="button" onclick="closeReport();inboxBackToList()">返回阅读</button></div>
+    <div class="card-header"><span id="summary-report-title" class="summary-report-title">完整摘要</span><button class="btn btn-sm" aria-label="返回摘要阅读" type="button" onclick="summaryBackFromReport()">返回阅读</button></div>
     <div class="report-detail-scroll">
       <div id="report-content" class="report-content"></div>
       <details class="summary-report-tools"><summary id="summary-coverage-label">消息范围与统计</summary>

@@ -1,11 +1,20 @@
 <script>
-var usageRevision=null,usageBusy=false,usageEpoch=0,usageRates=[],usageDraftDirty=false;
+var usageRevision=null,usageBusy=false,usageEpoch=0,usageRates=[],usageDraftDirty=false,usageSavedSettings=null;
+function updateUsageDirty(){
+  if(!usageSavedSettings){usageDraftDirty=false;return;}
+  usageDraftDirty=document.getElementById('ai-usage-limit').value!==String(usageSavedSettings.monthly_limit)||usageRates.some(function(rate){
+    var saved=usageSavedSettings.rates.find(function(item){return item.provider===rate.provider&&item.model===rate.model;})||{};
+    return ['input_hit','input_miss','output'].some(function(key){return rate.inputs[key].value!==String(saved[key]===null||saved[key]===undefined?'':saved[key]);});
+  });
+}
 function usageNode(tag,text,cls){var node=document.createElement(tag);if(text!==undefined)node.textContent=text;if(cls)node.className=cls;return node;}
 function usageResult(text){var node=document.getElementById('ai-usage-result');node.textContent=text;node.hidden=!text;}
 function usageDisabled(value){document.getElementById('ai-usage-options').disabled=value;document.getElementById('ai-usage-save').disabled=value;document.getElementById('ai-usage-refresh').disabled=usageBusy;}
 function renderAIUsage(data){
   var draft=usageDraftDirty?{limit:document.getElementById('ai-usage-limit').value,rates:usageRates.map(function(rate){var values={provider:rate.provider,model:rate.model};['input_hit','input_miss','output'].forEach(function(key){values[key]=rate.inputs[key].value;});return values;})}:null;
-  usageRevision=data.settings.revision;document.getElementById('ai-usage-limit').value=String(data.settings.monthly_limit);
+  var keepRevision=!!draft&&usageRevision!==data.settings.revision;
+  if(keepRevision&&confirm('用量设置已在其他窗口修改。放弃未保存的用量设置并载入最新版本？')){draft=null;usageDraftDirty=false;keepRevision=false;}
+  if(!keepRevision){usageRevision=data.settings.revision;usageSavedSettings=data.settings;}document.getElementById('ai-usage-limit').value=String(data.settings.monthly_limit);
   var host=document.getElementById('ai-usage-summary');host.textContent='';
   host.appendChild(usageNode('strong',data.month+' · '+data.calls+' 次调用'));
   host.appendChild(usageNode('div','成功 '+data.successful+' · 失败 '+data.failed+'（'+(data.calls?100*data.failed/data.calls:0).toFixed(1)+'%） · 结果未知 '+data.unknown+' · 处理中 '+data.pending));
@@ -32,6 +41,7 @@ function renderAIUsage(data){
     document.getElementById('ai-usage-limit').value=draft.limit;
     draft.rates.forEach(function(saved){var rate=usageRates.find(function(item){return item.provider===saved.provider&&item.model===saved.model;});if(rate){['input_hit','input_miss','output'].forEach(function(key){rate.inputs[key].value=saved[key];});}});
   }
+  if(keepRevision)usageResult('最新设置已变化，草稿和原版本已保留。再次刷新可放弃草稿并载入最新设置。');
 }
 function loadAIUsage(){
   if(usageBusy)return Promise.resolve();var epoch=++usageEpoch;usageDisabled(true);usageResult('');
@@ -51,7 +61,7 @@ function saveAIUsage(event){
     .finally(function(){if(epoch===usageEpoch){usageBusy=false;usageDisabled(false);}});
 }
 document.getElementById('ai-usage-form').addEventListener('submit',saveAIUsage);
-document.getElementById('ai-usage-form').addEventListener('input',function(){usageDraftDirty=true;});
+document.getElementById('ai-usage-form').addEventListener('input',updateUsageDirty);
 document.getElementById('ai-usage-refresh').addEventListener('click',loadAIUsage);
 loadAIUsage();
 </script>

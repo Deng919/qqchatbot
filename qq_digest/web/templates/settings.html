@@ -117,6 +117,9 @@
 </style>
 <script>
   var savedFeatures = null;
+  document.addEventListener('qq-digest-check-unsaved',function(event){
+    if(savedFeatures&&savedFeatures.catalog.some(function(item){var input=document.getElementById('feature-'+item.key);return input&&input.checked!==!!savedFeatures.values[item.key];}))event.preventDefault();
+  });
   function setFeatureFormBusy(busy) {
     ['feature-options','features-simple','features-all','features-save','automatic-options','automatic-save'].forEach(function(id) { document.getElementById(id).disabled=busy; });
   }
@@ -144,7 +147,7 @@
   function saveFeatureCategory(event,automatic) {
     event.preventDefault();if(!savedFeatures)return;setFeatureFormBusy(true);var values={};
     savedFeatures.catalog.filter(function(item){return (item.group==='自动任务')===automatic;}).forEach(function(item){values[item.key]=document.getElementById('feature-'+item.key).checked;});
-    api('PUT','/api/features',{values:values,expected_revision:savedFeatures.revision}).then(function(data){savedFeatures=data;featureFlags=data.values;updateWorkspaceTools();if(automatic)refreshAutomaticSchedule();setResult(automatic?'automatic-result':'features-result',automatic?'自动运行设置已保存':'功能设置已保存');setFeatureFormBusy(false);history.replaceState(null,'','/settings?section='+(automatic?'automatic':'features'));})
+    api('PUT','/api/features',{values:values,expected_revision:savedFeatures.revision}).then(function(data){savedFeatures=data;featureFlags=data.values;updateWorkspaceTools();if(automatic)refreshAutomaticSchedule();setResult(automatic?'automatic-result':'features-result',automatic?'自动运行设置已保存':'功能设置已保存');setFeatureFormBusy(false);})
       .catch(function(error){setResult(automatic?'automatic-result':'features-result',error.message+'；你的选择尚未保存。');setFeatureFormBusy(false);});
   }
   document.getElementById('features-form').onsubmit=function(event){saveFeatureCategory(event,false);};
