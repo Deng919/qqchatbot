@@ -166,7 +166,7 @@ async function batchUncheckedValidation(browser){
  await page.locator('#group-batch-select').evaluate(x=>x.groupSelector.setSelected([123]));await page.getByRole('button',{name:'批量设置',exact:true}).click();
  await page.locator('[data-batch-apply=collection_window_days]').check();await page.locator('#batch-value-collection_window_days').fill('0');await page.locator('[data-batch-apply=collection_window_days]').uncheck();await page.locator('[data-batch-apply=enabled]').check();
  await page.getByRole('button',{name:'应用所选设置',exact:true}).click();await page.waitForFunction(()=>document.getElementById('group-batch-settings-error').textContent);
- assert.deepEqual(payload,{group_ids:[123],patch:{enabled:true}});assert.equal(await page.getByRole('button',{name:'应用所选设置',exact:true}).isEnabled(),true);await page.keyboard.press('Escape');assert.equal(await page.locator('#group-batch-settings-dialog').isVisible(),false);await page.close();
+ assert.deepEqual(payload,{group_ids:[123],patch:{enabled:true}});assert.equal(await page.getByRole('button',{name:'应用所选设置',exact:true}).isEnabled(),true);await page.keyboard.press('Escape');assert.equal(await page.locator('#group-batch-settings-dialog').evaluate(n=>n.open),false,'Escape changes modal state immediately');await page.locator('#group-batch-settings-dialog').waitFor({state:'hidden'});await page.close();
 }
 async function lateCategorySaveKeepsCurrentRoute(browser){
  let finish;
