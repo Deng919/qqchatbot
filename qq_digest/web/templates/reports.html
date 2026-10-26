@@ -290,7 +290,7 @@
   }
   function reportParams() { var p = new URLSearchParams(); p.set('page', reportPage); p.set('kind', document.getElementById('report-kind').value);summaryGroupParams(p,document.getElementById('report-group').value); [['date_from','report-from'],['date_to','report-to']].forEach(function(row) { var value = document.getElementById(row[1]).value; if (value) p.set(row[0], value); }); summaryReportKeyParams(p);return p; }
   function filterReports(keepGenerated) { summaryHistoryPush();if(!keepGenerated&&summaryGeneratedReading)summaryGeneratedReading.keys=null;summaryCancelDetail();reportPage = 1; summaryPointPage=1; summaryPendingScroll=null;summaryApplyView();summarySave();loadReports(); }
-  function clearReportFilters() { summaryAllDates(); }
+  function clearReportFilters() { document.getElementById('report-group').value='';document.getElementById('report-kind').value='all';document.getElementById('summary-read-filter').value='all';summaryAllDates(); }
   function changeReportPage(step) { summaryHistoryPush();summaryCancelDetail();reportPage += step; summarySave();loadReports(); }
   function loadReports() {
     if(summaryEmptySelection())return;

@@ -138,17 +138,26 @@
     document.getElementById('feature-redirect').hidden=!new URLSearchParams(location.search).get('feature');
     setFeatureFormBusy(false);
   }).catch(function(error) { setResult('features-result','功能设置读取失败：'+error.message+'。请刷新重试。'); });
+  function updateFeatureDraft(automatic) {
+    if(!savedFeatures||document.getElementById(automatic?'automatic-options':'feature-options').disabled)return;
+    var dirty=savedFeatures.catalog.some(function(item){return (item.group==='自动任务')===automatic&&document.getElementById('feature-'+item.key).checked!==!!savedFeatures.values[item.key];});
+    var id=automatic?'automatic-result':'features-result',result=document.getElementById(id);
+    if(result.dataset.featureState==='error')return;
+    if(dirty){setResult(id,'有修改尚未保存，请点击'+(automatic?'“保存自动运行设置”':'“保存功能设置”')+'。');result.dataset.featureState='draft';}
+    else if(result.dataset.featureState==='draft'){result.hidden=true;}
+  }
+  ['features-form','automatic-form'].forEach(function(id){document.getElementById(id).addEventListener('change',function(){updateFeatureDraft(id==='automatic-form');});});
   function selectFeaturePreset(enabled) {
     savedFeatures.catalog.filter(function(item) { return item.group==='扩展功能'; }).forEach(function(item) { document.getElementById('feature-'+item.key).checked=enabled; });
-    setResult('features-result','已选择'+(enabled?'全部扩展功能':'精简界面')+'，点击保存后生效。');
+    updateFeatureDraft(false);
   }
   document.getElementById('features-simple').onclick=function() { selectFeaturePreset(false); };
   document.getElementById('features-all').onclick=function() { selectFeaturePreset(true); };
   function saveFeatureCategory(event,automatic) {
     event.preventDefault();if(!savedFeatures)return;setFeatureFormBusy(true);var values={};
     savedFeatures.catalog.filter(function(item){return (item.group==='自动任务')===automatic;}).forEach(function(item){values[item.key]=document.getElementById('feature-'+item.key).checked;});
-    api('PUT','/api/features',{values:values,expected_revision:savedFeatures.revision}).then(function(data){savedFeatures=data;featureFlags=data.values;updateWorkspaceTools();if(automatic)refreshAutomaticSchedule();setResult(automatic?'automatic-result':'features-result',automatic?'自动运行设置已保存':'功能设置已保存');setFeatureFormBusy(false);})
-      .catch(function(error){setResult(automatic?'automatic-result':'features-result',error.message+'；你的选择尚未保存。');setFeatureFormBusy(false);});
+    api('PUT','/api/features',{values:values,expected_revision:savedFeatures.revision}).then(function(data){savedFeatures=data;featureFlags=data.values;updateWorkspaceTools();if(automatic)refreshAutomaticSchedule();setResult(automatic?'automatic-result':'features-result',automatic?'自动运行设置已保存':'功能设置已保存');document.getElementById(automatic?'automatic-result':'features-result').dataset.featureState='saved';setFeatureFormBusy(false);})
+      .catch(function(error){setResult(automatic?'automatic-result':'features-result',error.message+'；你的选择尚未保存。');document.getElementById(automatic?'automatic-result':'features-result').dataset.featureState='error';setFeatureFormBusy(false);});
   }
   document.getElementById('features-form').onsubmit=function(event){saveFeatureCategory(event,false);};
   document.getElementById('automatic-form').onsubmit=function(event){saveFeatureCategory(event,true);};

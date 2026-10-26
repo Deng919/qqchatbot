@@ -31,5 +31,11 @@ const item=id=>({bookmark_id:id,kind:'message',status:'pending',revision:0,snaps
   const b=node(),target={kind:'message',group_id:11,msg_id:'m1'};const saving=scope.saveBookmark(target,b);scope.saveBookmark(target,b);assert.equal(requests.length,1,'Double click saves once');
   requests.shift().reject(Error('disk full'));await saving;assert.equal(b.disabled,false,'Failure allows retry');
   const retry=scope.saveBookmark(target,b);requests.shift().resolve({reused:true});await retry;assert.equal(b.textContent,'已收藏');assert.equal(b.disabled,true);
+  get('bookmarks-q').value='不存在';get('bookmarks-kind').value='message';get('bookmarks-status').value='completed';scope.bookmarksLoad();requests.shift().resolve({...empty,counts:{pending:1,completed:2}});await tick();
+  assert.match(get('bookmarks-list').children[0].textContent,/当前筛选下没有收藏/,'filtered zero results must not claim the collection is empty');
+  assert.doesNotMatch(get('bookmarks-count').textContent,/未读 1|已读 2/,'global status counts must not be presented as part of a filtered total');
+  const clear=get('bookmarks-list').children[0].children[0].children.find(n=>n.textContent==='清除筛选');assert.ok(clear,'filtered empty results offer recovery');clear.onclick();
+  const cleared=requests.shift();assert.equal(cleared.url,'/api/bookmarks?page=1&status=all');assert.equal(get('bookmarks-q').value,'');assert.equal(get('bookmarks-kind').value,'');
+  cleared.resolve(empty);await tick();assert.equal(get('bookmarks-list').children[0].textContent,'暂无收藏');assert.equal(get('bookmarks-list').children.length,1,'genuinely empty collection has no redundant filter reset');
   console.log('Bookmark current-filter refresh, stale reads, cancelled detail, plain text, duplicate submit and retry verified');
 })().catch(e=>{console.error(e);process.exitCode=1;});

@@ -11,7 +11,7 @@ global.recentWeekDates=()=>({start:'2026-10-08',end:'2026-10-14'});
 assert.equal(rangeTimeMode('2026-10-14','2026-10-14',recentWeekDates()),'today');
 assert.equal(rangeTimeMode('2026-10-08','2026-10-14',recentWeekDates()),'week');
 const state=GroupSelector.createState({allowAll:false,selected:[11]});
-global.rangeGroupSelector={ids:state.ids,setSelected:state.setSelected};
+global.rangeGroupSelector={ids:state.ids,setSelected:state.setSelected,setGroups:state.setGroups};
 rangeGroups=[{group_id:11,name:'Synthetic'}];rangeGroupsLoaded=true;
 const base={generation_id:'restore',scope:{group_ids:[22,33],start_date:'2026-10-05',end_date:'2026-10-06'},status:'running',stage:'summary',total:2,completed:0,counts:{created:0,reused:0,skipped:0,failed:0},elapsed_seconds:1};
 async function flush(){await new Promise(setImmediate);}

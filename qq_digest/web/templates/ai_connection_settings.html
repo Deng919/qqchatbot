@@ -54,9 +54,10 @@
     <div class="field"><label for="deepseek-api-key">输入新的 API Key</label><input id="deepseek-api-key" class="input" type="password" autocomplete="new-password" spellcheck="false" required></div>
     <div class="settings-actions">
       <button class="btn btn-primary" id="deepseek-save-btn" type="submit">保存 API Key</button>
-      <button class="btn" id="deepseek-test-btn" type="button" onclick="testDeepSeekConnection()">测试连接</button>
+      <button class="btn" id="deepseek-test-btn" type="button" onclick="testDeepSeekConnection()">测试已保存连接</button>
     </div>
   </form>
+  <p id="deepseek-test-hint" class="settings-note" role="status" hidden>新 API Key 尚未保存，请先点击“保存 API Key”。测试只使用已保存的连接。</p>
   <p class="settings-note">测试只发送示例请求，不含聊天内容。</p>
 </section>
 <style>
@@ -87,6 +88,13 @@
       document.getElementById('deepseek-key-status').textContent = data.key_configured ? '已保存到本机' : '尚未通过网页保存';
     }).catch(function(error) { toast('加载 AI 设置失败：' + error.message, 'error'); });
   }
+  var deepSeekTesting=false;
+  function updateDeepSeekTestReady() {
+    var field=document.getElementById('deepseek-api-key');
+    document.getElementById('deepseek-test-btn').disabled=deepSeekTesting||field.disabled||!!field.value;
+    document.getElementById('deepseek-test-hint').hidden=!field.value;
+  }
+  document.getElementById('deepseek-api-key').addEventListener('input',updateDeepSeekTestReady);
   function saveDeepSeekKey(event) {
     event.preventDefault();
     var field = document.getElementById('deepseek-api-key');
@@ -94,20 +102,21 @@
     if (button.disabled) return;
     button.disabled = true;
     field.disabled = true;
+    updateDeepSeekTestReady();
     api('PUT', '/api/ai-settings/key', {api_key: field.value}).then(function() {
       field.value = '';
       toast('API Key 已保存到本机', 'success');
       loadAISettings();
     }).catch(function(error) { toast('保存失败：' + error.message, 'error'); })
-      .finally(function() { button.disabled = false; field.disabled = false; });
+      .finally(function() { button.disabled = false; field.disabled = false; updateDeepSeekTestReady(); });
   }
   function testDeepSeekConnection() {
-    var button = document.getElementById('deepseek-test-btn');
-    button.disabled = true;
+    if(deepSeekTesting||document.getElementById('deepseek-api-key').value||document.getElementById('deepseek-api-key').disabled){updateDeepSeekTestReady();return;}
+    deepSeekTesting=true;updateDeepSeekTestReady();
     api('POST', '/api/ai-settings/test', {}).then(function() {
-      toast('DeepSeek 连接成功', 'success');
+      toast('已保存的 DeepSeek 连接测试成功', 'success');
     }).catch(function(error) { toast(error.message, 'error'); })
-      .finally(function() { button.disabled = false; });
+      .finally(function() { deepSeekTesting=false;updateDeepSeekTestReady(); });
   }
   loadAISettings();
   document.addEventListener('qq-digest-check-unsaved',function(event){

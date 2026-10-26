@@ -5,11 +5,11 @@
     <button class="btn btn-sm" id="summary-all-dates" type="button" onclick="summaryAllDates()">历史摘要</button>
     <button class="btn btn-sm" id="summary-return-reading" type="button" onclick="summaryReturnToReading()" hidden>返回之前阅读</button>
   </div>
-  <details class="inbox-filter-details"><summary>群聊与日期</summary>
+  <details class="inbox-filter-details"><summary id="summary-scope-label">群聊与日期</summary>
   <div class="filter-toolbar report-filters" aria-label="筛选摘要">
     <div class="field"><label for="report-group">群聊</label><select id="report-group" data-group-selector="filter" onchange="filterReports()"><option value="">全部群聊</option></select></div>
-    <div class="field"><label for="report-from">开始日期</label><input class="input" id="report-from" type="date" onchange="filterReports()"></div>
-    <div class="field"><label for="report-to">结束日期</label><input class="input" id="report-to" type="date" onchange="filterReports()"></div>
+    <div class="field"><label for="report-from">开始日期</label><input class="input" id="report-from" type="date" onchange="summaryChangeDate('from')"></div>
+    <div class="field"><label for="report-to">结束日期</label><input class="input" id="report-to" type="date" onchange="summaryChangeDate('to')"></div>
     <div class="field" id="summary-kind-field" hidden><label for="report-kind">摘要范围</label><select id="report-kind" onchange="filterReports()"><option value="all">全部摘要</option><option value="daily">单日摘要</option><option value="range">自选日期摘要（含旧报告）</option></select></div>
     <button class="btn" type="button" onclick="clearReportFilters()">清除筛选</button>
   </div>

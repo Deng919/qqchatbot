@@ -57,11 +57,12 @@ function marketLoadDismissed(){var token=++marketDismissedToken,host=marketN('ma
 function marketFilter(event){if(event)event.preventDefault();marketPageNumber=1;marketClose();marketLoad();}
 function marketPage(step){marketPageNumber=Math.max(1,marketRenderedPage+step);marketClose();marketLoad();}
 function marketRecent(){marketN('market-from').value='';marketN('market-to').value='';marketN('market-min').value='';marketN('market-max').value='';marketN('market-status').value='all';marketFilter();}
+function marketClearFilters(){['market-q','market-group','market-from','market-to','market-min','market-max'].forEach(function(id){marketN(id).value='';});marketN('market-status').value='all';marketN('market-favorites').checked=false;marketCategory='all';marketFilter();}
 function marketLoad(){var token=++marketListToken,params=marketParams();marketN('market-count').textContent='正在读取交易信息…';
  return api('GET','/api/secondhand?'+params).then(function(data){if(token!==marketListToken)return;
   if(!params.has('date_from'))marketN('market-from').value=data.date_from;if(!params.has('date_to'))marketN('market-to').value=data.date_to;marketPageNumber=marketRenderedPage=data.page;
   var host=marketN('market-list');host.textContent='';marketCategoryTabs(data.categories);marketLaneTabs(data.lane_counts);marketN('market-count').textContent=data.date_from+' 至 '+data.date_to+' · '+data.total+' 条整理结果';
-  if(!data.items.length){var empty=marketNode('div','market-empty');empty.appendChild(marketNode('p','','当前分类和筛选下没有交易信息。'));empty.appendChild(marketButton('查看全部分类',function(){marketSwitchCategory('all');}));host.appendChild(empty);}
+  if(!data.items.length){var empty=marketNode('div','market-empty');empty.appendChild(marketNode('p','','当前分类和筛选下没有交易信息。'));empty.appendChild(marketButton('清除筛选',marketClearFilters));host.appendChild(empty);}
   data.items.forEach(function(item){host.appendChild(marketCard(item));});
   var pages=Math.max(1,Math.ceil(data.total/data.page_size));marketN('market-pages').hidden=pages<=1;marketN('market-prev').disabled=data.page<=1;marketN('market-next').disabled=data.page>=pages;marketN('market-page-label').textContent=data.page+' / '+pages;
  }).catch(function(error){if(token===marketListToken){var count=marketN('market-count');count.textContent='列表刷新失败：'+error.message+' ';count.appendChild(marketButton('重试',function(){return marketLoad();}));}});}

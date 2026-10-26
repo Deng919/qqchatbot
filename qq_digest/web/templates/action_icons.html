@@ -11,8 +11,9 @@
     .btn.btn[data-action-icon] { width:auto; min-width:56px; min-height:60px; padding:8px!important; gap:6px; }
     .btn.btn[data-action-icon]::after { content:attr(data-action-caption); max-width:84px; white-space:normal; font-size:11px; line-height:1.3; }
   }
-  .btn.btn[data-action-mode="label"] { width:auto;min-width:0;min-height:39px;flex-direction:row;gap:8px;padding:7px 14px!important;font-size:13px!important;line-height:1.5; }
+  .btn.btn[data-action-mode="label"] { width:auto;min-width:0;min-height:39px;flex-direction:row;gap:8px;padding:7px 12px!important;font-size:13px!important;line-height:1.5; }
   .btn.btn[data-action-mode="label"]::after { content:none; }
+  @media (hover:none), (pointer:coarse), (max-width:600px) { .btn.btn[data-action-mode="label"] { min-height:44px; } }
   .btn.btn.btn-primary[data-action-mode="label"] { background:var(--primary,#4b6f97);border-color:var(--primary,#4b6f97);color:#fff; }
   .global-nav a[data-action-icon]::before,#workspace-tools-area a[data-action-icon]::before,.section-back[data-action-icon]::before { content:'';display:inline-block;vertical-align:middle;flex-shrink:0;width:17px;height:17px;margin-right:8px;background:currentColor;mask:var(--action-icon) center/contain no-repeat;-webkit-mask:var(--action-icon) center/contain no-repeat; }
   summary.action-disclosure { list-style:none;cursor:pointer; }
@@ -73,7 +74,7 @@
   group('check','已读','标为已读');group('unread','未读','标为未读');
   group('check','完成','完成|标为完成');group('restore','重新打开','重新打开');
   group('edit','编辑','编辑|更名');group('trash','删除','删除|取消收藏|删除规则','danger');
-  // Removing a bookmark uses the same star as adding it, with the active state shown in blue.
+  // Removing a bookmark uses the same star as adding it, with the active state distinguished by theme.
   names['取消收藏']={icon:'star',caption:'取消收藏',tone:''};
   group('close','关闭','关闭');group('book','整理成资料','整理成资料');
   group('restore','重试','重试|重试读取');
@@ -87,12 +88,19 @@
   group('chat','询问摘要','询问这份摘要');group('check','已处理','标记已处理');
   group('settings','启用','启用');group('close','停用','停用');
   group('book','最近摘要','最近摘要');group('task','查看进展','查看进展');
-  function labelled(icon,labels){labels.split('|').forEach(function(label){names[label]={icon:icon,caption:label,tone:'',labelled:true};});}
+  function labelled(icon,labels,tone){labels.split('|').forEach(function(label){names[label]={icon:icon,caption:label,tone:tone||'',labelled:true};});}
   labelled('play','生成摘要|开始生成|保留旧版并重新生成');
   labelled('refresh','更新消息|更新交易信息|更新话题|立即检查|立即巡检|扫描本地群聊|检查缺口|刷新数据库|测试连接');
   labelled('plus','添加群聊|添加所选群|添加|新建规则|从消息创建|新建连接');
   labelled('save','保存|保存修改|保存设置|保存规则|保存资料|保存纠错意见|保存自动运行设置|保存功能设置');
   labelled('download','导出摘要|立即备份');labelled('search','查找|筛选|筛选知识|预览匹配');
+  labelled('eye','查看详情|详情|查看|打开收藏|查看资料|查看资源记录|查看原消息|查看原文|查看这次原文|查看原消息与图片|查看来源|关联的消息|未解析来源');
+  labelled('book','完整摘要|打开摘要|打开当前摘要|整理成资料');
+  labelled('hide','不感兴趣|对此商品不感兴趣|忽略|不感兴趣列表');
+  labelled('block','屏蔽此人|屏蔽原发布人','danger');labelled('block','屏蔽名单');
+  labelled('restore','恢复显示|解除屏蔽|重试|重试读取|清除筛选|清空筛选|重置为近七天');
+  labelled('check','标为已读');labelled('unread','标为未读');
+  labelled('back','← 返回列表|返回阅读|返回资料列表|返回之前阅读|← 返回摘要阅读');
   var selector='button.btn,a.btn,.global-nav a,#workspace-tools-area a,.section-back',tip=null,active=null;
   var navIcons={'摘要':'book','阅读摘要':'book','查找':'search','群聊':'groups','设置':'settings','二手信息':'archive','收藏':'star','提醒':'bell','功能开关':'settings'};
   function disclosure(summary){
@@ -105,8 +113,8 @@
   function decorate(button){
     var label=button.textContent.trim(),entry=names[label];
     if(button.matches('.global-nav a,#workspace-tools-area a,.section-back'))entry={icon:navIcons[label]||'back',caption:label,labelled:true,tone:''};
-    if(!entry&&/^(?:查看原消息|原消息|来源) \d+$/.test(label))entry={icon:'eye',caption:label,tone:''};
-    if(!entry&&/^屏蔽(?:原发布人|转发人) \d+$/.test(label))entry={icon:'block',caption:label.startsWith('屏蔽转发人')?'屏蔽转发人':'屏蔽发布人',tone:'danger'};
+    if(!entry&&/^(?:查看原消息|原消息|来源) \d+$/.test(label))entry={icon:'eye',caption:label,tone:'',labelled:true};
+    if(!entry&&/^屏蔽(?:原发布人|转发人) \d+$/.test(label))entry={icon:'block',caption:label.startsWith('屏蔽转发人')?'屏蔽转发人':'屏蔽发布人',tone:'danger',labelled:true};
     if(button.closest('#find-recent'))entry=null;
     if(entry&&(button.getAttribute('type')==='submit'||(button.form&&button.type==='submit')||button.classList.contains('btn-primary'))&&!entry.labelled)entry=null;
     if(!entry){if(button.dataset.actionIcon){delete button.dataset.actionMode;delete button.dataset.actionIcon;delete button.dataset.actionCaption;delete button.dataset.actionTone;delete button.dataset.actionActive;button.style.removeProperty('--action-icon');if(button.dataset.actionOriginalLabel)button.setAttribute('aria-label',button.dataset.actionOriginalLabel);else button.removeAttribute('aria-label');}return;}

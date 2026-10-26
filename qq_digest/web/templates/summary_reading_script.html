@@ -59,13 +59,21 @@
     document.getElementById('summary-reading-section').hidden=summaryDetailActive||summaryView==='manage';
     document.getElementById('report-table-card').hidden=summaryDetailActive||summaryView!=='manage';
     var dates=recentWeekDates(),from=document.getElementById('report-from').value,to=document.getElementById('report-to').value;
+    var select=document.getElementById('report-group'),group=select.value,ids=group?group.split(','):[],option=Array.from(select.options).find(function(item){return item.value===group;});
+    var groupLabel=!group?'全部群聊':group==='__empty__'?'请选择群聊':ids.length>1?'已选 '+ids.length+' 个群':option?option.textContent:'群 '+group;
+    document.getElementById('summary-scope-label').textContent='群聊与日期 · '+groupLabel+' · '+(!from&&!to?'全部日期':from===to?from:(from||'不限')+' 至 '+(to||'不限'));
     document.querySelectorAll('[data-summary-days]').forEach(function(b){var active=b.dataset.summaryDays==='today'?from===dates.end&&to===dates.end:from===dates.start&&to===dates.end;b.classList.toggle('active',active);b.setAttribute('aria-pressed',String(active));});
     if(typeof inboxApplyView==='function')inboxApplyView();
   }
   function summaryCancelDetail(){if(typeof inboxClearSelection==='function')inboxClearSelection();summaryNavigationToken++;summaryPointToken++;reportLoadToken++;closeReport();if(!document.getElementById('summary-source-panel').hidden)summaryCloseSource();}
   function summarySetView(view) { if(!['points','groups','manage'].includes(view))return; if(view!==summaryView||summaryDetailActive||summaryPointReference)summaryHistoryPush();summaryCancelDetail();summaryView=view; summaryPointToken++;reportLoadToken++;summaryPendingScroll=null;summaryApplyView();summarySave();loadReports(); }
   function summarySetDates(mode) { var d=recentWeekDates(),from=mode==='today'?d.end:d.start;if(!summaryDetailActive&&!summaryPointReference&&document.getElementById('report-from').value===from&&document.getElementById('report-to').value===d.end)return;document.getElementById('report-from').value=from;document.getElementById('report-to').value=d.end;refreshDateHints();filterReports(); }
-  function summaryAllDates() { document.getElementById('report-group').value='';document.getElementById('report-kind').value='all';document.getElementById('summary-read-filter').value='all';document.getElementById('report-from').value='';document.getElementById('report-to').value='';refreshDateHints();filterReports(); }
+  function summaryChangeDate(changed) {
+    var from=document.getElementById('report-from'),to=document.getElementById('report-to');
+    if(from.value&&to.value&&from.value>to.value){if(changed==='from')to.value=from.value;else from.value=to.value;}
+    refreshDateHints();filterReports();
+  }
+  function summaryAllDates() { document.getElementById('report-from').value='';document.getElementById('report-to').value='';refreshDateHints();filterReports(); }
   function summaryReturnToReading(){
     if(!summaryPreviousReading)return;summaryHistoryPush();var saved=summaryPreviousReading;summaryCancelDetail();summaryPreviousReading=null;summaryGeneratedReading=null;
     summaryView=['points','groups','manage'].includes(saved.view)?saved.view:'points';summarySelectGroups(saved.group?saved.group.split(','):[]);
@@ -82,11 +90,10 @@
   }
   function summaryRestoreScroll() { if(summaryPendingScroll!==null&&!summaryDetailActive){var y=summaryPendingScroll;summaryPendingScroll=null;requestAnimationFrame(function(){summaryScrollTo(y);});} }
   function summaryEmpty(host,filtered) {
-    var box=summaryNode('div','summary-empty');box.appendChild(summaryNode('h2','',filtered?'没有匹配的要点':'暂无摘要'));
+    var box=summaryNode('div','summary-empty');box.appendChild(summaryNode('h2','',filtered?'没有匹配的要点':'当前范围暂无摘要'));
     var actions=summaryNode('div','actions');
     if(filtered)actions.appendChild(summaryButton('查看全部要点',function(){document.getElementById('summary-read-filter').value='all';summaryFilterPoints();}));
     else actions.appendChild(summaryButton('选择范围并生成',function(){openRangeSummary();},'btn btn-primary'));
-    if(!filtered){var setupLink=summaryNode('a','btn','首次设置');setupLink.href='/setup';actions.appendChild(setupLink);}
     actions.appendChild(summaryButton('查看最近七天',function(){summarySetDates('week');}));
     if(summaryView==='points')actions.appendChild(summaryButton('按群阅读',function(){summarySetView('groups');}));
     box.appendChild(actions);host.appendChild(box);
@@ -202,7 +209,7 @@
       current=normalizeGroup(current);summarySelectGroups(current?current.split(','):[]);
       if(summaryPreviousReading)summaryPreviousReading.group=normalizeGroup(summaryPreviousReading.group);
       if(summaryGeneratedReading)summaryGeneratedReading.group=normalizeGroup(summaryGeneratedReading.group);
-      summarySave();
+      summaryApplyView();summarySave();
       if(typeof inboxRenderGroups==='function')inboxRenderGroups(data.groups);
     }).catch(function(){summaryShowResult('群聊筛选加载失败，请刷新重试。','failed');});
     var navigation=performance.getEntriesByType('navigation')[0],restoreVisit=((history.state&&history.state.qqDigestReading)||(navigation&&navigation.type==='reload'))&&saved.since!==undefined;

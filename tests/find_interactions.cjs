@@ -9,6 +9,16 @@ for(const file of ['bookmark_actions.html','message_context_script.html','find_h
 (async()=>{
   requests.shift().resolve({groups:[]});await new Promise(resolve=>setImmediate(resolve));
   assert.equal(requests.length,0,'Opening empty find page does not read messages or search');
+  scope.lastUrl='/search?q=old';scope.history.replaceState=(_,__,url)=>scope.lastUrl=url;
+  await scope.loadSearch();assert.equal(get('find-validation').hidden,false,'Empty keyword must explain how to continue');
+  assert.equal(new URLSearchParams(scope.lastUrl.split('?')[1]).get('q'),'','An empty invalid search must not leave the old keyword in the reload URL');
+  get('search-group').value='11';get('search-from').value='2026-10-02';get('search-to').value='2026-10-03';get('search-sender').value='1001';get('search-message-type').value='file';
+  const browsing=scope.loadSearch();assert.equal(requests.length,1,'An explicit group can be browsed without a keyword');const browseRequest=requests.shift(),browseParams=new URLSearchParams(browseRequest.url.split('?')[1]);
+  assert.ok(browseRequest.url.startsWith('/api/messages?'));assert.equal(browseParams.getAll('group_ids').join(','),'11');assert.equal(browseParams.get('custom_dates'),'true');assert.equal(browseParams.get('date_from'),'2026-10-02');assert.equal(browseParams.get('date_to'),'2026-10-03');assert.equal(browseParams.get('sender_qq'),'1001');assert.equal(browseParams.get('message_type'),'file');
+  browseRequest.resolve({results:[],total:0,page:1,page_size:20});await browsing;
+  get('search-kind').value='report';await scope.loadSearch();assert.equal(requests.length,0,'Empty report search cannot become message browsing');assert.equal(get('find-validation').hidden,false);
+  get('search-kind').value='message';get('search-group').value='__empty__';await scope.loadSearch();assert.equal(requests.length,0,'Cleared explicit selection must never widen browsing to all groups');assert.equal(get('find-validation').hidden,false);
+  get('search-group').value='';get('search-from').value='';get('search-to').value='';
   get('search-sender').value='1001';get('search-message-type').value='file';
   assert.equal(scope.searchParams().get('sender_qq'),'1001');
   assert.equal(scope.searchParams().get('message_type'),'file');

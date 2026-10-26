@@ -25,7 +25,7 @@ const settle=()=>new Promise(setImmediate);
   assert.equal(node('summary-all-dates').hidden,false,'history is reachable in points view');
   summaryAllDates();
   assert.equal(summaryView,'points','history keeps the dashboard available');
-  assert.equal(node('report-group').value,'','history includes groups outside generation');
+  assert.equal(node('report-group').value,'11','history preserves the selected group');
   assert.equal(node('report-from').value,'');assert.equal(node('report-to').value,'');
   let historyParams=new URL('http://localhost'+requests.at(-1).url).searchParams;
   assert.equal(historyParams.has('date_from'),false);assert.equal(historyParams.has('date_to'),false);

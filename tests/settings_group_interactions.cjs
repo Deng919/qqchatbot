@@ -7,7 +7,7 @@ from starlette.requests import Request
 from qq_digest.web.app import templates
 r=Request({'type':'http','scheme':'http','server':('interaction.test',80),'path':sys.argv[2],'query_string':b'','headers':[]})
 print(templates.env.get_template(sys.argv[1]).render(request=r,features={}))`,template,path],{encoding:'utf8'});}
-const html={settings:render('settings.html','/settings'),groups:render('groups.html','/groups'),collect:render('collect.html','/collect')};
+const html={search:render('search.html','/search'),settings:render('settings.html','/settings'),groups:render('groups.html','/groups'),collect:render('collect.html','/collect')};
 const groups=[123,456].map((id,index)=>({group_id:id,name:'Group '+index,revision:0,enabled:true,daily_summary:false,read_images:false,read_files:false,category:'general',keywords:[],collection_window_days:30,important_candidates:false,message_count:0,sync_status:'never_synced'}));
 const features={revision:0,values:{tasks:false,auto_daily:false},catalog:[{key:'tasks',group:'扩展功能',title:'Tasks',description:''},{key:'auto_daily',group:'自动任务',title:'Daily',description:''}]};
 function usage(revision=0,output=3){return {month:'2026-10',calls:1,successful:1,failed:0,unknown:0,pending:0,input_tokens:1,output_tokens:1,estimated_cost:null,models:[],current_model:{provider:'test',model:'test'},settings:{revision,monthly_limit:10,timezone:'Asia/Shanghai',rates:[{provider:'test',model:'test',input_hit:1,input_miss:2,output}]}};}
@@ -105,6 +105,40 @@ async function groupLateSave(browser){
  assert.match(await page.locator('#group-detail-result').innerText(),/尚未保存/,'late success must not label newer input as saved');
  await page.close();
 }
+async function featureSaveFeedbackTracksDraft(browser){
+ let values={...features.values},fail=false;
+ const page=await pageFor(browser,'settings',async(path,request,route)=>{if(path==='/api/features'&&request.method()==='PUT'){if(fail)await route.fulfill({status:503,json:{detail:'Synthetic save failure'}});else{values={...values,...request.postDataJSON().values};await route.fulfill({json:{...features,revision:1,values}});}return true;}});
+ for(const [section,key,result] of [['features','tasks','features-result'],['automatic','auto_daily','automatic-result']]){
+  await page.locator('[data-settings-section='+section+']').click();await page.locator('#feature-'+key).check();
+  assert.match(await page.locator('#'+result).innerText(),/尚未保存/,'a changed setting must say it is not saved');
+  await page.locator('#'+section+'-save').click();await page.waitForFunction(id=>!document.getElementById(id).disabled,section+'-save');
+  assert.match(await page.locator('#'+result).innerText(),/已保存/);
+  await page.locator('#feature-'+key).uncheck();assert.match(await page.locator('#'+result).innerText(),/尚未保存/,'a previous success cannot label a newer draft as saved');
+  await page.locator('#feature-'+key).check();assert.equal(await page.locator('#'+result).isHidden(),true,'reverting to saved values must remove dirty feedback');
+ }
+ await page.locator('[data-settings-section=features]').click();fail=true;await page.locator('#feature-tasks').uncheck();await page.locator('#features-save').click();await page.waitForFunction(()=>!document.getElementById('features-save').disabled);
+ await page.locator('#feature-tasks').check();assert.match(await page.locator('#features-result').innerText(),/Synthetic save failure/,'editing or reverting must not erase save failure details');await page.close();
+}
+async function deepSeekTestRequiresSavedKey(browser){
+ const requests=[];let finish;
+ const page=await pageFor(browser,'settings',async(path,request,route)=>{if(path==='/api/ai-settings/test'){requests.push(request.postDataJSON());await new Promise(resolve=>finish=resolve);await route.fulfill({json:{ok:true}});return true;}});
+ await page.locator('#deepseek-api-key').fill('synthetic-draft-key');assert.equal(await page.locator('#deepseek-test-btn').isDisabled(),true,'an unsaved key cannot be tested as though it were saved');
+ assert.match(await page.locator('#deepseek-test-hint').innerText(),/先.*保存/);
+ await page.evaluate(()=>testDeepSeekConnection());assert.equal(requests.length,0,'direct invocation cannot bypass the save-first guard');
+ await page.locator('#deepseek-api-key').fill('');assert.equal(await page.locator('#deepseek-test-btn').isEnabled(),true);
+ await page.locator('#deepseek-test-btn').click();await page.waitForFunction(()=>document.getElementById('deepseek-test-btn').disabled);assert.deepEqual(requests,[{}],'test only reads saved settings and never submits a draft secret');
+ await page.locator('#deepseek-api-key').fill('newer-draft');finish();await page.waitForFunction(()=>!deepSeekTesting);assert.equal(await page.locator('#deepseek-test-btn').isDisabled(),true,'completion must keep testing disabled while a newer draft exists');await page.close();
+}
+async function emptyKeywordGroupBrowsing(browser){
+ const reads=[];
+ const page=await pageFor(browser,'search',async(path,request,route)=>{if(path==='/api/messages'){reads.push(new URL(request.url()));await route.fulfill({json:{results:[],total:0,page:1,page_size:20}});return true;}});
+ await page.locator('#find-filters > summary').click();await page.locator('#search-group').evaluate(select=>GroupSelector.setSelected(select,[123,456]));
+ await page.locator('#search-from').fill('2026-10-01');await page.locator('#search-to').fill('2026-10-05');await page.locator('#search-sender').fill('1001');await page.locator('#search-message-type').selectOption('file');
+ await page.locator('#search-form button[type=submit]').click();await page.waitForFunction(()=>document.getElementById('search-count').textContent==='共 0 条归档消息');
+ assert.equal(reads.length,1);assert.deepEqual(reads[0].searchParams.getAll('group_ids'),['123','456']);assert.equal(reads[0].searchParams.get('sender_qq'),'1001');assert.equal(reads[0].searchParams.get('message_type'),'file');assert.equal(reads[0].searchParams.get('date_from'),'2026-10-01');assert.equal(reads[0].searchParams.get('date_to'),'2026-10-05');
+ await page.reload();await page.waitForFunction(()=>document.getElementById('search-count').textContent==='共 0 条归档消息');assert.equal(reads.length,2,'group-only browsing is restored after reload');
+ await page.locator('#search-group').evaluate(select=>GroupSelector.setSelected(select,null));await page.locator('#search-form button[type=submit]').click();assert.equal(reads.length,2,'clearing explicit groups cannot silently widen a saved group browse');assert.equal(await page.locator('#find-validation').isVisible(),true);await page.close();
+}
 async function deepSeekSaveFreezesKey(browser){
  let finish;
  const page=await pageFor(browser,'settings',async(path,request,route)=>{if(path==='/api/ai-settings/key'){await new Promise(resolve=>finish=resolve);await route.fulfill({status:503,json:{detail:'Synthetic failure'}});return true;}});
@@ -140,4 +174,4 @@ async function lateCategorySaveKeepsCurrentRoute(browser){
  await page.locator('[data-settings-section=features]').click();await page.locator('#feature-tasks').check();await page.locator('#features-save').click();await page.locator('[data-settings-section=ai]').click();finish();await page.waitForFunction(()=>!document.getElementById('features-save').disabled);
  assert.equal(new URL(page.url()).search,'?section=ai','a background save must not rewrite the selected category URL');await page.close();
 }
-(async()=>{const browser=await chromium.launch({headless:true});let failures=0;try{for(const test of [dirtyAIRegistration,revertedConnectionDraft,revertedPurposeDraft,revertedUsageLimit,revertedUsageRate,revertedInspectionDraft,inspectionSaveKeepsNewerDraft,settingsPolicyLeaveProtection,storagePolicyLeaveProtection,inspectionLeaveProtection,groupDiscard,groupLateSave,deepSeekSaveFreezesKey,usageRefreshConflict,batchUncheckedValidation,lateCategorySaveKeepsCurrentRoute]){try{await test(browser);console.log('PASS '+test.name);}catch(e){failures++;console.error('FAIL '+test.name+': '+e.message);}}}finally{await browser.close();}process.exitCode=failures?1:0;})().catch(e=>{console.error(e);process.exitCode=1;});
+(async()=>{const browser=await chromium.launch({headless:true});let failures=0;try{for(const test of [dirtyAIRegistration,revertedConnectionDraft,revertedPurposeDraft,revertedUsageLimit,revertedUsageRate,revertedInspectionDraft,inspectionSaveKeepsNewerDraft,settingsPolicyLeaveProtection,storagePolicyLeaveProtection,inspectionLeaveProtection,groupDiscard,groupLateSave,featureSaveFeedbackTracksDraft,deepSeekTestRequiresSavedKey,emptyKeywordGroupBrowsing,deepSeekSaveFreezesKey,usageRefreshConflict,batchUncheckedValidation,lateCategorySaveKeepsCurrentRoute]){try{await test(browser);console.log('PASS '+test.name);}catch(e){failures++;console.error('FAIL '+test.name+': '+e.message);}}}finally{await browser.close();}process.exitCode=failures?1:0;})().catch(e=>{console.error(e);process.exitCode=1;});

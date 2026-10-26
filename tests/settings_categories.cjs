@@ -5,6 +5,7 @@ global.document={getElementById:id=>nodes.get(id)};
 global.savedFeatures={revision:3,catalog:[{key:'tasks',group:'扩展功能'},{key:'auto_daily',group:'自动任务'}],values:{tasks:false,auto_daily:false}};
 global.featureFlags={...savedFeatures.values};global.location={href:''};
 global.history={replaceState(){}};global.setFeatureFormBusy=()=>{};global.setResult=()=>{};global.updateWorkspaceTools=()=>{};global.refreshAutomaticSchedule=()=>{};
+nodes.set('features-result',{dataset:{}});nodes.set('automatic-result',{dataset:{}});
 const calls=[];
 global.api=(method,url,body)=>{calls.push(body);return Promise.resolve({...savedFeatures,revision:4,values:{tasks:false,auto_daily:true}});};
 vm.runInThisContext(source.slice(source.indexOf('  function saveFeatureCategory('),source.indexOf("  document.getElementById('features-form').onsubmit=")));

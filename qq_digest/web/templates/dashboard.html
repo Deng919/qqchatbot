@@ -20,7 +20,7 @@
 <section class="health-strip" aria-live="polite"><span class="health-dot" id="health-dot"></span><strong id="health-service">服务状态读取中</strong><span id="health-sync">最近同步：读取中</span><span id="health-daily">每日摘要：读取中</span><span id="health-job">最近任务：读取中</span><span id="health-send">发送失败：读取中</span></section>
 
 <section id="daily-coverage" class="daily-coverage" aria-label="每日摘要覆盖范围" aria-live="polite">
-  <div class="daily-coverage-heading"><strong id="daily-coverage-title">每日摘要覆盖范围读取中</strong><a href="/reports">查看报告 ↗</a></div>
+  <div class="daily-coverage-heading"><strong id="daily-coverage-title">每日摘要覆盖范围读取中</strong><a id="daily-coverage-report-link" href="/reports">查看报告 ↗</a></div>
   <p id="daily-coverage-counts"></p><ul id="daily-coverage-notes"></ul><p id="daily-coverage-scope" class="header-meta"></p>
 </section>
 <div class="dashboard-grid">
@@ -95,6 +95,9 @@
   }
   function renderDailyCoverage(data) {
     data = data || {};
+    var reportParams=new URLSearchParams({view:'groups',group_id:'',read:'all',report_kind:'all'});
+    if(/^\d{4}-\d{2}-\d{2}$/.test(data.report_date||'')){reportParams.set('date_from',data.report_date);reportParams.set('date_to',data.report_date);}else reportParams.set('all_dates','true');
+    document.getElementById('daily-coverage-report-link').href='/reports?'+reportParams.toString();
     document.getElementById('daily-coverage').dataset.status = data.status || 'unknown';
     document.getElementById('daily-coverage-title').textContent = (data.report_date || '尚未自动生成摘要') + ' · ' + (data.label || '范围无法确认');
     document.getElementById('daily-coverage-counts').textContent = data.participating_groups
