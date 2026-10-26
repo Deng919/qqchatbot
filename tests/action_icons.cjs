@@ -10,6 +10,17 @@ const fs = require('node:fs'), assert = require('node:assert/strict');
     await page.setContent('<meta name="viewport" content="width=device-width,initial-scale=1"><style>.btn{padding:8px;font-size:14px} #clip{overflow:hidden;width:180px;height:90px;margin:0} button{cursor:pointer}</style><div id="clip"><button id="save" type="button" class="btn">收藏</button><button id="read" type="button" class="btn">标为已读</button></div><button class="btn" id="main">生成摘要</button><button class="btn" id="submit" type="submit">删除</button><button class="btn" id="page">下一页</button><dialog><button class="btn" type="button" id="block">屏蔽此人</button></dialog>'+(fs.existsSync(fragment)?fs.readFileSync(fragment,'utf8'):''));
     const save=page.locator('#save');
     await page.waitForTimeout(50);
+    await page.addStyleTag({content:'[hidden], [data-feature-off] {display:none!important}'});
+    await page.evaluate(()=>{for(const [id,attribute] of [['hidden-action','hidden'],['disabled-feature-action','data-feature-off']]){const button=document.createElement('button');button.className='btn';button.id=id;button.textContent='返回之前阅读';button.setAttribute(attribute,'');document.body.appendChild(button);}});
+    for(const [id,attribute] of [['hidden-action','hidden'],['disabled-feature-action','data-feature-off']]){
+      const button=page.locator('#'+id);
+      await page.waitForFunction(id=>!!document.getElementById(id).dataset.actionIcon,id);
+      assert.equal(await button.isVisible(),false,attribute+' must hide a decorated action');
+      await button.evaluate((n,attribute)=>n.removeAttribute(attribute),attribute);
+      assert.equal(await button.isVisible(),true,'removing '+attribute+' restores the action');
+      await button.evaluate((n,attribute)=>n.setAttribute(attribute,''),attribute);
+      assert.equal(await button.isVisible(),false,'adding '+attribute+' hides an already decorated action');
+    }
     assert.equal(await save.getAttribute('aria-label'),'收藏','icon actions need an accessible operation name');
     assert.equal(await save.evaluate(n=>getComputedStyle(n).fontSize),'0px');
     assert.equal(await page.locator('#submit').getAttribute('data-action-icon'),null,'destructive submit retains its wording');
