@@ -108,11 +108,13 @@ class ReportCompletenessService:
                     result["notes"].append(f"{result[count_key]} {text}。")
             if job["status"] in {"failed", "partial_success"} and not result["failed_groups"]:
                 result["notes"].append("本次任务未全部成功，请查看失败处理中心。")
-            limited = any(result[key] for key in ("failed_groups", "no_message_groups",
+            limited = any(result[key] for key in ("failed_groups",
                 "missing_report_groups", "limited_input_groups")) or job["status"] != "success"
             status = "limited" if limited else "unknown" if result["unknown_input_groups"] else "normal"
             result.update(status=status, label={"limited": "日报存在限制", "unknown": "范围无法确认",
                                                "normal": "本次已覆盖"}[status])
+            if status == "normal" and result["no_message_groups"]:
+                result["label"] = f"生成成功，{result['no_message_groups']} 个群无消息跳过"
         self._days[report_date] = result
         return result
 

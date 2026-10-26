@@ -21,7 +21,7 @@
 
 <section id="daily-coverage" class="daily-coverage" aria-label="每日摘要覆盖范围" aria-live="polite">
   <div class="daily-coverage-heading"><strong id="daily-coverage-title">每日摘要覆盖范围读取中</strong><a id="daily-coverage-report-link" href="/reports">查看报告 ↗</a></div>
-  <p id="daily-coverage-counts"></p><ul id="daily-coverage-notes"></ul><p id="daily-coverage-scope" class="header-meta"></p>
+  <p id="daily-coverage-counts"></p><ul id="daily-coverage-notes"></ul>
 </section>
 <div class="dashboard-grid">
   <section class="card">
@@ -104,7 +104,6 @@
       ? '参与 ' + data.participating_groups + ' 个群 · 可读取报告 ' + data.report_groups + ' 个群 · 失败 ' + data.failed_groups + ' 个群 · 无消息跳过 ' + data.no_message_groups + ' 个群' : '尚无可确认的逐群覆盖结果';
     var list = document.getElementById('daily-coverage-notes'); list.textContent = '';
     (data.notes || []).forEach(function(note) { var li = document.createElement('li'); li.textContent = note; list.appendChild(li); });
-    document.getElementById('daily-coverage-scope').textContent = data.scope || '';
   }
 
   function loadStats() {

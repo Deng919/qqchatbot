@@ -165,9 +165,36 @@ def test_quiet_group_is_explained_without_claiming_collection_failure(archived):
     job = archive.start_job("daily_digest", target_date="2026-09-29")
     archive.finish_job(job, "success", group_outcomes={1: "skipped"})
     result = service(archive).daily("2026-09-29")
-    assert result["status"] == "limited"
+    assert result["status"] == "normal"
+    assert result["label"] == "生成成功，1 个群无消息跳过"
     assert result["failed_groups"] == 0
     assert any("无归档消息" in note for note in result["notes"])
+
+
+def test_successful_reports_and_quiet_groups_are_normal(archived):
+    archive, directory = archived
+    write_report(archive, directory, 1)
+    job = archive.start_job("daily_digest", target_date="2026-09-29")
+    archive.finish_job(job, "success", group_outcomes={1: "success", 2: "skipped", 3: "skipped"})
+    result = service(archive).daily("2026-09-29")
+    assert result["status"] == "normal"
+    assert result["label"] == "生成成功，2 个群无消息跳过"
+    assert result["report_groups"] == 1 and result["no_message_groups"] == 2
+    assert result["failed_groups"] == result["missing_report_groups"] == 0
+
+
+@pytest.mark.parametrize("issue,expected", [("missing", "limited"), ("truncated", "limited"), ("unknown", "unknown")])
+def test_quiet_groups_do_not_hide_real_report_problems(archived,issue,expected):
+    archive, directory = archived
+    if issue == "truncated":
+        write_report(archive,directory,1,{"diagnostics":{"source_messages":20,"included_messages":10,"context_truncated":True}})
+    elif issue == "unknown":
+        write_report(archive,directory,1,{"overview":"旧报告"})
+    job=archive.start_job("daily_digest",target_date="2026-09-29")
+    archive.finish_job(job,"success",group_outcomes={1:"success",2:"skipped"})
+    result=service(archive).daily("2026-09-29")
+    assert result["status"]==expected
+    assert "生成成功" not in result["label"]
 
 
 def test_legacy_jobs_and_bad_report_json_are_unknown(archived):
