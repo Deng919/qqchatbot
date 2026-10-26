@@ -75,7 +75,36 @@ def test_reading_endpoints_require_login(reading_client):
     client, _, _ = reading_client
     assert client.get("/api/summary-reading").status_code == 401
     assert client.post("/api/summary-reading/visit").status_code == 401
+    assert client.get("/api/summary-reading/visit").status_code == 401
     assert client.post("/api/summary-reading/read", json={"key": "a" * 64, "read": True}).status_code == 401
+
+
+def test_visit_baseline_read_does_not_advance_the_previous_visit(reading_client, monkeypatch):
+    client, archive, config = reading_client
+    login(client)
+    assert client.get('/api/summary-reading/visit').json()['previous_viewed_at'] is None
+    first=client.post('/api/summary-reading/visit').json()
+    def blocked(*args, **kwargs):
+        raise AssertionError('reading the baseline must not save a visit')
+    monkeypatch.setattr(CatchupService,'visit',blocked)
+    for _ in range(2):
+        result=client.get('/api/summary-reading/visit')
+        assert result.status_code==200
+        assert result.json()['previous_viewed_at']==first['viewed_at']
+
+
+def test_visit_saves_opening_time_not_delayed_write_time(reading_client):
+    client, archive, config = reading_client
+    login(client)
+    opened=(datetime.now(ZoneInfo('UTC'))-timedelta(minutes=2)).isoformat()
+    saved=client.post('/api/summary-reading/visit',json={'viewed_at':opened})
+    assert saved.status_code==200
+    assert saved.json()['viewed_at']==opened
+    earlier=(datetime.fromisoformat(opened)-timedelta(minutes=1)).isoformat()
+    assert client.post('/api/summary-reading/visit',json={'viewed_at':earlier}).json()['viewed_at']==opened
+    assert client.get('/api/summary-reading/visit').json()['previous_viewed_at']==opened
+    for bad in ('2026-01-01T00:00:00',(datetime.now(ZoneInfo('UTC'))+timedelta(days=1)).isoformat()):
+        assert client.post('/api/summary-reading/visit',json={'viewed_at':bad}).status_code==422
 
 
 def test_core_reading_works_with_optional_features_disabled_and_keeps_unread(reading_client, tmp_path):

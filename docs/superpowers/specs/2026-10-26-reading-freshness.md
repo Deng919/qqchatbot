@@ -1,0 +1,13 @@
+# Listing age and reading baseline recovery
+
+Secondhand cards now show relative publication age at the top right beside the category: just now, minutes, hours, days, months or years. This uses the existing original `published_at`, retains the exact footer timestamp, and refreshes visible ages once a minute. Unknown original times display 时间待确认; missing/invalid timestamps display 时间未注明. No extraction timestamp is substituted for publication time.
+
+The reading page formerly acquired its previous-visit cutoff through a write request. The screenshot does not reveal that request's historical HTTP failure, but the code and failure tests confirm that write admission could disable the new-since-opening filter and leave a persistent warning. A new authenticated, read-only GET acquires the cutoff through a database snapshot. The existing POST records the current opening independently with bounded maintenance retries. It carries the server-captured opening timestamp, rather than a later retry execution time; delayed older saves cannot move the stored visit backwards. Naive and future timestamps are rejected.
+
+Baseline acquisition shares an in-flight request and freezes the first acquired cutoff. Restored pages keep their known cutoff if the read fails. A genuinely unavailable cutoff offers a short retry action; recovery dismisses its warning and restores the requested new filter without reloading the page. Unrelated result messages are preserved.
+
+Validation: all 62 frontend scripts passed; 246 related Python tests passed and 1 skipped. Tests cover relative-time boundaries, unknown originals, exact timestamps, live age updates, read-only baseline access, timestamp validation, delayed monotonic saves, duplicate retry clicks, cached restoration, and write failures after a successful read. Independent review found no remaining important issues after timestamp and overlapping-retry findings were fixed.
+
+An isolated rebuilt desktop package verified real GET baseline access while POST registration repeatedly returned maintenance conflicts, cached reload during a read error, fresh-read failure followed by retry, and minute/day/unknown marketplace cards. The age appeared at the top right; exact footer time remained. Desktop and mobile screenshots had no horizontal overflow or page errors.
+
+Evidence: `D:\Cache\QQDigestReadingFreshness-20261026`. Build intermediates: `D:\Cache\QQDigestDesktop`. Release: `D:\Apps\QQDigestDesktop-2026-10-26-ReadingFreshness-Release`, backend identity `2026-10-26-reading-freshness`. Verification matched 119 frozen modules, 56 templates and 2,192 manifest entries. The previous DailyStatus release remains available for rollback.

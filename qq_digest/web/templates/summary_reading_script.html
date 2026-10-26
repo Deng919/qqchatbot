@@ -214,8 +214,24 @@
     }).catch(function(){summaryShowResult('群聊筛选加载失败，请刷新重试。','failed');});
     var navigation=performance.getEntriesByType('navigation')[0],restoreVisit=((history.state&&history.state.qqDigestReading)||(navigation&&navigation.type==='reload'))&&saved.since!==undefined;
     if(restoreVisit)summarySince=saved.since;
-    var newOption=document.getElementById('summary-read-filter').querySelector('option[value="new"]'),waitForVisit=document.getElementById('summary-read-filter').value==='new';newOption.disabled=true;
-    var visit=api('POST','/api/summary-reading/visit',{},{retryBusy:true}).then(function(data){newOption.disabled=false;if(sinceRevision!==summarySinceRevision)return;summarySince=restoreVisit?saved.since:data.previous_viewed_at;summarySave();if(navigationToken!==summaryNavigationToken&&summaryView==='points'&&document.getElementById('summary-read-filter').value==='new')summaryLoadPoints();}).catch(function(){if(sinceRevision!==summarySinceRevision){newOption.disabled=false;return;}if(document.getElementById('summary-read-filter').value==='new')document.getElementById('summary-read-filter').value='all';summaryShowResult('无法读取上次打开时间，请使用全部或未读筛选。','failed');});
+    var newOption=document.getElementById('summary-read-filter').querySelector('option[value="new"]'),waitForVisit=document.getElementById('summary-read-filter').value==='new';newOption.disabled=!restoreVisit;
+    var visitPending=null,visitAcquired=false;
+    function readVisit(){if(visitAcquired)return Promise.resolve(true);if(visitPending)return visitPending;visitPending=api('GET','/api/summary-reading/visit',undefined,{retryBusy:true}).then(function(data){
+      if(sinceRevision!==summarySinceRevision)return false;
+      if(!data||!Object.prototype.hasOwnProperty.call(data,'previous_viewed_at'))throw new Error('上次打开时间响应无效');
+      summarySince=restoreVisit?saved.since:data.previous_viewed_at;visitAcquired=true;newOption.disabled=false;summarySave();
+      // Recording this opening is optional for the current read and may wait for maintenance.
+      api('POST','/api/summary-reading/visit',{viewed_at:data.viewed_at},{retryBusy:true}).catch(function(){});
+      if(document.getElementById('summary-run-message').textContent==='新增筛选暂不可用'){document.getElementById('summary-run-result').hidden=true;document.getElementById('summary-run-actions').textContent='';}
+      if(navigationToken!==summaryNavigationToken&&summaryView==='points'&&document.getElementById('summary-read-filter').value==='new')summaryLoadPoints();return true;
+    }).catch(function(error){
+      if(sinceRevision!==summarySinceRevision){newOption.disabled=false;return false;}
+      if(restoreVisit){visitAcquired=true;newOption.disabled=false;return true;}
+      if(error.status===401)return false;
+      if(document.getElementById('summary-read-filter').value==='new')document.getElementById('summary-read-filter').value='all';summaryShowResult('新增筛选暂不可用','failed');
+      document.getElementById('summary-run-actions').appendChild(summaryButton('重试',function(){if(this.disabled)return;var button=this;button.disabled=true;var reopen=waitForVisit&&document.getElementById('summary-read-filter').value==='all';readVisit().then(function(ready){if(ready&&reopen&&summaryView==='points'){document.getElementById('summary-read-filter').value='new';summaryFilterPoints();}}).finally(function(){button.disabled=false;});}));return false;
+    }).finally(function(){visitPending=null;});return visitPending;}
+    var visit=readVisit();
     return Promise.all([groups,waitForVisit?visit:Promise.resolve()]).then(function(){if(navigationToken!==summaryNavigationToken)return;loadReports();var kind=url.get('kind'),id=Number(url.get('id'));var full=['daily','range'].includes(kind)&&Number.isInteger(id)&&id>0;if(full)viewReport(kind,id);else if(url.get('generate')==='1')openRangeSummary();if(summaryView==='points'&&summaryPointReference)summaryRestorePoint(!full);});
   }
   window.addEventListener('pagehide',summarySave);document.addEventListener('keydown',function(event){if(event.key==='Escape'&&!document.getElementById('summary-source-panel').hidden)summaryCloseSource();});

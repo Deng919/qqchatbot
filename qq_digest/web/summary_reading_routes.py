@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import asyncio
+from datetime import datetime, timezone
 from typing import Literal
 
 from fastapi import Depends, HTTPException, Query, Request
-from pydantic import BaseModel, Field, StrictBool
+from pydantic import AwareDatetime, BaseModel, Field, StrictBool
 
 from ..catchup import CatchupService
 
@@ -14,6 +15,10 @@ from ..catchup import CatchupService
 class SummaryReadPayload(BaseModel):
     key: str = Field(pattern=r"^[0-9a-f]{64}$")
     read: StrictBool
+
+
+class SummaryVisitPayload(BaseModel):
+    viewed_at: AwareDatetime | None = None
 
 
 class CatchupReadPayload(BaseModel):
@@ -53,9 +58,19 @@ def add_summary_reading_routes(app, *, archive, config, require_login):
         except ValueError as exc:
             raise HTTPException(422, detail=str(exc)) from exc
 
+    @app.get("/api/summary-reading/visit", dependencies=[Depends(require_login)])
+    async def visit_baseline():
+        def read():
+            with archive.read_snapshot() as reader:
+                return service(reader).last_visit()
+        return await asyncio.to_thread(read)
+
     @app.post("/api/summary-reading/visit", dependencies=[Depends(require_login)])
-    async def visit():
-        return service().visit()
+    async def visit(payload: SummaryVisitPayload | None = None):
+        opened = payload.viewed_at if payload else None
+        if opened and opened > datetime.now(timezone.utc):
+            raise HTTPException(422, detail="打开时间不能晚于当前时间")
+        return service().visit(now=opened)
 
     @app.post("/api/summary-reading/read", dependencies=[Depends(require_login)])
     async def read(payload: SummaryReadPayload):

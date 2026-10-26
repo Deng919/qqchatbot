@@ -34,12 +34,21 @@ class CatchupService:
         self.timezone = ZoneInfo(timezone_name)
         self.timezone_name = timezone_name
 
+    def last_visit(self) -> dict[str, str | None]:
+        row = self.archive.connection.execute(
+            "SELECT last_viewed_at FROM catchup_state WHERE state_id=1"
+        ).fetchone()
+        return {"previous_viewed_at": row["last_viewed_at"] if row else None,
+                "viewed_at": self._now(None).isoformat()}
+
     def visit(self, *, now: datetime | None = None) -> dict[str, str | None]:
         current = self._now(now).isoformat()
         with self.archive.transaction():
             row = self.archive.connection.execute(
                 "SELECT last_viewed_at FROM catchup_state WHERE state_id=1"
             ).fetchone()
+            if row and self._cutoff(row["last_viewed_at"]) > self._cutoff(current):
+                current = row["last_viewed_at"]
             self.archive.connection.execute(
                 "INSERT INTO catchup_state(state_id,last_viewed_at) VALUES (1,?) "
                 "ON CONFLICT(state_id) DO UPDATE SET last_viewed_at=excluded.last_viewed_at",

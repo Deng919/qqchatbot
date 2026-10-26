@@ -97,15 +97,15 @@ const settle=()=>new Promise(setImmediate);
   assert.equal(new URL('http://localhost'+requests.at(-1).url).searchParams.get('all_dates'),'true');
   assert.equal(summaryPointPage,2);assert.equal(summaryExpanded['group:11'],true,'restoration retains history pagination and expansion');
   global.sessionStorage.getItem=()=>JSON.stringify({view:'points',group:'22',from:'',to:'',previousReading:{view:'groups',group:'22',from:'',to:'',kind:'all',read:'all',pointPage:1,reportPage:1},generatedReading:{group:'22',from:'',to:'',keys:['daily:99']}});
-  const staleInventory=summaryInit(),staleGroups=requests.findLast(r=>r.url==='/api/groups?scope=summary'),staleVisit=requests.at(-1),beforeEmpty=requests.length;
+  const staleInventory=summaryInit(),staleGroups=requests.findLast(r=>r.url==='/api/groups?scope=summary'),staleVisit=requests.at(-1),beforeEmpty=requests.filter(r=>!r.url.endsWith('/visit')).length;
   staleGroups.resolve({groups:[{group_id:11,name:'群11'}]});staleVisit.resolve({previous_viewed_at:null});await staleInventory;await settle();
   assert.equal(node('report-group').value,'__empty__','restored marketplace-only selection never widens to all summary groups');
-  assert.equal(requests.length,beforeEmpty,'unavailable selection renders locally without failed requests or automatic toasts');
+  assert.equal(requests.filter(r=>!r.url.endsWith('/visit')).length,beforeEmpty,'unavailable selection renders locally without failed requests or automatic toasts');
   assert.equal(node('report-group').options.some(option=>String(option.value)==='22'),false,'stale group options disappear from the reading selector');
   assert.equal(summaryPreviousReading.group,'__empty__');assert.equal(summaryGeneratedReading.group,'__empty__');assert.deepEqual(summaryGeneratedReading.keys,['daily:99'],'inventory normalization keeps generated report keys frozen');
-  summaryReturnToReading();assert.equal(node('report-group').value,'__empty__');assert.equal(requests.length,beforeEmpty,'return to an unavailable saved selection remains local and empty');
+  summaryReturnToReading();assert.equal(node('report-group').value,'__empty__');assert.equal(requests.filter(r=>!r.url.endsWith('/visit')).length,beforeEmpty,'return to an unavailable saved selection remains local and empty');
   const emptyPointToken=summaryPointToken,emptyReportToken=reportLoadToken;
-  for(const view of ['points','groups','manage']){summarySetView(view);assert.equal(requests.length,beforeEmpty,'empty selections never reach list APIs');}
+  for(const view of ['points','groups','manage']){summarySetView(view);assert.equal(requests.filter(r=>!r.url.endsWith('/visit')).length,beforeEmpty,'empty selections never reach list APIs');}
   assert.ok(summaryPointToken>emptyPointToken&&reportLoadToken>emptyReportToken,'empty state invalidates pending point and report responses');
   const emptyBox=node('summary-groups').children.at(-1),chooseAll=emptyBox.children.find(child=>child.textContent==='选择全部摘要群');
   assert.ok(chooseAll,'unavailable selection offers an explicit recovery action');chooseAll.onclick();
