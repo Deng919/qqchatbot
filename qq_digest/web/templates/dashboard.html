@@ -5,22 +5,22 @@
 {% block actions %}<a class="btn btn-primary" href="/reports?generate=1">生成摘要</a>{% endblock %}
 {% block content %}
 <section class="metrics" aria-label="归档统计">
-  <a class="metric metric-link" href="/groups" aria-label="查看已启用群组"><div class="stat" id="stat-groups" data-refresh-region="content">--</div><div class="stat-label">已启用群组 <span aria-hidden="true">↗</span></div></a>
-  <a class="metric metric-link" href="/search?kind=message" aria-label="搜索归档消息"><div class="stat" id="stat-messages" data-refresh-region="content">--</div><div class="stat-label">归档消息 <span aria-hidden="true">↗</span></div></a>
-  <a class="metric metric-link" href="/candidates" aria-label="查看待审核重点" {% if not features.get('review',true) %}data-feature-off{% endif %}><div class="stat" id="stat-pending" data-refresh-region="content">--</div><div class="stat-label">待审核重点 <span aria-hidden="true">↗</span></div></a>
-  <a class="metric metric-link" href="/reports" aria-label="查看已生成摘要"><div class="stat" id="stat-reports" data-refresh-region="content">--</div><div class="stat-label">已生成摘要 <span aria-hidden="true">↗</span></div></a>
+  <a class="metric metric-link" href="/groups" aria-label="查看已启用群组"><div class="stat" id="stat-groups" data-refresh-region="content">--</div><div class="stat-label">已启用群组 </div></a>
+  <a class="metric metric-link" href="/search?kind=message" aria-label="搜索归档消息"><div class="stat" id="stat-messages" data-refresh-region="content">--</div><div class="stat-label">归档消息 </div></a>
+  <a class="metric metric-link" href="/candidates" aria-label="查看待审核重点" {% if not features.get('review',true) %}data-feature-off{% endif %}><div class="stat" id="stat-pending" data-refresh-region="content">--</div><div class="stat-label">待审核重点 </div></a>
+  <a class="metric metric-link" href="/reports" aria-label="查看已生成摘要"><div class="stat" id="stat-reports" data-refresh-region="content">--</div><div class="stat-label">已生成摘要 </div></a>
 </section>
 
 <nav class="overview-links" aria-label="常用操作">
-{% if features.get('failures',true) %}  <a href="/failures"><span><strong>异常处理</strong><small>查看原因、忽略或重试</small></span><span aria-hidden="true">↗</span></a>{% endif %}
-  <a href="/search"><span><strong>搜索归档</strong><small>查找消息、摘要与知识</small></span><span aria-hidden="true">↗</span></a>
-  <a href="/reports"><span><strong>阅读摘要</strong><small>直接阅读各群要点，或按群查看完整摘要</small></span><span aria-hidden="true">↗</span></a>
-{% if features.get('review',true) %}  <a href="/candidates"><span><strong>处理审核</strong><small>整理待确认的重点信息</small></span><span aria-hidden="true">↗</span></a>{% endif %}
+{% if features.get('failures',true) %}  <a href="/failures"><span><strong>异常处理</strong><small>查看原因、忽略或重试</small></span></a>{% endif %}
+  <a href="/search"><span><strong>搜索归档</strong><small>查找消息、摘要与知识</small></span></a>
+  <a href="/reports"><span><strong>阅读摘要</strong><small>直接阅读各群要点，或按群查看完整摘要</small></span></a>
+{% if features.get('review',true) %}  <a href="/candidates"><span><strong>处理审核</strong><small>整理待确认的重点信息</small></span></a>{% endif %}
 </nav>
 <section class="health-strip" aria-live="polite"><span class="health-dot" id="health-dot"></span><strong id="health-service" data-refresh-region="content">服务状态读取中</strong><span id="health-sync" data-refresh-region="content">最近同步：读取中</span><span id="health-daily" data-refresh-region="content">每日摘要：读取中</span><span id="health-job" data-refresh-region="content">最近任务：读取中</span><span id="health-send" data-refresh-region="content">发送失败：读取中</span></section>
 
 <section id="daily-coverage" data-refresh-region="content" class="daily-coverage" aria-label="每日摘要覆盖范围" aria-live="polite">
-  <div class="daily-coverage-heading"><strong id="daily-coverage-title">每日摘要覆盖范围读取中</strong><a id="daily-coverage-report-link" href="/reports">查看报告 ↗</a></div>
+  <div class="daily-coverage-heading"><strong id="daily-coverage-title">每日摘要覆盖范围读取中</strong><a id="daily-coverage-report-link" href="/reports">查看报告</a></div>
   <p id="daily-coverage-counts"></p><ul id="daily-coverage-notes"></ul>
 </section>
 <div class="dashboard-grid">

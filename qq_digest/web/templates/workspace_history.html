@@ -1,14 +1,13 @@
 <style>
   .page-heading { display:flex;align-items:center;gap:12px;min-width:0; }
   .workspace-history { display:flex;gap:3px;flex-shrink:0; }
-  .workspace-history-button { display:grid;place-items:center;width:32px;min-height:34px;padding:0;border:1px solid transparent;border-radius:5px;background:transparent;color:var(--text-soft);cursor:pointer; }
+  .workspace-history-button { display:grid;place-items:center;min-width:42px;min-height:34px;padding:0 7px;border:1px solid transparent;border-radius:5px;background:transparent;color:var(--text-soft);font-size:12px;cursor:pointer; }
   .workspace-history-button:hover:not(:disabled) { background:var(--surface-strong);border-color:var(--border-strong);color:var(--text); }
   .workspace-history-button:disabled { opacity:.35;cursor:default; }
-  .workspace-history-button svg { width:18px;height:18px; }
 </style>
 <nav class="workspace-history" aria-label="页面历史">
-  <button id="workspace-back" class="workspace-history-button" type="button" aria-label="后退" disabled onclick="workspaceGo(-1)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 12H5m7-7-7 7 7 7"/></svg></button>
-  <button id="workspace-forward" class="workspace-history-button" type="button" aria-label="前进" disabled onclick="workspaceGo(1)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14m-7-7 7 7-7 7"/></svg></button>
+  <button id="workspace-back" class="workspace-history-button" type="button" aria-label="后退" disabled onclick="workspaceGo(-1)">后退</button>
+  <button id="workspace-forward" class="workspace-history-button" type="button" aria-label="前进" disabled onclick="workspaceGo(1)">前进</button>
 </nav>
 <script>
   var workspaceNavigationApproved=false;

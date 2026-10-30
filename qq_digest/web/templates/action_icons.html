@@ -81,7 +81,7 @@
   group('close','关闭','关闭');group('book','整理成资料','整理成资料');
   group('restore','重试','重试|重试读取');
   group('back','上一页','上一页|较新版本');group('next','下一页','下一页|较旧版本');
-  group('back','返回','← 返回列表|返回阅读|返回资料列表|返回之前阅读|← 返回摘要阅读');
+  group('back','返回','返回列表|返回阅读|返回资料列表|返回之前阅读|返回摘要阅读');
   group('close','关闭','关闭保存窗口');group('up','收起','收起|收起，继续阅读');
   group('refresh','刷新','刷新用量|重新载入连接设置|刷新占用|重试 Windows 通知');
   group('restore','重置','清除筛选|清空筛选|重置为近七天');
@@ -102,7 +102,7 @@
   labelled('block','屏蔽此人|屏蔽原发布人','danger');labelled('block','屏蔽名单');
   labelled('restore','恢复显示|解除屏蔽|重试|重试读取|清除筛选|清空筛选|重置为近七天');
   labelled('check','标为已读');labelled('unread','标为未读');
-  labelled('back','← 返回列表|返回阅读|返回资料列表|返回之前阅读|← 返回摘要阅读');
+  labelled('back','返回列表|返回阅读|返回资料列表|返回之前阅读|返回摘要阅读');
   var selector='button.btn,a.btn,.global-nav a,#workspace-tools-area a,.section-back',tip=null,active=null;
   var navIcons={'摘要':'book','阅读摘要':'book','查找':'search','群聊':'groups','设置':'settings','二手信息':'archive','收藏':'star','提醒':'bell','功能开关':'settings'};
   function disclosure(summary){
@@ -115,6 +115,7 @@
   function decorate(button){
     var label=button.textContent.trim(),entry=names[label];
     if(button.matches('.global-nav a,#workspace-tools-area a,.section-back'))entry={icon:navIcons[label]||'back',caption:label,labelled:true,tone:''};
+    if(entry&&(entry.icon==='back'||entry.icon==='next'))entry=null;
     if(!entry&&/^(?:查看原消息|原消息|来源) \d+$/.test(label))entry={icon:'eye',caption:label,tone:'',labelled:true};
     if(!entry&&/^屏蔽(?:原发布人|转发人) \d+$/.test(label))entry={icon:'block',caption:label.startsWith('屏蔽转发人')?'屏蔽转发人':'屏蔽发布人',tone:'danger',labelled:true};
     if(button.closest('#find-recent'))entry=null;

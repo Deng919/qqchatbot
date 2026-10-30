@@ -102,7 +102,7 @@
         var color = group.status === 'failed' ? 'badge-red' : group.missing_count ? 'badge-orange' : group.status === 'unchecked' || !group.source_count ? 'badge-dim' : 'badge-green';
         var days = group.missing_days.map(function(day) {
           var query = new URLSearchParams({group_id:String(group.group_id),start:day.date,end:day.date,repair:'1'});
-          return '<a href="/collect?' + escapeHtml(query.toString()) + '">' + escapeHtml(day.date) + ' · 补采 ' + formatNumber(day.count) + ' 条 ↗</a>';
+          return '<a href="/collect?' + escapeHtml(query.toString()) + '">' + escapeHtml(day.date) + ' · 补采 ' + formatNumber(day.count) + ' 条</a>';
         }).join('');
         return '<tr><td data-label="群"><strong>' + escapeHtml(group.group_name) + '</strong><div class="inspection-note">' + group.group_id + '</div></td>'
           + '<td data-label="状态"><span class="badge ' + color + '">' + escapeHtml(group.label) + '</span>'
