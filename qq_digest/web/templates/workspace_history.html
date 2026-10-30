@@ -14,6 +14,7 @@
   var workspaceNavigationApproved=false;
   function workspaceHasUnsaved(){return !document.dispatchEvent(new Event('qq-digest-check-unsaved',{cancelable:true}));}
   function workspaceHistoryTarget(step) {
+    if(window.qqDesktopPage)return window.qqDesktopPage.target(step);
     if(!window.navigation)return null;
     var entries=navigation.entries(),at=entries.findIndex(function(entry){return entry.key===navigation.currentEntry.key;}),entry=entries[at+step];
     if(!entry)return null;
@@ -30,7 +31,7 @@
     if(state.qqDigestReading&&typeof summaryScrollPosition==='function')state.qqDigestReading=Object.assign({},state.qqDigestReading,{scroll:summaryScrollPosition()});
     history.replaceState(state,'',location.href);history.pushState(state,'',location.href);
   }
-  if(window.navigation){
+  if(!window.qqDesktopPage&&window.navigation){
     navigation.addEventListener('navigate',function(event){
       if(event.navigationType==='replace'||event.hashChange||event.downloadRequest||window.workspaceHistoryRestoring||workspaceNavigationApproved||!event.cancelable)return;
       if(workspaceHasUnsaved()&&!confirm('有未保存的修改，确定离开并放弃这些修改？')){event.preventDefault();return;}
@@ -39,10 +40,11 @@
     navigation.addEventListener('navigateerror',function(){if(!window.workspaceHistoryRestoring)workspaceNavigationApproved=false;});
   }
   window.addEventListener('beforeunload',function(event){
+    if(window.qqDesktopPage)return;
     if(workspaceNavigationApproved||window.workspaceHistoryRestoring){workspaceNavigationApproved=false;return;}
     if(workspaceHasUnsaved()){event.preventDefault();event.returnValue='';}
   });
-  if(window.navigation)navigation.addEventListener('currententrychange',function(event){
+  if(!window.qqDesktopPage&&window.navigation)navigation.addEventListener('currententrychange',function(event){
     if(event.navigationType==='traverse'&&event.from.sameDocument){window.workspaceHistoryRestoring=true;location.reload();return;}
     workspaceHistoryUpdate();
   });

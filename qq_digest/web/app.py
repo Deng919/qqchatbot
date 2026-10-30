@@ -470,6 +470,8 @@ def create_app(
     app.state.knowledge = knowledge
     app.state.password_hash = password_hash
     app.state.cookie = cookie
+    from .desktop_workspace import add_desktop_workspace_route
+    add_desktop_workspace_route(app, templates=templates)
     if desktop_login:
         from .desktop_session import add_desktop_session_routes
         add_desktop_session_routes(app, session_secret)

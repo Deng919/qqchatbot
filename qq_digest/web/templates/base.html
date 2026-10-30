@@ -6,6 +6,7 @@
   <meta name="description" content="QQ 群消息采集、摘要与重点信息审核工具">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='4' fill='%23176f65'/><path d='M8 8h16v3H8zm0 6h12v3H8zm0 6h8v3H8z' fill='white'/></svg>">
   <title>{% block title %}群聊简报{% endblock %}</title>
+  {% include "desktop_page_bridge.html" %}
   <style>
     :root {
       --bg: #f2f3f0;
@@ -485,6 +486,7 @@
                 }
                 var error=new Error(detail || ('请求失败（' + response.status + '）'));error.status=response.status;if(response.status===409&&!options.retryBusy)toast(error.message,'error');throw error;
               }
+              if(window.qqDesktopPage&&method!=='GET')window.qqDesktopPage.changed(url,data);
               return data;
             });
           });}
@@ -532,6 +534,14 @@
     </div>
   </main>
 <script>
+  window.addEventListener('qq-digest-workspace-refresh',function(){
+    // Refresh changed data through the page's existing loaders, keeping its living controls and dialogs.
+    if(typeof bookmarksLoad==='function')bookmarksLoad();
+    else if(typeof knowledgeLoad==='function')knowledgeLoad();
+    else if(typeof marketInitialLoad==='function')marketInitialLoad();
+    else if(typeof summaryRefreshGroups==='function')summaryRefreshGroups().then(function(){if(!summaryDetailActive){if(summaryView==='points')summaryLoadPoints(true);else loadReports();}});
+    else if(typeof loadGroups==='function')loadGroups();
+  });
   // Reauthenticate in place so unsaved forms and their original revisions survive.
   var SessionLogin={dialog:null,open:function(){
     if(!this.dialog){

@@ -189,6 +189,19 @@
   }
   function summaryReadDailyResults(data) { closeReport();document.getElementById('summary-read-filter').value='all';document.getElementById('report-group').value='';var day=data.report_date;if(/^\d{4}-\d{2}-\d{2}$/.test(day||'')){document.getElementById('report-from').value=day;document.getElementById('report-to').value=day;refreshDateHints();}else{var dates=recentWeekDates();document.getElementById('report-from').value=dates.start;document.getElementById('report-to').value=dates.end;refreshDateHints();}summarySetView('points');filterReports();document.getElementById('summary-points').scrollIntoView({block:'start',behavior:'instant'}); }
   function summaryReadRangeResults(start,end,groups,keys) { if(!Array.isArray(keys)||!keys.length||keys.some(function(key){return !/^(daily|range):[1-9][0-9]*$/.test(key);})){summaryShowResult('本次摘要标识不可用，请从运行记录核对。','failed');return;} var before=summaryValues();if(!summaryPreviousReading||!summaryGeneratedReading||before.group!==summaryGeneratedReading.group||before.from!==summaryGeneratedReading.from||before.to!==summaryGeneratedReading.to){summaryPreviousReading=JSON.parse(JSON.stringify(before));}summaryGeneratedReading={group:groups.join(','),from:start,to:end,keys:Array.from(new Set(keys))};document.getElementById('report-kind').value='all';document.getElementById('summary-read-filter').value='all';document.getElementById('report-from').value=start;document.getElementById('report-to').value=end;summarySelectGroups(groups.map(String));summaryView='points';refreshDateHints();filterReports(true);closeRangeSummary(); }
+  function summaryRefreshGroups(){
+    return api('GET','/api/groups?scope=summary').then(function(data){
+      var select=document.getElementById('report-group'),current=select.value,eligible=new Set(data.groups.map(function(g){return String(g.group_id);}));
+      function normalizeGroup(value){if(!value)return '';var selected=value.split(',').filter(function(id){return eligible.has(id);});return selected.length?selected.join(','):'__empty__';}
+      Array.from(select.options).forEach(function(option){if(option.value&&option.value!=='__empty__'&&String(option.value).split(',').some(function(id){return !eligible.has(id);}))option.remove();});
+      data.groups.forEach(function(g){var option=Array.from(select.options).find(function(option){return option.value===String(g.group_id);});if(option)option.textContent=g.name;else{option=summaryNode('option','',g.name);option.value=String(g.group_id);select.appendChild(option);}});
+      current=normalizeGroup(current);summarySelectGroups(current?current.split(','):[]);
+      if(summaryPreviousReading)summaryPreviousReading.group=normalizeGroup(summaryPreviousReading.group);
+      if(summaryGeneratedReading)summaryGeneratedReading.group=normalizeGroup(summaryGeneratedReading.group);
+      summaryApplyView();summarySave();
+      if(typeof inboxRenderGroups==='function')inboxRenderGroups(data.groups);
+    }).catch(function(){summaryShowResult('群聊筛选加载失败，请刷新重试。','failed');});
+  }
   function summaryInit() {
     try{summarySaved=JSON.parse(sessionStorage.getItem(summaryStorageKey)||'null');}catch(e){}
     var saved=(history.state&&history.state.qqDigestReading)||summarySaved||{},url=new URLSearchParams(location.search),dates=recentWeekDates(),navigationToken=summaryNavigationToken,sinceRevision=summarySinceRevision;
@@ -201,17 +214,7 @@
     var group=url.has('group_ids')?url.getAll('group_ids').join(','):url.has('group_id')?url.get('group_id'):saved.group||'';summarySelectGroups(group?group.split(','):[]);
     if(summaryPointReference){var scope=summaryValues(),differentScope=summaryView!=='points'||['group','from','to','kind','read'].some(function(key){return String(scope[key]||'')!==String(saved[key]||'');}),differentReport=url.has('kind')&&(url.get('kind')!==summaryPointReference.report_kind||Number(url.get('id'))!==summaryPointReference.report_id);if(differentScope||differentReport)summaryPointReference=null;}
     refreshDateHints();summaryApplyView();
-    var groups=api('GET','/api/groups?scope=summary').then(function(data){
-      var select=document.getElementById('report-group'),current=select.value,eligible=new Set(data.groups.map(function(g){return String(g.group_id);}));
-      function normalizeGroup(value){if(!value)return '';var selected=value.split(',').filter(function(id){return eligible.has(id);});return selected.length?selected.join(','):'__empty__';}
-      Array.from(select.options).forEach(function(option){if(option.value&&option.value!=='__empty__'&&String(option.value).split(',').some(function(id){return !eligible.has(id);}))option.remove();});
-      data.groups.forEach(function(g){var option=Array.from(select.options).find(function(option){return option.value===String(g.group_id);});if(option)option.textContent=g.name;else{option=summaryNode('option','',g.name);option.value=String(g.group_id);select.appendChild(option);}});
-      current=normalizeGroup(current);summarySelectGroups(current?current.split(','):[]);
-      if(summaryPreviousReading)summaryPreviousReading.group=normalizeGroup(summaryPreviousReading.group);
-      if(summaryGeneratedReading)summaryGeneratedReading.group=normalizeGroup(summaryGeneratedReading.group);
-      summaryApplyView();summarySave();
-      if(typeof inboxRenderGroups==='function')inboxRenderGroups(data.groups);
-    }).catch(function(){summaryShowResult('群聊筛选加载失败，请刷新重试。','failed');});
+    var groups=summaryRefreshGroups();
     var navigation=performance.getEntriesByType('navigation')[0],restoreVisit=((history.state&&history.state.qqDigestReading)||(navigation&&navigation.type==='reload'))&&saved.since!==undefined;
     if(restoreVisit)summarySince=saved.since;
     var newOption=document.getElementById('summary-read-filter').querySelector('option[value="new"]'),waitForVisit=document.getElementById('summary-read-filter').value==='new';newOption.disabled=!restoreVisit;
@@ -234,6 +237,7 @@
     var visit=readVisit();
     return Promise.all([groups,waitForVisit?visit:Promise.resolve()]).then(function(){if(navigationToken!==summaryNavigationToken)return;loadReports();var kind=url.get('kind'),id=Number(url.get('id'));var full=['daily','range'].includes(kind)&&Number.isInteger(id)&&id>0;if(full)viewReport(kind,id);else if(url.get('generate')==='1')openRangeSummary();if(summaryView==='points'&&summaryPointReference)summaryRestorePoint(!full);});
   }
+  window.addEventListener('qq-digest-workspace-restore',function(){summaryCancelDetail();summarySinceRevision++;summaryInit();});
   window.addEventListener('pagehide',summarySave);document.addEventListener('keydown',function(event){if(event.key==='Escape'&&!document.getElementById('summary-source-panel').hidden)summaryCloseSource();});
   summaryInit();
 </script>

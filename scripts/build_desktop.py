@@ -16,6 +16,7 @@ sys.path.insert(0, str(PROJECT))
 CACHE = Path(r"D:\Cache\QQDigestDesktop")
 RELEASE = Path(r"D:\Apps\QQDigestDesktop")
 TEMPLATES = (
+    "desktop_workspace.html", "desktop_page_bridge.html",
     "base.html", "appearance.html", "appearance_control.html", "workspace_history.html", "candidates.html", "collect.html",
     "dashboard.html", "failures.html", "groups.html", "login.html", "reports.html", "search.html",
     "settings.html", "summary_reading_controls.html", "summary_reading_style.html",

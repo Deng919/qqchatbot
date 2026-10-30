@@ -1,0 +1,6 @@
+<script>
+// The ordinary web pages also run independently; only the desktop host installs this bridge.
+(function(){
+  try { if(window.parent!==window&&window.parent.QQDesktopNavigation)window.qqDesktopPage=window.parent.QQDesktopNavigation.attach(window); } catch(error) {}
+})();
+</script>

@@ -48,7 +48,7 @@ START_PAGE = """<!doctype html><html lang="zh-CN"><meta charset="utf-8">
 (function(){
   var token=location.hash.slice(1);history.replaceState(null,'','/desktop-start');
   fetch('/api/desktop-session',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:token})})
-    .then(function(response){if(!response.ok)throw new Error('session');location.replace('/reports');})
+    .then(function(response){if(!response.ok)throw new Error('session');location.replace('/desktop-workspace');})
     .catch(function(){document.getElementById('status').textContent='桌面会话未能建立，请重新打开程序。';document.getElementById('login').hidden=false;});
 })();
 </script></html>"""
