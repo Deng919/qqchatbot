@@ -21,7 +21,7 @@ TEMPLATES = (
     "dashboard.html", "failures.html", "groups.html", "login.html", "reports.html", "search.html",
     "settings.html", "summary_reading_controls.html", "summary_reading_style.html",
     "summary_reading_script.html",
-    "inbox_workspace_style.html", "inbox_reading_script.html",
+    "inbox_workspace_style.html", "inbox_reading_script.html", "summary_deck_motion.html",
     "secondhand.html", "secondhand_script.html",
     "summary_generation_script.html",
     "summary_progress_script.html",

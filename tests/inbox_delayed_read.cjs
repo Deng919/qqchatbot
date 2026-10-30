@@ -1,9 +1,12 @@
 const fs=require('fs'),vm=require('vm'),assert=require('node:assert/strict');
 const nodes=new Map(),requests=[];
 function make(){const classes=new Set();return {children:[],events:{},dataset:{},hidden:false,value:'',open:false,scrollTop:0,isConnected:true,classList:{toggle(k,v){if(v===undefined)v=!classes.has(k);v?classes.add(k):classes.delete(k);return v;}},appendChild(n){n.parentElement=this;this.children.push(n);return n;},remove(){if(this.parentElement)this.parentElement.children=this.parentElement.children.filter(n=>n!==this);},addEventListener(k,fn){this.events[k]=fn;},setAttribute(){},removeAttribute(){},focus(){},set textContent(v){this._text=String(v);this.children=[];},get textContent(){return (this._text||'')+this.children.map(n=>n.textContent).join('');}};}
+const deckNode=require('./helpers/deck_dom.cjs'),plainMake=make;make=()=>deckNode(plainMake());
 const n=id=>{if(!nodes.has(id))nodes.set(id,make());return nodes.get(id);},settle=()=>new Promise(setImmediate),find=(node,p)=>p(node)?node:node.children.map(c=>find(c,p)).find(Boolean);
 Object.assign(global,{document:{getElementById:n,createElement:make,querySelectorAll:()=>[],addEventListener(){}},window:{scrollY:0,scrollTo(){},matchMedia:()=>({matches:false}),addEventListener(){}},requestAnimationFrame:fn=>fn(),recentWeekDates:()=>({start:'2026-10-19',end:'2026-10-20'}),reportPage:1,closeReport(){},summaryOpenSource(){},viewReport(){},appendBookmarkAction(){},api:(method,url,body)=>new Promise((resolve,reject)=>requests.push({method,url,body,resolve,reject}))});
 vm.runInThisContext(fs.readFileSync('qq_digest/web/templates/summary_reading_script.html','utf8').replace(/<\/?script>/g,'').replace('  summaryInit();',''));
+document.removeEventListener=()=>{};
+vm.runInThisContext(fs.readFileSync('qq_digest/web/templates/summary_deck_motion.html','utf8').replace(/<\/?script>/g,''));
 vm.runInThisContext(fs.readFileSync('qq_digest/web/templates/inbox_reading_script.html','utf8').replace(/<\/?script>/g,''));
 summarySave=()=>{};summaryShowResult=()=>{};n('inbox-point-detail').parentElement=make();n('report-from').value='2026-10-19';n('report-to').value='2026-10-20';
 const a={key:'a',text:'第一条：正文',group_id:11,group_name:'研发群',section:'讨论',report_id:5,report_kind:'daily',date_label:'2026-10-20',read:false,status:'legacy',source_ids:[]},b={...a,key:'b',text:'第二条：正文'};

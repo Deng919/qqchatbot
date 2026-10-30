@@ -34,20 +34,34 @@ if(!url)throw new Error('Usage: node tests/desktop_detail_motion.cjs <isolated-t
   await reports.evaluate(()=>{
    summaryCancelDetail();summaryView='points';summaryApplyView();summaryExpanded={};const original=api;
    api=function(method,url,payload){if(method==='GET'&&url.startsWith('/api/summary-reading?')){const id=new URLSearchParams(url.split('?')[1]).get('group_id');return Promise.resolve({page:1,total:6,page_size:30,items:Array.from({length:6},(_,i)=>({key:'motion-'+id+'-'+i,group_id:Number(id),group_name:'动画测试群',text:'讨论标题：用于检验卡片向下展开的正文。',section:'讨论',report_kind:'daily',report_id:1,report_date:'2026-10-30',date_label:'2026-10-30',read:true,status:'legacy',source_ids:[]}))});}return original(method,url,payload);};
-   inboxRenderDashboard({total:6,point_total:36,unread:0,items:Array.from({length:6},(_,i)=>({group_id:700+i,group_name:'动画测试群 '+(i+1),total:6,unread:0,report_count:1,preview:['卡片应保持原来的列和顶部位置。']}))});
+   window.motionDashboardData={total:6,point_total:36,unread:0,items:Array.from({length:6},(_,i)=>({group_id:700+i,group_name:'动画测试群 '+(i+1),total:6,unread:0,report_count:1,preview:['卡片应保持原来的列和顶部位置。']}))};inboxRenderDashboard(motionDashboardData);
   });
   for(const index of [1,2]){
    const card=reports.locator('.summary-group-stack').nth(index),cover=card.locator('summary'),before=await cover.boundingBox();
    await cover.click();await page.waitForTimeout(35);const after=await cover.boundingBox();
    assert.ok(Math.abs(after.x-before.x)<2&&Math.abs(after.y-before.y)<2,'card '+(index+1)+' expands below its original cover without moving to another row: '+JSON.stringify({before,after}));
-   const samples=await card.evaluate(n=>new Promise(resolve=>{const values=[],start=performance.now();function sample(){values.push(n.getBoundingClientRect().height);if(performance.now()-start<420)requestAnimationFrame(sample);else resolve(values);}sample();}));
-   assert.ok(new Set(samples.map(Math.round)).size>=4,'opening has intermediate heights rather than an instant layout jump');
-   assert.ok(samples.at(-1)-samples[0]>100,'content expands downward');
-   assert.ok(await card.evaluate(n=>Math.abs(parseFloat(getComputedStyle(n,'::details-content').blockSize)-n.querySelector('.summary-group-content').getBoundingClientRect().height)<2),'loaded content is fully revealed');
+   const drawer=reports.locator('.summary-deck-drawer');await drawer.waitFor();
+   assert.ok(await reports.locator('.summary-deck-flight').count()>=3,'notes visibly pull out of the selected stack');
+   await page.waitForTimeout(780);const positions=await drawer.locator('.inbox-row').evaluateAll(nodes=>nodes.slice(0,3).map(node=>{const r=node.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width};}));
+   assert.equal(positions.length,3);assert.ok(positions[0].x<positions[1].x&&positions[1].x<positions[2].x,'notes spread across the full next row');
+   assert.ok(positions.every(box=>box.y>=before.y+before.height),'notes land below the cover row');assert.ok(Math.max(...positions.map(box=>box.y))-Math.min(...positions.map(box=>box.y))<2,'notes share the same full row');
    if(index===1)await capture(page,'desktop-expanded-card.png');
-   await cover.click();const closing=await card.evaluate(n=>new Promise(resolve=>{const values=[],start=performance.now();function sample(){values.push(n.getBoundingClientRect().height);if(performance.now()-start<420)requestAnimationFrame(sample);else resolve(values);}sample();}));
-   assert.ok(new Set(closing.map(Math.round)).size>=4,'closing also collapses progressively');
+   await cover.click();await page.waitForTimeout(480);assert.equal(await drawer.count(),0,'collapse removes the full-width row');assert.equal(await reports.locator('.summary-deck-flight').count(),0,'returning note copies are cleaned up');
   }
+  await reports.evaluate(()=>{const covers=document.querySelectorAll('.summary-group-cover');covers[1].click();covers[2].click();covers[1].click();covers[2].click();});await page.waitForTimeout(100);
+  assert.equal(await reports.locator('.summary-group-stack[open]').count(),1,'rapid switching keeps one active stack');assert.equal(await reports.locator('.summary-group-stack[open]').getAttribute('data-group-id'),'702');assert.equal(await reports.locator('.summary-deck-drawer').count(),1);
+  assert.equal(await reports.locator('.summary-deck-drawer .inbox-row').first().evaluate(n=>getComputedStyle(n).opacity),'0','canceled earlier copies do not reveal the new moving note too soon');
+  await page.waitForTimeout(800);await reports.locator('.summary-dashboard-overview').click();await page.waitForTimeout(480);assert.equal(await reports.locator('.summary-deck-drawer').count(),0,'blank dashboard area returns the notes');
+  await reports.locator('.summary-group-cover').nth(2).click();await page.waitForTimeout(100);await page.keyboard.press('Escape');await page.waitForTimeout(480);assert.equal(await reports.locator('.summary-deck-drawer').count(),0,'Escape returns the notes');assert.equal(await reports.locator('.summary-group-cover').nth(2).evaluate(n=>n===document.activeElement),true);
+  await reports.locator('.summary-group-cover').nth(2).click();await reports.evaluate(()=>inboxFilterPage('动画测试群 1'));assert.equal(await reports.locator('.summary-deck-drawer').count(),0,'filtering away the source cannot leave an orphan drawer');await reports.evaluate(()=>inboxFilterPage(''));
+  await reports.evaluate(()=>{summaryExpanded={'group:700':true,'group:701':true};inboxRenderDashboard(motionDashboardData);});
+  assert.equal(await reports.locator('.summary-group-stack[open]').getAttribute('data-group-id'),'701');
+  await reports.locator('.summary-group-cover').nth(1).click();await reports.evaluate(()=>inboxRenderDashboard(motionDashboardData));
+  assert.equal(await reports.locator('.summary-deck-drawer').count(),0,'closing a restored group clears legacy expansion flags');
+  await reports.locator('.summary-group-cover').nth(2).click();await page.waitForTimeout(850);await page.setViewportSize({width:1100,height:950});await page.waitForTimeout(150);
+  const row=await reports.evaluate(()=>{const cards=document.querySelectorAll('.summary-group-stack'),drawer=document.querySelector('.summary-deck-drawer');return {third:cards[2].offsetTop,fourth:cards[3].offsetTop,after:drawer.previousElementSibling.dataset.groupId};});
+  assert.equal(row.third,row.fourth,'resize preserves the natural source cover row');assert.equal(row.after,'703','drawer follows the complete two-column source row');
+  await page.setViewportSize({width:1440,height:950});await reports.locator('.summary-group-cover').nth(2).click();
   await page.emulateMedia({reducedMotion:'reduce'});const cover=reports.locator('.summary-group-cover').nth(2);await cover.focus();await page.keyboard.press('Enter');await page.waitForTimeout(80);
   assert.equal(await reports.locator('.summary-group-stack').nth(2).evaluate(n=>n.open),true,'keyboard disclosure still works');
   const height=await reports.locator('.summary-group-stack').nth(2).evaluate(n=>n.getBoundingClientRect().height);await page.waitForTimeout(80);assert.equal(await reports.locator('.summary-group-stack').nth(2).evaluate(n=>n.getBoundingClientRect().height),height,'reduced motion settles immediately');
@@ -58,5 +72,5 @@ if(!url)throw new Error('Usage: node tests/desktop_detail_motion.cjs <isolated-t
   assert.equal(await market.locator('.market-category.is-active').evaluate(n=>getComputedStyle(n).boxShadow),'none','selected category has no inset white edge');
   await capture(page,'market-category.png');
  }
- assert.deepEqual(errors,[]);console.log('Sidebar enter/exit, anchored card disclosure and category selection verified.');
+ assert.deepEqual(errors,[]);console.log('Sidebar enter/exit, full-row deck spread, interrupt/close/filter, keyboard and category selection verified.');
 }finally{await browser.close();}})().catch(error=>{console.error(error.stack);process.exit(1);});

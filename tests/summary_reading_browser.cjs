@@ -9,9 +9,9 @@ const otherGroup={group_id:22,group_name:'另一个群',total:1,unread:1,report_
 (async()=>{const browser=await chromium.launch({headless:true});try{
  const page=await browser.newPage({viewport:{width:1440,height:900}}),errors=[];page.on('pageerror',e=>errors.push(e.message));
  await page.route('http://reading.test/**',r=>r.fulfill({contentType:'text/html',body:'<body class="workspace-app workspace-reading"><style>*{box-sizing:border-box}body{margin:0}[hidden]{display:none!important}</style>'+css+'<main id="main-content"><header class="page-toolbar" style="height:80px"></header><div class="content">'+content+'</div></main></body>'}));
- await page.goto('http://reading.test/reports');
+ await page.emulateMedia({reducedMotion:'reduce'});await page.goto('http://reading.test/reports');
  await page.evaluate(()=>{window.requests=[];window.api=(method,url,body)=>new Promise((resolve,reject)=>requests.push({method,url,body,resolve,reject}));window.appendBookmarkAction=()=>{};window.recentWeekDates=()=>({start:'2026-10-22',end:'2026-10-23'});window.refreshDateHints=()=>{};window.formatNumber=String;window.featureFlags={report_qa:false,report_revisions:false};});
- await page.evaluate(main);await page.evaluate(read('summary_reading_script.html').replace(/<\/?script>/g,'').replace('  summaryInit();',''));await page.evaluate(read('inbox_reading_script.html').replace(/<\/?script>/g,''));
+ await page.evaluate(main);await page.evaluate(read('summary_reading_script.html').replace(/<\/?script>/g,'').replace('  summaryInit();',''));await page.evaluate('window.createSummaryDeck = '+read('summary_deck_motion.html').replace(/<\/?script>/g,''));await page.evaluate(read('inbox_reading_script.html').replace(/<\/?script>/g,''));
  await page.evaluate(({group,otherGroup})=>{document.getElementById('report-from').value='2026-10-23';document.getElementById('report-to').value='2026-10-23';inboxRenderDashboard({total:2,point_total:91,unread:91,items:[group,otherGroup]});},{group,otherGroup});
  assert.equal(await page.locator('.summary-group-toggle').first().textContent(),'');
  assert.equal(await page.locator('.summary-group-toggle').first().getAttribute('aria-hidden'),'true');
@@ -34,11 +34,11 @@ const otherGroup={group_id:22,group_name:'另一个群',total:1,unread:1,report_
  assert.match(await page.locator('.summary-group-meta').first().textContent(),/89/);assert.deepEqual(errors,[]);
  await page.evaluate(()=>{inboxSelectPoint('p0',true);document.getElementById('inbox-detail-actions').lastElementChild.click();inboxBackToList();});
  await page.locator('.summary-group-points').evaluate(n=>n.scrollTop=760);
- await resolveRequest({});await page.locator('.inbox-list-column').evaluate(n=>n.scrollTop=300);await resolveRequest({grouped:true,total:2,point_total:91,unread:91,page:1,page_size:30,items:[group,otherGroup]});await pages(false);
+ await resolveRequest({});const pendingScroll=await page.locator('.inbox-list-column').evaluate(n=>{n.scrollTop=300;return n.scrollTop;});await resolveRequest({grouped:true,total:2,point_total:91,unread:91,page:1,page_size:30,items:[group,otherGroup]});await pages(false);
  await page.waitForFunction(()=>document.querySelector('.summary-group-points').children.length===90);
  await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
  assert.equal(await page.locator('.summary-group-points').evaluate(n=>n.scrollTop),760,'a save completing after the user returns must retain their latest scrolling position');
- assert.equal(await page.locator('.inbox-list-column').evaluate(n=>n.scrollTop),300,'background refresh keeps scrolling performed while the response was pending');
+ assert.equal(await page.locator('.inbox-list-column').evaluate(n=>n.scrollTop),pendingScroll,'background refresh keeps scrolling performed while the response was pending');
  await page.setViewportSize({width:390,height:844});await page.evaluate(()=>{window.scrollTo(0,300);inboxSelectPoint('p2',true);});await page.locator('#inbox-back').click();assert.equal(await page.evaluate(()=>window.scrollY),300,'mobile back retains document reading position');
  for(const width of [1440,1000,390])for(const count of [1,18]){
   await page.setViewportSize({width,height:900});

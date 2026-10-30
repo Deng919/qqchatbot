@@ -1,7 +1,8 @@
 const fs=require('fs'),vm=require('vm'),assert=require('node:assert/strict');
+const deckNode=require('./helpers/deck_dom.cjs');
 const nodes=new Map();
 function node(id){if(!nodes.has(id))nodes.set(id,{value:'',hidden:true,options:[],children:[],dataset:{},textContent:'',innerHTML:'',isConnected:true,classList:{add(){},remove(){},toggle(){}},appendChild(n){this.children.push(n);this.options.push(n);n.parentElement=this;},remove(){if(this.parentElement){this.parentElement.children=this.parentElement.children.filter(x=>x!==this);this.parentElement.options=this.parentElement.options.filter(x=>x!==this);}},setAttribute(){},removeAttribute(){},scrollIntoView(){},focus(){},querySelector(){return node(id+'-child');},addEventListener(){}});return nodes.get(id);}
-global.document={getElementById:node,activeElement:node('opener'),createElement:()=>node('new-'+nodes.size),querySelectorAll:()=>[],addEventListener(){}};
+global.document={getElementById:node,activeElement:node('opener'),createElement:()=>node('new-'+nodes.size),querySelectorAll:()=>[],addEventListener(){},removeEventListener(){}};
 global.window={scrollY:120,scrollTo(){},addEventListener(){}};global.sessionStorage={setItem(){},getItem(){return null;}};
 global.location={href:'http://localhost/reports',search:''};global.history={replaceState(){}};
 global.requestAnimationFrame=fn=>fn();global.refreshDateHints=()=>{};global.formatNumber=String;global.escapeHtml=String;global.toast=()=>{};
@@ -132,7 +133,8 @@ const settle=()=>new Promise(setImmediate);
   navigateSummaryReading({button:0,ctrlKey:true,preventDefault(){throw Error('modified click must retain browser navigation');}});
   // Render the actual dashboard and follow lazy expansion through a second page.
   function historyElement(){return {children:[],events:{},dataset:{},hidden:false,open:false,clientHeight:200,scrollTop:0,classList:{toggle(){}},setAttribute(){},focus(){},appendChild(child){this.children.push(child);child.parentElement=this;return child;},addEventListener(name,fn){this.events[name]=fn;},remove(){const i=this.parentElement.children.indexOf(this);if(i>=0)this.parentElement.children.splice(i,1);},set textContent(value){this.children=[];this._text=String(value);},get textContent(){return this._text||'';}};}
-  document.createElement=historyElement;window.matchMedia=()=>({matches:false});
+  document.createElement=()=>deckNode(historyElement());window.matchMedia=()=>({matches:false});
+  vm.runInThisContext(fs.readFileSync('qq_digest/web/templates/summary_deck_motion.html','utf8').replace(/<\/?script>/g,''));
   vm.runInThisContext(fs.readFileSync('qq_digest/web/templates/inbox_reading_script.html','utf8').replace(/<\/?script>/g,''));
   inboxApplyView=()=>{};summaryGeneratedReading=null;summaryExpanded={'group:11':true};
   summarySince='2026-10-04T10:00:00Z';browse('11','','');node('summary-points').children=[];

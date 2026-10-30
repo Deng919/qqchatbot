@@ -164,7 +164,7 @@
   .summary-dashboard-metric strong { font-size:29px;font-weight:600;font-variant-numeric:tabular-nums;letter-spacing:-1px; }
   .summary-dashboard-metric span { color:var(--text-soft);font-size:12px; }
   .summary-dashboard-grid { display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,280px),1fr));gap:28px 22px;padding-bottom:18px;align-items:start;overflow-anchor:none; }
-  .summary-group-stack { --summary-group-height:0px;position:relative;min-width:0;isolation:isolate;border:1px solid var(--border);border-radius:16px;background:var(--surface,#fff); }
+  .summary-group-stack { position:relative;min-width:0;isolation:isolate;border:1px solid var(--border);border-radius:16px;background:var(--surface,#fff); }
   .summary-group-stack:not([open])::before,.summary-group-stack:not([open])::after { content:'';position:absolute;inset:10px 6px -7px;border:1px solid var(--border);border-radius:16px;background:#f3f6fa;z-index:-1;pointer-events:none; }
   .summary-group-stack:not([open])::before { inset:18px 12px -13px;background:#eaf0f6; }
   .summary-group-cover { list-style:none;cursor:pointer;padding:24px;min-height:240px;border-radius:16px;background:var(--surface,#fff);display:flex;flex-direction:column; }
@@ -179,6 +179,12 @@
   .summary-group-toggle { color:var(--primary-dark);white-space:nowrap; }
   .summary-group-stack[open] { border-color:var(--border-strong,var(--border)); }
   .summary-group-content { min-width:0;padding:0 20px 22px; }
+  .summary-deck-drawer { grid-column:1/-1;min-width:0;padding:7px 0 4px; }
+  .summary-deck-heading { display:flex;align-items:center;justify-content:space-between;gap:14px;margin-bottom:14px;color:var(--text-soft);font-size:12px; }
+  .summary-deck-heading strong { font-weight:500; }
+  .summary-deck-drawer .summary-group-content { padding:0; }
+  .summary-deck-drawer .summary-group-content:not(:has(.summary-group-points)) { min-height:190px; }
+  .summary-group-points.summary-deck-flight { position:fixed;display:block;max-height:none;min-height:0;overflow:visible;pointer-events:none;z-index:35;padding:0;margin:0;transform-origin:0 0; }
   .summary-group-points { display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,300px),1fr));grid-auto-rows:190px;gap:12px;max-height:396px;overflow-y:auto;scrollbar-gutter:stable;padding:2px; }
   .summary-group-points .inbox-row { height:100%;overflow:hidden;border:1px solid var(--border);border-radius:10px;padding:18px;text-align:left; }
   .summary-group-points .inbox-row-title { font-size:16px;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden; }
@@ -186,11 +192,5 @@
   .summary-group-more { margin-top:18px; }
   .summary-group-load-status,.summary-dashboard-no-match { font-size:13px;color:var(--text-soft);padding:12px 0; }
   @media(max-width:600px) { .inbox-dashboard-mode .inbox-list-column { padding:20px 18px 32px; }.summary-dashboard-overview { gap:16px 22px; }.summary-dashboard-metric strong { font-size:24px; }.summary-group-cover { padding:20px;min-height:220px; }.summary-group-content { padding:0 12px 16px; }.summary-group-points { grid-template-columns:minmax(0,1fr); } }
-  @media(prefers-reduced-motion:no-preference) {
-    .summary-group-cover { transition:background .16s; }
-    @supports selector(details::details-content) {
-      .summary-group-stack::details-content { block-size:0;overflow:clip;transition:block-size 320ms cubic-bezier(.16,1,.3,1),content-visibility 320ms allow-discrete; }
-      .summary-group-stack[open]::details-content { block-size:var(--summary-group-height,auto); }
-    }
-  }
+  @media(prefers-reduced-motion:no-preference) { .summary-group-cover { transition:background .16s; } }
 </style>
