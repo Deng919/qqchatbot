@@ -10,7 +10,7 @@
       <option value="pending">待审核</option><option value="later">稍后处理</option>
       <option value="confirmed">已入库</option><option value="ignored">已忽略</option><option value="all">全部状态</option>
     </select>
-    <select id="candidate-group" data-group-selector="filter" class="input" aria-label="来源群"><option value="">全部群</option></select>
+    <select id="candidate-group" data-group-selector="filter" data-group-floating class="input" aria-label="来源群"><option value="">全部群</option></select>
     <select id="candidate-type" class="input" aria-label="类型"><option value="">全部类型</option><option value="resource">资源</option><option value="experience">经验</option></select>
     <input id="candidate-date-from" class="input" type="date" aria-label="开始日期">
     <input id="candidate-date-to" class="input" type="date" aria-label="结束日期">
@@ -155,7 +155,7 @@
   .candidate-list { grid-template-columns:minmax(0,1fr); }
   .candidate-item { min-width:0;overflow-wrap:anywhere; }
   .candidate-main>div { min-width:0; }
-  .candidate-toolbar { display: grid; grid-template-columns: repeat(3, minmax(120px, .8fr)) repeat(2, minmax(130px, .8fr)) minmax(200px, 1.6fr) auto; gap: 8px; margin-bottom: 14px; padding: 12px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); }
+  .candidate-toolbar { display: grid; grid-template-columns: repeat(3, minmax(120px, .8fr)) repeat(2, minmax(130px, .8fr)) minmax(200px, 1.6fr) auto; align-items:start;gap: 8px; margin-bottom: 14px; padding: 12px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); }
   .candidate-title { font-weight: 650; }
   .candidate-main { display: flex; justify-content: space-between; gap: 16px; align-items: flex-start; }
   .candidate-meta, .candidate-actions { display: flex; gap: 7px; align-items: center; flex-wrap: wrap; }
