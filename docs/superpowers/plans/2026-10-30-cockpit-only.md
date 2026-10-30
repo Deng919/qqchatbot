@@ -38,7 +38,16 @@
 **Files:** local scripts and ledger under D:\Cache\QQDigestCockpitVerification\2026-10-30 (not Git); protected production config/secrets only locally.
 **Interfaces:** existing ManualSummaryService/GroupSummaryBuilder, Archive publication/revision methods and secondhand_runner.refresh.
 
-- [ ] Inventory group-day/message coverage, controls and active operations; back up SQLite consistently, reports and config.
-- [ ] Configure Cockpit endpoint http://127.0.0.1:62406/v1 and model gpt-6.1-sol with protected local key; verify API and independent browser flows.
-- [ ] Create resumable ledger with fixed coverage. Force summary regeneration through normal revision publication; marketplace force refresh then retry incomplete sources. Process until every task has explicit outcome.
-- [ ] Verify report message counts, current revisions, marketplace scans and failures against snapshot. Commit/push verified code and verify remote SHA. Report actual exclusions/limitations and ledger path.
+- [x] Inventory group-day/message coverage, controls and active operations; back up SQLite consistently, reports and config.
+- [x] Configure Cockpit endpoint http://127.0.0.1:62406/v1 and model gpt-6.1-sol with protected local key; verify API and independent browser flows.
+- [x] Create resumable ledger with fixed coverage. Force summary regeneration through normal revision publication; marketplace force refresh then retry incomplete sources. Process until every task has explicit outcome.
+- [x] Verify report message counts, current revisions, marketplace scans and failures against snapshot. Commit/push verified code and verify remote SHA. Report actual exclusions/limitations and ledger path.
+
+## Final verification
+
+- Whole-project gate: 1875 passed, 4 skipped. Subsequent bounded URL migration fixes: 58 passed. Final marketplace suite after real-data boundary fixes: 167 passed.
+- Actual Cockpit checks covered summaries, QA, OCR, market extraction, long context and usage; independent Chromium and native WebView connection/settings checks passed.
+- The fixed-snapshot operations ledger has no failed or unfinished tasks. Read-only audits confirm archived originals, group controls and prior report revisions remain intact; every readable marketplace source has a fresh receipt and current extracted quotations revalidate.
+- Unreadable images, unavailable forwards and empty messages are explicitly accounted for, without being labeled as successful AI recognition. A prior report lacking archived source messages remains preserved.
+- The verified desktop package contains the current runtime modules/templates and no removed AI bridge module. The idle desktop entry was switched to it with the previous release retained for rollback; production collection was not started during rollout.
+- Credentials, local configuration, source conversations, database, reports, operation scripts, ledger and detailed audit evidence remain outside Git.
