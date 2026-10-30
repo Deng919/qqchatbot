@@ -235,3 +235,48 @@ def test_persisted_archive_mismatch_survives_report_read(archived):
     result = service(archive).report(str(js), "range", "2026-09-29")
     assert result["status"] == "limited"
     assert any("采集" in note for note in result["notes"])
+
+def reviewed_payload():
+    return {
+        'group_id':123,
+        'window_start':'2026-10-06T00:00:00+08:00',
+        'window_end':'2026-10-06T23:59:00+08:00',
+        'window_end_inclusive':True,
+        'diagnostics':{'source_messages':1000,'included_messages':900,'context_truncated':True},
+        'source_review':{'version':1,'kind':'full_window','group_id':123,
+            'window_start':'2026-10-06T00:00:00+08:00','window_end':'2026-10-06T23:59:00+08:00',
+            'window_end_inclusive':True,'reviewed_at':'2026-10-29T04:00:00+00:00',
+            'archive_message_count':1000,'claims_verified':True,'source_sha256':'a'*64},
+    }
+
+
+def test_full_source_review_explains_recovered_truncation_without_rewriting_old_diagnostics():
+    from qq_digest.report_completeness import _read_input
+    payload=reviewed_payload()
+    result=_read_input(payload)
+    assert result['status']=='normal'
+    assert result['label']=='已核对完整归档'
+    assert result['source_messages']==result['included_messages']==1000
+    assert result['notes']==[]
+    assert payload['diagnostics']['context_truncated'] is True
+    assert payload['diagnostics']['included_messages']==900
+
+
+@pytest.mark.parametrize('field,value',[
+    ('version',True),('kind','citations'),('group_id',456),('archive_message_count',999),
+    ('archive_message_count',True),('claims_verified',False),('source_sha256','not-a-hash'),
+    ('reviewed_at','yesterday'),('reviewed_at','2026-10-29T12:00:00'),
+    ('window_start','2026-10-05T00:00:00+08:00'),('window_end_inclusive',False),
+])
+def test_partial_or_mismatched_review_never_clears_truncation(field,value):
+    from qq_digest.report_completeness import _read_input
+    payload=reviewed_payload();payload['source_review'][field]=value
+    assert _read_input(payload)['label']=='部分消息未纳入'
+
+
+def test_full_source_review_does_not_hide_archive_mismatch_or_unknown_generation_stats():
+    from qq_digest.report_completeness import _read_input
+    payload=reviewed_payload();payload['coverage']={'archive_mismatch':True}
+    assert _read_input(payload)['label']=='采集范围异常'
+    payload=reviewed_payload();payload['diagnostics']={}
+    assert _read_input(payload)['status']=='unknown'

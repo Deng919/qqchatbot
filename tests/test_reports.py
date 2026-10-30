@@ -410,3 +410,25 @@ def test_report_rollback_recovers_temporary_windows_conflict(tmp_path, monkeypat
     assert original.paths.markdown.read_text(encoding='utf-8') == 'old'
     assert json.loads(original.paths.json.read_text(encoding='utf-8')) == {'overview': 'old'}
     assert sorted(p.name for p in tmp_path.iterdir()) == ['daily.json', 'daily.md']
+
+def test_partial_rollback_can_be_retried_without_deleting_already_restored_file(tmp_path, monkeypatch):
+    import qq_digest.reports as reports
+    writer=ReportWriter(tmp_path)
+    writer.write(group_id=123,group_name='群',report_date='2026-10-29',markdown='原正文',payload={'old':True})
+    prepared=writer.prepare_named('2026-10-29__123','新正文',{'new':True})
+    prepared.install()
+    replace=reports._replace_with_retry
+    failed=False
+    def fail_restoring_markdown_once(source,target):
+        nonlocal failed
+        if target==prepared.paths.markdown and source.name.endswith('.bak') and not failed:
+            failed=True
+            raise PermissionError('temporary restore lock')
+        replace(source,target)
+    monkeypatch.setattr(reports,'_replace_with_retry',fail_restoring_markdown_once)
+    with pytest.raises(PermissionError):prepared.rollback()
+    assert json.loads(prepared.paths.json.read_text('utf-8'))=={'old':True}
+    prepared.rollback()
+    assert prepared.paths.markdown.read_text('utf-8')=='原正文'
+    assert json.loads(prepared.paths.json.read_text('utf-8'))=={'old':True}
+    assert prepared.closed

@@ -38,13 +38,13 @@ class FakeAI:
         return self.response
 
 
-def valid_response():
+def valid_response(message_id="m1"):
     return {
         "group_id": 123,
-        "main_topics": [{"topic": "工具推荐", "summary": "推荐了一个站点"}],
-        "conclusions": ["站点适合归档"],
-        "resources": [{"title": "站点", "url": "https://example.com"}],
-        "tasks": [{"owner": "小王", "description": "整理教程", "deadline": "明天"}],
+        "main_topics": [{"topic": "工具推荐", "summary": "推荐了一个站点", "message_ids": [message_id]}],
+        "conclusions": [{"text": "站点适合归档", "message_ids": [message_id]}],
+        "resources": [{"title": "站点", "url": "https://example.com", "message_ids": [message_id]}],
+        "tasks": [{"owner": "小王", "description": "整理教程", "deadline": "明天", "message_ids": [message_id]}],
         "open_questions": [],
         "candidates": [
             {
@@ -53,7 +53,7 @@ def valid_response():
                 "link": "https://example.com",
                 "content": "",
                 "reason": "高质量教程站",
-                "message_ids": ["m1"],
+                "message_ids": [message_id],
             }
         ],
     }
@@ -115,7 +115,7 @@ def test_summarizer_keeps_only_ids_present_in_actual_model_context():
         "overview": "群内确认了方案",
         "overview_message_ids": ["m1", "made-up"],
         "main_topics": [{"topic": "方案", "summary": "已确认", "message_ids": ["m1", "made-up", "m1"]}],
-        "conclusions": [{"text": "采用方案 A", "message_ids": ["made-up"]}],
+        "conclusions": [{"text": "采用方案 A", "message_ids": ["m1", "made-up"]}],
         "resources": [{"title": "文档", "url": "https://example.com", "message_ids": ["m1"]}],
         "tasks": [{"owner": "小王", "description": "整理文档", "message_ids": ["m1"]}],
         "open_questions": [{"text": "何时发布？", "message_ids": ["m1"]}],
@@ -130,7 +130,7 @@ def test_summarizer_keeps_only_ids_present_in_actual_model_context():
 
     assert result.response.overview_message_ids == ["m1"]
     assert result.response.main_topics[0].message_ids == ["m1"]
-    assert result.response.conclusions[0].message_ids == []
+    assert result.response.conclusions[0].message_ids == ["m1"]
     assert result.response.resources[0].message_ids == ["m1"]
     assert result.response.tasks[0].message_ids == ["m1"]
     assert result.response.open_questions[0].message_ids == ["m1"]
@@ -187,7 +187,7 @@ def test_summary_response_normalizes_null_optional_ai_fields():
 
 
 def test_summarizer_does_not_send_template_to_model():
-    ai = FakeAI({**valid_response(), "overview": "概览"})
+    ai = FakeAI({**valid_response(), "overview": "概览", "overview_message_ids": ["m1"]})
     summarizer = Summarizer(ai=ai, max_context_chars=1000)
 
     summarizer.summarize(
@@ -324,7 +324,7 @@ def test_summarizer_returns_validated_result():
 
 def test_summarizer_normalizes_integer_candidate_message_ids():
     message_id = "7684528150456769779"
-    response = valid_response()
+    response = valid_response(message_id)
     response["candidates"][0]["message_ids"] = [int(message_id)]
     summarizer = Summarizer(ai=FakeAI(response), max_context_chars=1000)
 
@@ -416,7 +416,7 @@ def test_resource_description_survives_validation():
 
 def test_summarizer_builds_context_from_cleaned_messages():
     timezone = ZoneInfo("Asia/Shanghai")
-    ai = FakeAI(valid_response())
+    ai = FakeAI(valid_response("m2"))
     summarizer = Summarizer(ai=ai, max_context_chars=1000)
 
     result = summarizer.summarize(

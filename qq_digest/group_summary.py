@@ -14,7 +14,7 @@ from .report_completeness import input_coverage
 
 
 # Bump when report rendering changes without a prompt/schema change.
-REPORT_FORMAT_VERSION = 8
+REPORT_FORMAT_VERSION = 9
 
 
 @dataclass(frozen=True)

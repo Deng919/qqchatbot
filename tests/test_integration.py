@@ -13,9 +13,9 @@ class FakeAI:
     def chat(self, messages):
         return {
             "group_id": 123,
-            "main_topics": [{"topic": "资源分享", "summary": "分享了教程站点"}],
+            "main_topics": [{"topic": "资源分享", "summary": "分享了教程站点", "message_ids": ["fixture-123"]}],
             "conclusions": [],
-            "resources": [{"title": "站点", "link": "https://example.com"}],
+            "resources": [{"title": "站点", "link": "https://example.com", "message_ids": ["fixture-123"]}],
             "tasks": [],
             "open_questions": [],
             "candidates": [

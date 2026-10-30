@@ -26,7 +26,7 @@ class RecordingAI:
         self.prompts.append(prompt)
         if group_id in self.failing_groups:
             raise RuntimeError("temporary AI outage")
-        message_id = {123: "m1", 456: "m2"}.get(group_id, "m3")
+        message_id = re.search(r"\[([^|\n]+)\|", prompt).group(1)
         return {
             "group_id": group_id,
             "main_topics": [],
@@ -325,3 +325,29 @@ def test_manual_summary_publication_failure_preserves_previous_state(
     assert (tmp_path / "reports" / "range__2026-09-01__2026-09-07__123__adaptive.md").read_text(encoding="utf-8") == old_markdown
     assert not list((tmp_path / "reports").glob(".*.tmp"))
     assert not list((tmp_path / "reports").glob(".*.bak"))
+
+
+def test_missing_citation_failure_preserves_previous_report(tmp_path):
+    service, archive, ai = make_service(tmp_path, [GroupConfig(group_id=123, name="群一")])
+    add_message(archive, 123, "m1")
+    request = ManualSummaryRequest((123,), date(2026, 9, 1), date(2026, 9, 7))
+    report_id = service.run(request).created_reports[0].report_id
+    old_row = archive.manual_report_by_id(report_id)
+    report_path = tmp_path / "reports" / "range__2026-09-01__2026-09-07__123__adaptive.md"
+    old_content = report_path.read_bytes()
+    add_message(archive, 123, "new-source", hour=11)
+    original_chat = ai.chat
+
+    def missing_citation(messages):
+        payload = original_chat(messages)
+        payload["overview"] = "未经追溯的实质结论"
+        return payload
+
+    ai.chat = missing_citation
+    result = service.run(request)
+
+    assert not result.created_reports
+    assert result.failed_groups[0].stage == "summary"
+    assert "引用" in result.failed_groups[0].error
+    assert archive.manual_report_by_id(report_id) == old_row
+    assert report_path.read_bytes() == old_content

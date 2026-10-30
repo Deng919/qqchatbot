@@ -162,7 +162,7 @@ def test_regeneration_uses_one_group_and_original_window_and_keeps_reason(ar, tm
         calls = []
         def chat(self, messages):
             self.calls.append(messages)
-            return dict(group_id=123,overview='修订摘要',main_topics=[],conclusions=[],
+            return dict(group_id=123,overview='修订摘要',overview_message_ids=['m11'],main_topics=[],conclusions=[],
                         resources=[],tasks=[],open_questions=[],candidates=[])
     ai = AI()
     cfg = Config(data_dir=tmp_path,archive_path=tmp_path/'archive.sqlite',report_dir=tmp_path/'reports',
@@ -195,7 +195,7 @@ def test_legacy_daily_fallback_stays_exclusive_after_repeated_regeneration(ar, t
         prompts=[]
         def chat(self,messages):
             self.prompts.append(messages[-1]['content'])
-            return dict(group_id=123,overview='模拟摘要',main_topics=[],conclusions=[],
+            return dict(group_id=123,overview='模拟摘要',overview_message_ids=['m1'],main_topics=[],conclusions=[],
                         resources=[],tasks=[],open_questions=[],candidates=[])
     cfg=Config(data_dir=tmp_path,archive_path=tmp_path/'archive.sqlite',report_dir=tmp_path/'reports',
         work_dir=tmp_path/'work',log_dir=tmp_path/'logs',knowledge_dir=tmp_path/'knowledge',

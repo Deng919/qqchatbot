@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import re
 from datetime import datetime
 from pathlib import Path
 
@@ -45,7 +46,34 @@ def _read_input(json_path: str) -> dict:
         return input_coverage(None)
     snapshot = payload.get("coverage")
     mismatch = isinstance(snapshot, dict) and snapshot.get("archive_mismatch") is True
-    return input_coverage(payload.get("diagnostics"), archive_mismatch=mismatch)
+    result = input_coverage(payload.get("diagnostics"), archive_mismatch=mismatch)
+    review = payload.get("source_review")
+    if (mismatch or result["status"] == "unknown" or not isinstance(review, dict)
+            or type(review.get("version")) is not int or review["version"] != 1
+            or review.get("kind") != "full_window" or review.get("claims_verified") is not True
+            or type(review.get("group_id")) is not int or review["group_id"] != payload.get("group_id")
+            or type(review.get("archive_message_count")) is not int
+            or review["archive_message_count"] < result["source_messages"]
+            or not isinstance(review.get("source_sha256"), str)
+            or not re.fullmatch(r"[a-f0-9]{64}", review["source_sha256"])
+            or any(review.get(key) != payload.get(key) for key in
+                   ("window_start", "window_end", "window_end_inclusive"))
+            or type(review.get("window_end_inclusive")) is not bool):
+        return result
+    try:
+        start = datetime.fromisoformat(review["window_start"])
+        end = datetime.fromisoformat(review["window_end"])
+        reviewed_at = datetime.fromisoformat(review["reviewed_at"])
+        if any(value.tzinfo is None for value in (start, end, reviewed_at)) or start >= end:
+            return result
+    except (TypeError, ValueError, KeyError):
+        return result
+    # Keep the original generation diagnostics intact. This describes the later
+    # full-window editorial review, not a claim that generation never truncated.
+    result.update(status="normal", label="已核对完整归档", notes=[],
+                  source_messages=review["archive_message_count"],
+                  included_messages=review["archive_message_count"])
+    return result
 
 
 class ReportCompletenessService:

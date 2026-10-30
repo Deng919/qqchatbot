@@ -209,7 +209,7 @@ def test_seed_does_not_resurrect_deleted_configured_group(tmp_path):
 def test_empty_context_does_not_call_ai(tmp_path):
     service, archive, ai, request = setup(tmp_path)
     with archive.transaction():
-        archive.connection.execute("UPDATE messages SET text=?", ("x" * 2000,))
+        archive.connection.execute("UPDATE messages SET text=?", ("有人加入本群",))
     result = service.run(request)
     assert result.failed_groups and not result.created_reports
     assert ai.calls == []

@@ -184,8 +184,9 @@ def test_summarize_regenerates_legacy_report_then_reuses_adaptive_fingerprint(
             return {
                 "group_id": 123,
                 "overview": "今日发布了一项重要更新。",
+                "overview_message_ids": ["m1"],
                 "main_topics": [
-                    {"topic": "重要更新", "summary": "群内发布了一项重要更新。"}
+                    {"topic": "重要更新", "summary": "群内发布了一项重要更新。", "message_ids": ["m1"]}
                 ],
                 "conclusions": [],
                 "resources": [],

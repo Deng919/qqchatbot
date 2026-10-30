@@ -61,12 +61,17 @@ class PreparedReportWrite:
     def rollback(self) -> None:
         if self.closed:
             return
-        for target in reversed(self.installed_paths):
+        while self.installed_paths:
+            target = self.installed_paths[-1]
             backup = self.backup_paths.get(target)
             if backup is not None and backup.exists():
                 _replace_with_retry(backup, target)
             else:
                 target.unlink(missing_ok=True)
+            # A later restore can encounter a Windows file lock. Do not retry
+            # a successfully restored file after its backup has been consumed.
+            self.installed_paths.pop()
+            self.backup_paths.pop(target, None)
         self._cleanup()
 
     def finalize(self) -> None:

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
+import json
 from zoneinfo import ZoneInfo
 
 from pydantic import AliasChoices, BaseModel, Field, ValidationError, ValidationInfo, field_validator
@@ -199,6 +200,127 @@ def build_context(messages: list[NormalizedMessage], max_chars: int) -> str:
     return build_context_window(messages, max_chars).text
 
 
+def _complete_contexts(messages, cleaned_text_by_index, max_chars):
+    """Pack every cleaned source in order; repeat its identity when splitting it."""
+    chunks = []
+    lines = []
+    ids = []
+    size = 0
+    for index, message in enumerate(messages):
+        if index not in cleaned_text_by_index:
+            continue
+        sender = sender_fields({
+            "sender_qq": message.sender_qq, "content_json": message.content_json,
+        }).get("sender_label") or message.sender_qq or "unknown"
+        prefix = f"[{message.msg_id}|{message.timestamp:%Y-%m-%d %H:%M}|{sender}] "
+        available = max_chars - len(prefix)
+        if available <= 0:
+            raise ValueError("摘要上下文预算不足以容纳消息来源标识，无法完整处理")
+        text = cleaned_text_by_index[index]
+        for offset in range(0, len(text), available):
+            line = prefix + text[offset:offset + available]
+            if lines and size + 1 + len(line) > max_chars:
+                chunks.append(("\n".join(lines), tuple(dict.fromkeys(ids))))
+                lines, ids, size = [], [], 0
+            size += len(line) + bool(lines)
+            lines.append(line)
+            ids.append(message.msg_id)
+    if lines:
+        chunks.append(("\n".join(lines), tuple(dict.fromkeys(ids))))
+    return chunks
+
+
+def _evidence_ids(response, *, include_candidates=True):
+    ids = list(response.overview_message_ids)
+    for field in ("main_topics", "conclusions", "resources", "tasks", "open_questions", "candidates"):
+        if field == "candidates" and not include_candidates:
+            continue
+        for item in getattr(response, field):
+            if isinstance(item, EvidenceItem | CandidateOutput):
+                ids.extend(item.message_ids)
+    return set(ids)
+
+
+def _claim_content(response):
+    """Canonical content for citation-only repair, including legacy text claims."""
+    content = response.model_dump()
+    content.pop("overview_message_ids")
+    for field in ("main_topics", "conclusions", "resources", "tasks", "open_questions", "candidates"):
+        content[field] = [
+            {key: value for key, value in item.items() if key != "message_ids"}
+            if isinstance(item, dict) else {"text": item}
+            for item in content[field]
+        ]
+    return content
+
+
+def _missing_citations(response):
+    if response.overview.strip() and not response.overview_message_ids:
+        return True
+    for field in ("main_topics", "conclusions", "resources", "tasks", "open_questions", "candidates"):
+        for item in getattr(response, field):
+            if isinstance(item, str):
+                if item.strip():
+                    return True
+            elif not item.message_ids and any(
+                value.strip() for key, value in item.model_dump().items()
+                if key not in {"message_ids", "type"} and isinstance(value, str)
+            ):
+                return True
+    return False
+
+
+def _preserves_claim_citations(before, after):
+    if not set(before.overview_message_ids).issubset(after.overview_message_ids):
+        return False
+    for field in ("main_topics", "conclusions", "resources", "tasks", "open_questions", "candidates"):
+        for original, repaired in zip(getattr(before, field), getattr(after, field), strict=True):
+            if isinstance(original, EvidenceItem | CandidateOutput) and not set(original.message_ids).issubset(getattr(repaired, "message_ids", [])):
+                return False
+    return True
+
+
+def _deduplicate_response(response):
+    updates = {}
+    for field in ("main_topics", "conclusions", "resources", "tasks", "open_questions", "candidates"):
+        unique = {}
+        for item in getattr(response, field):
+            content = item if isinstance(item, str) else item.model_dump(exclude={"message_ids"})
+            key = json.dumps(content, ensure_ascii=False, sort_keys=True)
+            if key in unique and not isinstance(item, str):
+                previous = unique[key]
+                item = item.model_copy(update={
+                    "message_ids": list(dict.fromkeys(previous.message_ids + item.message_ids)),
+                })
+            unique[key] = item
+        updates[field] = list(unique.values())
+    return response.model_copy(update=updates)
+
+
+def _validated_response(raw, group_id, allowed_ids):
+    try:
+        response = SummaryResponse.model_validate(raw)
+    except ValidationError as exc:
+        reject_response(raw)
+        raise ValueError(f"AI响应结构无效: {exc}") from exc
+    if response.group_id != group_id:
+        reject_response(raw)
+        raise ValueError("AI响应 group_id 不匹配")
+
+    def valid_ids(ids):
+        return list(dict.fromkeys(mid for mid in ids if mid in allowed_ids))
+
+    updates = {"overview_message_ids": valid_ids(response.overview_message_ids)}
+    for field in ("main_topics", "conclusions", "resources", "tasks", "open_questions", "candidates"):
+        items = []
+        for item in getattr(response, field):
+            if isinstance(item, EvidenceItem | CandidateOutput):
+                item = item.model_copy(update={"message_ids": valid_ids(item.message_ids)})
+            items.append(item)
+        updates[field] = items
+    return response.model_copy(update=updates)
+
+
 class Summarizer:
     """按 docs/ai 规范动态组装 prompt 的摘要生成器。"""
 
@@ -206,6 +328,51 @@ class Summarizer:
         self.ai = ai
         self.max_context_chars = max_context_chars
         self.preprocessor = Preprocessor()
+
+    def _generate(
+        self, *, system_prompt, user_prompt, group_id, allowed_ids, evidence,
+        required_ids=frozenset(), bounded_output=False,
+    ):
+        raw = self.ai.chat([
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ])
+        response = _validated_response(raw, group_id, allowed_ids)
+        if _missing_citations(response):
+            reject_response(raw)
+            repair_evidence = json.dumps(
+                {"summary": response.model_dump(), "evidence": evidence},
+                ensure_ascii=False, separators=(",", ":"),
+            )
+            if len(repair_evidence) > self.max_context_chars:
+                raise ValueError("摘要缺少真实引用，完整引用修复证据超过上下文预算；请提高上限后重试")
+            raw = self.ai.chat([
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": (
+                    f"群ID: {group_id}\n"
+                    "仅修复引用：为 summary 中缺少来源的实质条目补充实际 evidence 支持的 message_ids；"
+                    "不得改变、增加、删除或重排任何正文、条目及其他字段。"
+                    "旧字符串结论或问题可转为 {text, message_ids}，text 必须逐字不变。"
+                    "只允许引用本次 evidence 实际提供的来源 ID，不确定则留空，不能猜测。"
+                    "已有合法引用应保留。返回完整同结构 JSON。\n引用修复输入：\n" + repair_evidence
+                )},
+            ])
+            repaired = _validated_response(raw, group_id, allowed_ids)
+            if _claim_content(response) != _claim_content(repaired):
+                reject_response(raw)
+                raise ValueError("AI引用修复改变了正文，未生成报告")
+            if _missing_citations(repaired) or not _preserves_claim_citations(response, repaired):
+                reject_response(raw)
+                raise ValueError("AI引用修复后仍缺少合法来源，未生成报告")
+            response = repaired
+        if not required_ids.issubset(_evidence_ids(response, include_candidates=False)):
+            reject_response(raw)
+            raise ValueError("合并摘要遗漏了已验证的实质来源，未生成报告")
+        response = _deduplicate_response(response)
+        if bounded_output and len(response.model_dump_json()) > self.max_context_chars:
+            reject_response(raw)
+            raise ValueError("阶段完整摘要超过上下文预算，无法完整合并；请提高上下文上限后重试")
+        return response
 
     def summarize(
         self,
@@ -224,7 +391,7 @@ class Summarizer:
             raise ValueError("消息时间必须带时区")
         local_messages = [
             message.model_copy(update={"timestamp": message.timestamp.astimezone(timezone)})
-            for message in messages
+            for message in sorted(messages, key=lambda item: item.timestamp)
         ]
         source_texts = [
             message.text.strip() or message.raw_digest.strip() or message.message_type
@@ -234,13 +401,9 @@ class Summarizer:
         cleaned_text_by_index = dict(
             zip(cleaned.kept_indexes, cleaned.cleaned_lines, strict=True)
         )
-        context_window = build_context_window(
-            local_messages,
-            self.max_context_chars,
-            cleaned_text_by_index=cleaned_text_by_index,
-        )
-        if not context_window.text:
-            raise ValueError("清洗或截断后没有可用于摘要的消息")
+        contexts = _complete_contexts(local_messages, cleaned_text_by_index, self.max_context_chars)
+        if not contexts:
+            raise ValueError("清洗后没有可用于摘要的消息")
         deterministic = {
             "links": cleaned.links,
             "files": cleaned.files,
@@ -248,89 +411,78 @@ class Summarizer:
         }
         report_date = window_start.astimezone(timezone).date().isoformat()
         system_prompt = build_system_prompt(category)
-        user_prompt = build_user_prompt(
-            group_id=group_id,
-            group_name=group_name,
-            category=category,
-            report_date=report_date,
-            window_start=window_start.isoformat(),
-            window_end=window_end.isoformat(),
-            message_count=context_window.included_messages,
-            source_message_count=len(messages),
-            discarded_message_count=cleaned.discarded_count,
-            context=context_window.text,
-            deterministic=deterministic,
-            keywords=keywords,
-            knowledge_base=knowledge_base,
-            context_truncated=context_window.truncated,
-        )
-        raw = self.ai.chat(
-            [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
-            ]
-        )
-        try:
-            response = SummaryResponse.model_validate(raw)
-        except ValidationError as exc:
-            reject_response(raw)
-            raise ValueError(f"AI响应结构无效: {exc}") from exc
-        if response.group_id != group_id:
-            reject_response(raw)
-            raise ValueError("AI响应 group_id 不匹配")
-        limit = CANDIDATE_LIMITS.get(category, 1)
-        included_ids = set(context_window.included_message_ids)
-        def valid_source_ids(message_ids: list[str]) -> list[str]:
-            return list(dict.fromkeys(
-                message_id for message_id in message_ids if message_id in included_ids
-            ))
-
-        response = response.model_copy(update={
-            "overview_message_ids": valid_source_ids(response.overview_message_ids),
-            "main_topics": [
-                item.model_copy(update={"message_ids": valid_source_ids(item.message_ids)})
-                for item in response.main_topics
-            ],
-            "conclusions": [
-                item.model_copy(update={"message_ids": valid_source_ids(item.message_ids)})
-                if isinstance(item, CitedText) else item
-                for item in response.conclusions
-            ],
-            "resources": [
-                item.model_copy(update={"message_ids": valid_source_ids(item.message_ids)})
-                for item in response.resources
-            ],
-            "tasks": [
-                item.model_copy(update={"message_ids": valid_source_ids(item.message_ids)})
-                for item in response.tasks
-            ],
-            "open_questions": [
-                item.model_copy(update={"message_ids": valid_source_ids(item.message_ids)})
-                if isinstance(item, CitedText) else item
-                for item in response.open_questions
-            ],
-        })
-        valid_candidates = []
-        for candidate in response.candidates[:limit]:
-            message_ids = list(
-                dict.fromkeys(
-                    message_id
-                    for message_id in candidate.message_ids
-                    if message_id in included_ids
-                )
+        chunked = len(contexts) > 1
+        if chunked:
+            # Preserve candidates until all chronological evidence has been merged.
+            system_prompt = system_prompt.replace(
+                f"数量上限：{CANDIDATE_LIMITS.get(category, 1)} 条",
+                "本阶段暂不设候选数量上限，最终结果再统一筛选。",
             )
-            if message_ids:
-                valid_candidates.append(
-                    candidate.model_copy(update={"message_ids": message_ids})
-                )
-        response = response.model_copy(update={"candidates": valid_candidates})
+            system_prompt += (
+                "\n分块完整性规则：当前输入是按时间顺序排列的一部分。"
+                "保留全部有实质信息的话题、来源、分歧、待解问题及后续回答线索；"
+                "不得按重要性取前几条而丢弃独立实质内容。"
+                "同一原始消息可能连续分段，来源 ID 不变，不得猜测尚未收到的片段。"
+            )
+
+        response = None
+        for context, ids in contexts:
+            user_prompt = build_user_prompt(
+                group_id=group_id, group_name=group_name, category=category,
+                report_date=report_date, window_start=window_start.isoformat(),
+                window_end=window_end.isoformat(), message_count=len(ids),
+                source_message_count=len(set(message.msg_id for message in messages)),
+                discarded_message_count=cleaned.discarded_count, context=context,
+                # Sources themselves carry extracted values in chunk mode. Do not
+                # duplicate the whole archive in every bounded partial request.
+                deterministic={} if chunked else deterministic,
+                keywords=keywords, knowledge_base=knowledge_base,
+                context_truncated=False,
+            )
+            if chunked:
+                user_prompt = user_prompt.replace("数据质量: 上下文完整。", "数据质量: 当前分块完整；其余分块将按时间顺序合并。")
+            partial = self._generate(
+                system_prompt=system_prompt, user_prompt=user_prompt,
+                group_id=group_id, allowed_ids=set(ids), evidence=context,
+                bounded_output=chunked,
+            )
+            if response is None:
+                response = partial
+                continue
+            evidence = json.dumps(
+                [response.model_dump(), partial.model_dump()],
+                ensure_ascii=False, separators=(",", ":"),
+            )
+            if len(evidence) > self.max_context_chars:
+                raise ValueError("完整摘要的合并证据超过上下文预算；未截断，请提高上下文上限后重试")
+            merge_prompt = (
+                f"群ID: {group_id}\n"
+                "请将以下两个摘要按时间顺序合并，前者较早，后者较晚。"
+                "保留所有独立实质话题及其来源、参与者归属和真正分歧，语义去重；"
+                "不得使用固定条数或重要性排名删除实质内容。"
+                "后续回答、纠正或明确决定应更新较早状态：已回答的问题从 open_questions 移除，"
+                "在对应话题或结论中保留问题及回答的真实来源；未解决的分歧继续保留。"
+                "只能引用输入摘要实际携带的 message_ids，不能补入其他原始消息 ID，"
+                "不得把摘要当成新的外部核实。保留候选供最终统一筛选。"
+                "只返回相同结构的 JSON。\n待合并摘要（时间顺序）：\n" + evidence
+            )
+            response = self._generate(
+                system_prompt=system_prompt, user_prompt=merge_prompt, group_id=group_id,
+                allowed_ids=_evidence_ids(response) | _evidence_ids(partial), evidence=evidence,
+                required_ids=_evidence_ids(response, include_candidates=False) | _evidence_ids(partial, include_candidates=False),
+                bounded_output=True,
+            )
+        limit = CANDIDATE_LIMITS.get(category, 1)
+        response = response.model_copy(update={"candidates": response.candidates[:limit]})
+        included_ids = tuple(dict.fromkeys(mid for _, ids in contexts for mid in ids))
+        source_ids = {message.msg_id for message in messages}
         return SummaryResult(
             response=response,
             deterministic=deterministic,
-            context_chars=context_window.chars,
-            context_truncated=context_window.truncated,
-            source_messages=context_window.source_messages,
-            included_messages=context_window.included_messages,
-            discarded_messages=context_window.discarded_messages,
-            included_message_ids=context_window.included_message_ids,
+            context_chars=sum(len(context) for context, _ in contexts),
+            context_truncated=False,
+            source_messages=len(source_ids),
+            included_messages=len(included_ids),
+            discarded_messages=len(source_ids - set(included_ids)),
+            included_message_ids=included_ids,
         )
