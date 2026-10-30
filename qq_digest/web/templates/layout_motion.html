@@ -1,0 +1,38 @@
+<script>
+// Explicit keyed renders share motion; the existing renderers still own content and request ordering.
+(function(){
+  var media=matchMedia('(prefers-reduced-motion: reduce)'),sessions=new Map(),monitor=0;
+  function enabled(host){return host&&host.isConnected&&!media.matches&&!document.hidden&&!document.documentElement.hasAttribute('data-desktop-inactive')&&host.getClientRects().length&&typeof host.animate==='function';}
+  function stop(host){var state=sessions.get(host);if(!state)return;state.animations.forEach(function(animation){animation.cancel();});if(state.ghost)state.ghost.remove();sessions.delete(host);}
+  function suspend(){Array.from(sessions.keys()).forEach(stop);if(monitor)cancelAnimationFrame(monitor);monitor=0;}
+  function watch(){monitor=0;sessions.forEach(function(state,host){if(!enabled(host))stop(host);});if(sessions.size)monitor=requestAnimationFrame(watch);}
+  function capture(host){
+    if(!enabled(host)){stop(host);return null;}
+    var before=new Map();host.querySelectorAll('[data-layout-key]').forEach(function(node){var box=node.getBoundingClientRect();if(box.width&&box.height)before.set(node.dataset.layoutKey,{node:node,box:box,content:node._layoutContent,opacity:getComputedStyle(node).opacity});});
+    stop(host);return before;
+  }
+  function finish(host,before){
+    if(window.WorkspaceActions)WorkspaceActions.refresh(host);
+    if(window.WorkspaceRefresh)WorkspaceRefresh.handled(host.closest('[data-refresh-region]'));
+    if(!before||!enabled(host)){stop(host);return;}
+    var state={animations:new Set(),ghost:null},keys=new Set();sessions.set(host,state);
+    function animate(node,frames,duration,done){var animation=node.animate(frames,{duration:duration,easing:'cubic-bezier(.16,1,.3,1)'});state.animations.add(animation);animation.onfinish=function(){state.animations.delete(animation);animation.cancel();if(done)done();if(!state.animations.size){if(state.ghost)state.ghost.remove();if(sessions.get(host)===state)sessions.delete(host);}};}
+    host.querySelectorAll('[data-layout-key]').forEach(function(node){
+      var box=node.getBoundingClientRect();if(!box.width||!box.height)return;var key=node.dataset.layoutKey,old=before.get(key);keys.add(key);
+      if(old){var x=old.box.x-box.x,y=old.box.y-box.y,changed=old.content!==node._layoutContent;if(Math.abs(x)+Math.abs(y)>.5||Number(old.opacity)<1||changed)animate(node,[{translate:x+'px '+y+'px',opacity:changed?Math.min(Number(old.opacity),.78):old.opacity},{translate:'0 0',opacity:1}],420);}
+      else animate(node,[{opacity:0,translate:'0 8px'},{opacity:1,translate:'0 0'}],280);
+    });
+    before.forEach(function(old,key){
+      if(keys.has(key)||old.box.bottom<0||old.box.top>innerHeight||old.box.right<0||old.box.left>innerWidth)return;
+      if(!state.ghost){var ghost=host.cloneNode(false);ghost.removeAttribute('id');ghost.removeAttribute('data-refresh-region');ghost.dataset.layoutExit='';ghost.inert=true;ghost.setAttribute('aria-hidden','true');ghost.style.cssText='position:fixed;inset:0;display:block;margin:0;padding:0;z-index:15;pointer-events:none;overflow:hidden;contain:layout paint;';document.body.appendChild(ghost);state.ghost=ghost;}
+      var copy=old.node.cloneNode(true);copy.hidden=false;copy.removeAttribute('id');copy.querySelectorAll('[id]').forEach(function(node){node.removeAttribute('id');});copy.style.cssText+=';position:absolute;left:'+old.box.x+'px;top:'+old.box.y+'px;width:'+old.box.width+'px;height:'+old.box.height+'px;box-sizing:border-box;margin:0;overflow:hidden;';state.ghost.appendChild(copy);
+      animate(copy,[{opacity:old.opacity,scale:'1'},{opacity:0,scale:'.97'}],160,function(){copy.remove();});
+    });
+    if(!state.animations.size)sessions.delete(host);else if(!monitor)monitor=requestAnimationFrame(watch);
+  }
+  media.addEventListener('change',function(){if(media.matches)suspend();});
+  document.addEventListener('visibilitychange',function(){if(document.hidden)suspend();});window.addEventListener('pagehide',suspend);
+  new MutationObserver(function(){if(document.documentElement.hasAttribute('data-desktop-inactive'))suspend();}).observe(document.documentElement,{attributes:true,attributeFilter:['data-desktop-inactive']});
+  window.WorkspaceLayout={capture:capture,finish:finish,cancel:stop};
+})();
+</script>

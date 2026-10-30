@@ -1,6 +1,7 @@
+global.matchMedia=()=>({matches:true});
 const fs=require('fs'),vm=require('vm'),assert=require('node:assert/strict');
 const nodes=new Map();
-function node(id){if(!nodes.has(id))nodes.set(id,{value:'',hidden:false,disabled:false,textContent:'',children:[],appendChild(n){this.children.push(n);},focus(){global.focusedTestNode=id;},querySelector(){return null;},setAttribute(){}});return nodes.get(id);}
+function node(id){if(!nodes.has(id))nodes.set(id,{dataset:{},style:{},value:'',hidden:false,disabled:false,textContent:'',children:[],appendChild(n){this.children.push(n);},focus(){global.focusedTestNode=id;},querySelector(){return null;},setAttribute(){}});return nodes.get(id);}
 global.document={getElementById:node,createElement:tag=>({tag,appendChild(){},setAttribute(){},addEventListener(){}}),activeElement:{focus(){}},querySelector:()=>node('visible-modal-button'),querySelectorAll:()=>[],addEventListener(){}};
 global.window={addEventListener(){}};
 global.summaryNode=(tag,cls,text)=>({tag,textContent:text||'',appendChild(){}});

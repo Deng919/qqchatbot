@@ -1,6 +1,7 @@
+global.matchMedia=()=>({matches:true});
 const fs=require('fs'), vm=require('vm'), assert=require('node:assert/strict');
 const nodes=new Map();
-function node(id){if(!nodes.has(id))nodes.set(id,{hidden:true,textContent:'',value:0,max:0,setAttribute(k,v){this[k]=v;}});return nodes.get(id);}
+function node(id){if(!nodes.has(id))nodes.set(id,{dataset:{},style:{},hidden:true,textContent:'',value:0,max:0,setAttribute(k,v){this[k]=v;}});return nodes.get(id);}
 const events=new Map();global.document={getElementById:node,addEventListener:(name,handler)=>events.set(name,handler)};
 global.summaryGenerationBusy=false;global.summaryGenerationStarted=0;
 global.rangeFormDirty=false;

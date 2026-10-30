@@ -2,7 +2,7 @@ const assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('nod
 function node(){return {value:'',hidden:false,open:false,disabled:false,dataset:{},options:[],children:[],attrs:{},_text:'',get textContent(){return this._text;},set textContent(v){this._text=v;this.children=[];},appendChild(n){this.children.push(n);},setAttribute(k,v){this.attrs[k]=v;},removeAttribute(k){delete this.attrs[k];},addEventListener(){},showModal(){this.open=true;},close(){this.open=false;}};}
 const elements={},requests=[],get=id=>elements[id]??=node(),tick=()=>new Promise(r=>setImmediate(r));
 get('bookmarks-status').value='pending';
-const scope={console,URLSearchParams,Date,Number,Array,Promise,String,Math,featureFlags:{bookmarks:true},location:{search:''},history:{replaceState(){}},toast(){},destroyMessageContext(){},mountMessageContext(){},document:{createElement:node,getElementById:get},api(method,url,body){return new Promise((resolve,reject)=>requests.push({method,url,body,resolve,reject}));}};
+const scope={WorkspaceLayout:{capture:()=>null,finish(){}},console,URLSearchParams,Date,Number,Array,Promise,String,Math,featureFlags:{bookmarks:true},location:{search:''},history:{replaceState(){}},toast(){},destroyMessageContext(){},mountMessageContext(){},document:{createElement:node,getElementById:get},api(method,url,body){return new Promise((resolve,reject)=>requests.push({method,url,body,resolve,reject}));}};
 vm.createContext(scope);
 for(const file of ['bookmark_actions.html','bookmarks_script.html'])vm.runInContext(fs.readFileSync('qq_digest/web/templates/'+file,'utf8').match(/<script>([\s\S]*?)<\/script>/)[1],scope);
 const empty={items:[],total:0,page:1,page_size:20,counts:{}};

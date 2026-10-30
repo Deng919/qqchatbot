@@ -1,3 +1,4 @@
+global.WorkspaceLayout={capture:()=>null,finish(){}};
 const {test,before,after}=require('node:test');
 const assert=require('node:assert/strict'),fs=require('node:fs');
 const {chromium}=require('playwright');

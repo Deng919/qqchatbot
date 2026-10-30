@@ -1,3 +1,4 @@
+global.WorkspaceLayout={capture:()=>null,finish(){}};
 const {chromium}=require('playwright'),fs=require('fs'),path=require('path'),assert=require('node:assert/strict');
 const read=name=>fs.readFileSync('qq_digest/web/templates/'+name,'utf8');
 const template=read('secondhand.html'),content=template.split('{% block content %}')[1].replace(/{%[\s\S]*?%}/g,'');

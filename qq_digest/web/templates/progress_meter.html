@@ -1,0 +1,12 @@
+<div class="generation-progress-main">
+  <div class="generation-meter" id="{{ progress_prefix }}-progress-meter" data-refresh-passive aria-hidden="true">
+    <svg viewBox="0 0 80 80" focusable="false"><circle class="generation-meter-track" cx="40" cy="40" r="33"/><circle class="generation-meter-ring" id="{{ progress_prefix }}-progress-ring" cx="40" cy="40" r="33" pathLength="100" stroke-dasharray="100" stroke-dashoffset="100"/></svg>
+    <span id="{{ progress_prefix }}-progress-percent">0%</span>
+  </div>
+  <div class="generation-progress-info">
+    <div class="generation-progress-heading"><strong id="{{ progress_prefix }}-progress-stage" aria-live="polite"></strong><span id="{{ progress_prefix }}-progress-count"></span></div>
+    <progress id="{{ progress_prefix }}-progress-bar" max="1" value="0" aria-label="摘要生成进度"></progress>
+    <div class="generation-progress-meta"><span id="{{ progress_prefix }}-progress-counts"></span><span id="{{ progress_prefix }}-progress-time"></span></div>
+    <p id="{{ progress_prefix }}-progress-connection" class="generation-progress-connection" aria-live="polite"></p>
+  </div>
+</div>

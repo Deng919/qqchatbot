@@ -1,3 +1,4 @@
+global.WorkspaceLayout={capture:()=>null,finish(){}};
 const fs=require('fs'),vm=require('vm'),assert=require('node:assert/strict');
 const nodes=new Map();function make(){const classes=new Set();return {children:[],events:{},dataset:{},attrs:{},hidden:false,value:'',open:false,classList:{toggle(k,v){if(v===undefined)v=!classes.has(k);v?classes.add(k):classes.delete(k);return v;},contains:k=>classes.has(k)},appendChild(n){this.children.push(n);return n;},addEventListener(k,fn){this.events[k]=fn;},setAttribute(k,v){this.attrs[k]=v;},focus(){},set textContent(v){this._text=String(v);this.children=[];},get textContent(){return (this._text||'')+this.children.map(n=>n.textContent).join('');}};}
 const deckNode=require('./helpers/deck_dom.cjs'),plainMake=make;make=()=>deckNode(plainMake());

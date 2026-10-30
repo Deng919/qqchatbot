@@ -9,6 +9,7 @@
     .desktop-page{position:absolute;inset:0;width:100%;height:100%;border:0;background:transparent;visibility:hidden;pointer-events:none}
     #desktop-loading{position:fixed;bottom:18px;right:22px;z-index:100;padding:10px 15px;border:0;border-radius:8px;background:#353535;color:#dedede;box-shadow:0 5px 20px #0003}
     #desktop-loading[hidden]{display:none}#desktop-loading button{margin-left:12px;border:0;border-radius:5px;padding:5px 9px;background:#494949;color:inherit;cursor:pointer}
+    @media(prefers-reduced-motion:no-preference){body{transition:background-color 500ms cubic-bezier(.16,1,.3,1)}}
   </style>
 </head>
 <body>
@@ -96,7 +97,7 @@
     if(previous){previous.frame.style.zIndex='1';previous.motion.to(-direction,function(){if(previous!==active){previous.visible=false;previous.frame.style.visibility='hidden';}});}
     record.motion.to(0);document.title=record.win.document.title;syncTheme(record);notice.hidden=true;updateButtons();indicator(record);
   }
-  function syncTheme(record){if(record===active&&record.main){document.body.style.background=getComputedStyle(record.main).backgroundColor;container.style.background='transparent';}}
+  function syncTheme(record){if(record===active&&record.main){var style=record.win.getComputedStyle(record.main);document.body.style.background=style.getPropertyValue('--bg').trim()||style.backgroundColor;container.style.background='transparent';}}
   function applyState(record,visit){
     if(canonical(record.url)===canonical(visit.url)&&JSON.stringify(record.win.history.state)===JSON.stringify(visit.childState))return;
     record.nativeReplace.call(record.win.history,visit.childState,'',visit.url);record.url=visit.url;

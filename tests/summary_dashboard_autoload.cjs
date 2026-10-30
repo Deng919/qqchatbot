@@ -1,3 +1,4 @@
+global.WorkspaceLayout={capture:()=>null,finish(){}};
 const fs=require('fs'),vm=require('vm'),assert=require('node:assert/strict');
 function make(){const classes=new Set();return {children:[],events:{},dataset:{},attrs:{},open:false,scrollTop:0,clientHeight:396,className:'',classList:{toggle(k,v){v?classes.add(k):classes.delete(k);},contains:k=>classes.has(k)},appendChild(n){this.children.push(n);n.parentElement=this;return n;},remove(){if(this.parentElement)this.parentElement.children=this.parentElement.children.filter(n=>n!==this);},addEventListener(k,fn){this.events[k]=fn;},setAttribute(k,v){this.attrs[k]=v;},focus(){document.activeElement=this;},set textContent(v){this._text=String(v);this.children=[];},get textContent(){return (this._text||'')+this.children.map(n=>n.textContent).join('');}};}
 const deckNode=require('./helpers/deck_dom.cjs'),plainMake=make;make=()=>deckNode(plainMake());

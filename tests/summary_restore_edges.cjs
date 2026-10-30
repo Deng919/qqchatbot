@@ -1,7 +1,8 @@
+global.matchMedia=()=>({matches:true});
 const fs=require('fs'),vm=require('vm'),assert=require('node:assert/strict');
 const root=process.cwd()+'/';
 const nodes=new Map(), events=new Map(), requests=[], timers=new Map();let next=0;
-function node(id){if(!nodes.has(id))nodes.set(id,{value:'',hidden:false,disabled:false,textContent:'',children:[],appendChild(n){this.children.push(n);},focus(){},querySelector(){return null;},setAttribute(){}});return nodes.get(id);}
+function node(id){if(!nodes.has(id))nodes.set(id,{dataset:{},style:{},value:'',hidden:false,disabled:false,textContent:'',children:[],appendChild(n){this.children.push(n);},focus(){},querySelector(){return null;},setAttribute(){}});return nodes.get(id);}
 global.document={getElementById:node,createElement:tag=>({tag,appendChild(){},setAttribute(){},addEventListener(){}}),activeElement:{focus(){}},querySelector:()=>node('visible-modal-button'),querySelectorAll:()=>[],addEventListener:(name,fn)=>events.set(name,fn)};
 global.setTimeout=(fn,delay)=>{const id=++next;timers.set(id,{fn,delay});return id;};global.clearTimeout=id=>timers.delete(id);
 global.api=(method,url,body)=>new Promise((resolve,reject)=>requests.push({method,url,body,resolve,reject}));

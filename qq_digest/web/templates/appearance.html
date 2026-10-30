@@ -1,11 +1,14 @@
 <script id="appearance-init">
 (function(){
   var key='qq-digest-theme',choices=['system','light','dark'],preference='dark';
-  var system=window.matchMedia('(prefers-color-scheme: dark)');
+  var system=window.matchMedia('(prefers-color-scheme: dark)'),motion=window.matchMedia('(prefers-reduced-motion: reduce)'),timer=0;
+  function settle(){clearTimeout(timer);document.documentElement.removeAttribute('data-theme-changing');}
   try{var saved=localStorage.getItem(key);if(choices.includes(saved))preference=saved;}catch(error){}
   function apply(value,persist){
     preference=choices.includes(value)?value:'dark';
     var resolved=preference==='system'?(system.matches?'dark':'light'):preference;
+    var root=document.documentElement,animate=root.dataset.theme&&root.dataset.theme!==resolved&&!motion.matches&&!document.hidden&&!root.hasAttribute('data-desktop-inactive');
+    if(animate){clearTimeout(timer);root.setAttribute('data-theme-changing','');if(document.body)void document.body.offsetWidth;timer=setTimeout(settle,550);}else if(root.dataset.theme!==resolved)settle();
     document.documentElement.dataset.theme=resolved;
     document.documentElement.style.colorScheme=resolved;
     document.querySelectorAll('[data-theme-choice]').forEach(function(input){input.checked=input.value===preference;});
@@ -19,10 +22,17 @@
   });
   system.addEventListener('change',function(){if(preference==='system')apply(preference,false);});
   window.addEventListener('storage',function(event){if(event.key===key||event.key===null)apply(event.newValue,false);});
+  motion.addEventListener('change',function(){if(motion.matches)settle();});
+  document.addEventListener('visibilitychange',function(){if(document.hidden)settle();});
+  new MutationObserver(function(){if(document.documentElement.hasAttribute('data-desktop-inactive'))settle();}).observe(document.documentElement,{attributes:true,attributeFilter:['data-desktop-inactive']});
 })();
 </script>
 <style id="appearance-style">
   :root { color-scheme:light; }
+  :root[data-theme-changing] body,:root[data-theme-changing] body *,:root[data-theme-changing] body *::before,:root[data-theme-changing] body *::after {
+    transition-property:background-color,color,border-color,box-shadow,fill,stroke !important;
+    transition-duration:500ms !important;transition-timing-function:cubic-bezier(.16,1,.3,1) !important;transition-delay:0s !important;
+  }
   a,a:visited,a:hover,a:focus-visible { text-decoration:none; }
   a:not(.btn):hover { color:var(--primary-dark); }
   .appearance-options { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:16px; border:0; padding:0; margin:0; min-width:0; }

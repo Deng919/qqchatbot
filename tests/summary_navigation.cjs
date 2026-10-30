@@ -1,3 +1,4 @@
+global.WorkspaceLayout={capture:()=>null,finish(){}};
 const fs=require('fs'),vm=require('vm'),assert=require('node:assert/strict');
 const deckNode=require('./helpers/deck_dom.cjs');
 const nodes=new Map();

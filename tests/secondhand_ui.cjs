@@ -1,3 +1,4 @@
+global.WorkspaceLayout={capture:()=>null,finish(){}};
 const fs=require('fs'),vm=require('vm'),assert=require('node:assert/strict');const nodes=new Map();
 function node(id){if(!nodes.has(id))nodes.set(id,{value:'',hidden:false,disabled:false,checked:false,children:[],dataset:{},events:{},textContent:'',appendChild(n){this.children.push(n);return n;},setAttribute(){},focus(){},showModal(){this.open=true;},close(){this.open=false;},addEventListener(name,fn){this.events[name]=fn;}});return nodes.get(id);}
 global.document={getElementById:node,createElement:()=>node('new'+nodes.size),addEventListener(){}};

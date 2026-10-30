@@ -146,6 +146,7 @@
   document.addEventListener('scroll',hide,true);window.addEventListener('resize',hide);
   new MutationObserver(function(changes){var roots=new Set();changes.forEach(function(change){roots.add(change.target.nodeType===3?change.target.parentElement:change.target);});roots.forEach(refresh);if(active&&(!active.isConnected||!active.getClientRects().length))hide();}).observe(document.body,{childList:true,characterData:true,subtree:true,attributes:true,attributeFilter:['disabled','hidden','open']});
   document.addEventListener('toggle',function(e){if(e.target.matches('details'))refresh(e.target);},true);
+  window.WorkspaceActions={refresh:refresh};
   refresh(document.body);
 })();
 </script>

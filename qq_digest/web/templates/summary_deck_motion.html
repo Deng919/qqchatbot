@@ -4,7 +4,7 @@
     var media=window.matchMedia('(prefers-reduced-motion: reduce)'),layouts=[],flights=[],width=0;
     drawer.setAttribute('aria-label','展开的群聊摘要');bar.appendChild(label);bar.appendChild(summaryButton('收回卡片',function(){close(true,true);},'btn btn-sm'));drawer.appendChild(bar);
     function animated(){return !disposed&&!media.matches&&typeof grid.animate==='function';}
-    function measure(){return animated()?entries.map(function(entry){return {entry:entry,box:entry.card.getBoundingClientRect()};}):null;}
+    function measure(takeover){if(!animated())return null;var before=entries.map(function(entry){return {entry:entry,box:entry.card.getBoundingClientRect()};});if(takeover&&window.WorkspaceLayout)WorkspaceLayout.cancel(grid.closest('[data-refresh-region]'));return before;}
     function stopLayout(){layouts.forEach(function(animation){animation.cancel();});layouts=[];}
     function stopFlights(){flights.forEach(function(flight){flight.animation.cancel();flight.node.remove();flight.source.style.opacity='';});flights=[];}
     function reflow(before){
@@ -41,13 +41,13 @@
       });
     }
     function open(entry,animate){
-      if(disposed||active===entry)return;var before=measure(),previous=active,notes=previous&&animated()?snapshots(previous):[];
+      if(disposed||active===entry)return;var before=measure(true),previous=active,notes=previous&&animated()?snapshots(previous):[];
       stopLayout();stopFlights();if(previous){previous.setOpen(false);previous.card.appendChild(previous.body);}active=entry;entry.setOpen(true);label.textContent=entry.name+' · 摘要要点';drawer.appendChild(entry.body);place();entry.restorePosition();revealed=false;
       if(animate&&animated()){reflow(before);if(previous)returnNotes(notes,previous);if(visibleNotes(entry).length){revealed=true;pull(entry);}}
       else revealed=true;
     }
     function close(animate,focus){
-      if(!active)return;var before=measure(),previous=active,notes=animated()?snapshots(previous):[];stopLayout();stopFlights();active=null;previous.setOpen(false);previous.card.appendChild(previous.body);drawer.remove();
+      if(!active)return;var before=measure(true),previous=active,notes=animated()?snapshots(previous):[];stopLayout();stopFlights();active=null;previous.setOpen(false);previous.card.appendChild(previous.body);drawer.remove();
       if(animate){reflow(before);returnNotes(notes,previous);}if(focus)previous.heading.focus({preventScroll:true});summarySave();
     }
     function refresh(entry,before){if(active!==entry||disposed)return;reflow(before);entry.restorePosition();if(!revealed&&visibleNotes(entry).length){revealed=true;pull(entry);}}

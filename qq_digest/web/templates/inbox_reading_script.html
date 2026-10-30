@@ -92,16 +92,16 @@
   }
   function inboxFilterPage(value){inboxQuery=value;if(inboxDashboardActive){inboxFilterDashboard();return;}var visible=inboxVisibleItems();if(!visible.some(function(item){return item.key===inboxSelectedKey;})){inboxSelectedKey=null;inboxMobileOpen=false;}inboxRenderRows();inboxApplyView();}
   function inboxBeginDashboard(){inboxDashboardActive=true;inboxApplyView();}
-  function inboxFilterDashboard(){var query=inboxQuery.trim().toLocaleLowerCase(),visible=0;inboxDashboardCards.forEach(function(entry){entry.card.hidden=!!query&&!entry.name.toLocaleLowerCase().includes(query);if(!entry.card.hidden)visible++;});if(inboxDashboardMotion)inboxDashboardMotion.layout();var note=inboxN('inbox-dashboard-no-match');if(note)note.hidden=visible>0||!inboxDashboardCards.length;}
+  function inboxFilterDashboard(rendering){var host=inboxN('summary-points'),before=rendering?null:WorkspaceLayout.capture(host),query=inboxQuery.trim().toLocaleLowerCase(),visible=0;inboxDashboardCards.forEach(function(entry){entry.card.hidden=!!query&&!entry.name.toLocaleLowerCase().includes(query);if(!entry.card.hidden)visible++;});if(inboxDashboardMotion)inboxDashboardMotion.layout();if(!rendering)WorkspaceLayout.finish(host,before);var note=inboxN('inbox-dashboard-no-match');if(note)note.hidden=visible>0||!inboxDashboardCards.length;}
   function inboxRenderDashboard(data){
-    var positions=new Map();if(inboxDashboardActive)inboxDashboardCards.forEach(function(entry){entry.rememberPosition();positions.set(entry.card.dataset.groupId,entry.scrollTop);});
+    var layoutHost=inboxN('summary-points'),layoutBefore=WorkspaceLayout.capture(layoutHost),positions=new Map();if(inboxDashboardActive)inboxDashboardCards.forEach(function(entry){entry.rememberPosition();positions.set(entry.card.dataset.groupId,entry.scrollTop);});
     if(inboxDashboardMotion)inboxDashboardMotion.destroy();
     inboxDashboardActive=true;var selected=inboxItems.find(function(item){return item.key===inboxSelectedKey;}),revision=++inboxDashboardRevision,host=inboxN('summary-points');host.textContent='';inboxDashboardCards=[];inboxDashboardButtons=[];inboxItems=(inboxMobileOpen||summaryPointReference)&&selected?[selected]:[];
     var overview=summaryNode('div','summary-dashboard-overview');[['群聊',data.total],['摘要要点',data.point_total],['范围内未读',data.unread]].forEach(function(pair){var metric=summaryNode('div','summary-dashboard-metric');metric.appendChild(summaryNode('strong','',String(pair[1])));metric.appendChild(summaryNode('span','',pair[0]));overview.appendChild(metric);});host.appendChild(overview);
     var grid=summaryNode('div','summary-dashboard-grid');host.appendChild(grid);var motion=createSummaryDeck(grid,inboxDashboardCards),restored=null;inboxDashboardMotion=motion;
     if(!data.items.length)summaryEmpty(grid,inboxN('summary-read-filter').value!=='all');
     data.items.forEach(function(group){
-      var card=summaryNode('details','summary-group-stack'),heading=summaryNode('summary','summary-group-cover'),meta=summaryNode('div','summary-group-meta');card.dataset.groupId=String(group.group_id);
+      var card=summaryNode('details','summary-group-stack'),heading=summaryNode('summary','summary-group-cover'),meta=summaryNode('div','summary-group-meta');card.dataset.groupId=String(group.group_id);card.dataset.layoutKey='group:'+group.group_id;card._layoutContent=JSON.stringify(group);
       meta.appendChild(summaryNode('span','summary-group-icon','群'));meta.appendChild(summaryNode('span','',group.unread?'有 '+group.unread+' 条未读':'全部已读'));heading.appendChild(meta);
       heading.appendChild(summaryNode('h2','summary-group-title',group.group_name));heading.appendChild(summaryNode('p','summary-group-preview',summaryCleanText((group.preview||[])[0]||'展开查看这个群的摘要要点')));
       var footer=summaryNode('div','summary-group-footer');footer.appendChild(summaryNode('span','',group.report_count+' 份摘要 · '+group.total+' 条要点'));var hint=summaryNode('span','summary-group-toggle');hint.setAttribute('aria-hidden','true');footer.appendChild(hint);heading.appendChild(footer);card.appendChild(heading);
@@ -112,7 +112,7 @@
       function rememberPosition(){var list=body.children[0];if(list&&list.className==='summary-group-points'&&list.clientHeight>0)entry.scrollTop=list.scrollTop;}
       function restorePosition(){var list=body.children[0],target=restoreScroll===undefined?entry.scrollTop:restoreScroll;if(list&&list.className==='summary-group-points'&&list.clientHeight>0){list.scrollTop=target;if(list.scrollTop>=target)restoreScroll=undefined;}rememberPosition();}
       function renderContent(total){
-        rememberPosition();var before=motion.measure();
+        rememberPosition();var before=motion.measure(motion.active===entry);
         var list=body.children[0];
         if(!list||list.className!=='summary-group-points'){body.textContent='';list=summaryNode('div','summary-group-points');list.tabIndex=0;list.setAttribute('role','region');list.setAttribute('aria-label','本群摘要要点，可滚动查看更多');body.appendChild(list);}
         while(body.children.length>1)body.children[body.children.length-1].remove();
@@ -133,7 +133,7 @@
       entry.load=function(){if(!loading&&(!loaded||loadedItems.length<total))load(page+1);};if(summaryExpanded['group:'+group.group_id])restored=entry;
     });
     if(restored){inboxDashboardCards.forEach(function(entry){if(entry!==restored)entry.setOpen(false);});motion.open(restored,false);restored.load();}
-    var noMatch=summaryNode('p','summary-dashboard-no-match','本页没有匹配的群聊。');noMatch.id='inbox-dashboard-no-match';noMatch.hidden=true;host.appendChild(noMatch);inboxFilterDashboard();inboxApplyView();
+    var noMatch=summaryNode('p','summary-dashboard-no-match','本页没有匹配的群聊。');noMatch.id='inbox-dashboard-no-match';noMatch.hidden=true;host.appendChild(noMatch);inboxFilterDashboard(true);inboxApplyView();WorkspaceLayout.finish(host,layoutBefore);
   }
   function inboxRenderGroups(groups){
     var host=inboxN('inbox-group-list');host.textContent='';inboxGroupButtons=[];

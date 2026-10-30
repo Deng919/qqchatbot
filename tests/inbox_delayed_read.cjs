@@ -1,3 +1,4 @@
+global.WorkspaceLayout={capture:()=>null,finish(){}};
 const fs=require('fs'),vm=require('vm'),assert=require('node:assert/strict');
 const nodes=new Map(),requests=[];
 function make(){const classes=new Set();return {children:[],events:{},dataset:{},hidden:false,value:'',open:false,scrollTop:0,isConnected:true,classList:{toggle(k,v){if(v===undefined)v=!classes.has(k);v?classes.add(k):classes.delete(k);return v;}},appendChild(n){n.parentElement=this;this.children.push(n);return n;},remove(){if(this.parentElement)this.parentElement.children=this.parentElement.children.filter(n=>n!==this);},addEventListener(k,fn){this.events[k]=fn;},setAttribute(){},removeAttribute(){},focus(){},set textContent(v){this._text=String(v);this.children=[];},get textContent(){return (this._text||'')+this.children.map(n=>n.textContent).join('');}};}

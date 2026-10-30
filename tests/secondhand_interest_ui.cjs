@@ -1,3 +1,4 @@
+global.WorkspaceLayout={capture:()=>null,finish(){}};
 const fs=require('fs'),vm=require('vm'),assert=require('node:assert/strict'),nodes=new Map();
 const n=id=>{if(!nodes.has(id))nodes.set(id,{children:[],dataset:{},value:'',appendChild(x){this.children.push(x);return x;},setAttribute(){},addEventListener(){},showModal(){this.open=true;},close(){this.open=false;},set textContent(v){this._text=v;this.children=[];},get textContent(){return this._text||'';}});return nodes.get(id);};
 const requests=[];Object.assign(global,{document:{getElementById:n,createElement:()=>n('node'+nodes.size)},window:{addEventListener(){}},location:{search:''},history:{replaceState(){}},setTimeout:()=>1,clearTimeout(){},destroyMessageContext(){},api:(method,url,body)=>new Promise((resolve,reject)=>requests.push({method,url,body,resolve,reject}))});

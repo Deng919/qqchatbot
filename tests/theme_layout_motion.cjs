@@ -1,0 +1,68 @@
+const {chromium}=require('playwright'),assert=require('node:assert/strict');
+const origin=process.argv[2],only=process.argv[3];
+if(!origin)throw Error('Usage: node tests/theme_layout_motion.cjs <isolated origin> [theme|layout]');
+(async()=>{const browser=await chromium.launch({headless:true});try{
+ const context=await browser.newContext({viewport:{width:1440,height:950}}),errors=[];
+ await context.addInitScript(()=>localStorage.setItem('qq-digest-theme','dark'));
+ await context.request.post(origin+'/login',{form:{password:'navigation-test-password'}});
+ const page=await context.newPage();page.setDefaultTimeout(7000);page.on('pageerror',e=>errors.push(e.message));
+ if(!only||only==='theme'){
+  await page.goto(origin+'/settings?section=appearance');await page.locator('[data-theme-choice][value=light]').waitFor();
+  const dark=await page.evaluate(()=>getComputedStyle(document.body).backgroundColor);
+  assert.equal(await page.evaluate(()=>document.documentElement.hasAttribute('data-theme-changing')),false,'startup does not fade');
+  await page.locator('[data-theme-choice][value=light]').check();await page.waitForTimeout(80);
+  const during=await page.evaluate(()=>({color:getComputedStyle(document.body).backgroundColor,animations:document.body.getAnimations().map(a=>a.transitionProperty)}));
+  assert.ok(during.animations.includes('background-color'),'body colors actually interpolate');
+  await page.waitForTimeout(650);const light=await page.evaluate(()=>getComputedStyle(document.body).backgroundColor);
+  assert.notEqual(during.color,dark);assert.notEqual(during.color,light);
+  await page.locator('[data-theme-choice][value=dark]').check();await page.waitForTimeout(95);
+  const reversal=await page.evaluate(()=>{const before=getComputedStyle(document.body).backgroundColor;document.querySelector('[data-theme-choice][value=light]').click();return {before,after:getComputedStyle(document.body).backgroundColor};});
+  assert.equal(reversal.before,reversal.after,'rapid reversal starts at the displayed color');
+  await page.waitForTimeout(650);assert.equal(await page.evaluate(()=>getComputedStyle(document.body).backgroundColor),light);
+  assert.equal(await page.evaluate(()=>localStorage.getItem('qq-digest-theme')),'light');
+  await page.emulateMedia({reducedMotion:'reduce'});await page.locator('[data-theme-choice][value=dark]').check();
+  assert.equal(await page.evaluate(()=>getComputedStyle(document.body).backgroundColor),dark);
+  assert.equal(await page.evaluate(()=>document.body.getAnimations().length),0);
+  await page.emulateMedia({reducedMotion:'no-preference'});
+ }
+ if(!only||only==='layout'){
+  await page.route('**/api/bookmarks?*',route=>route.fulfill({json:{page:1,page_size:30,total:0,counts:{},items:[]}}));
+  await page.goto(origin+'/bookmarks');await page.waitForFunction(()=>typeof bookmarksLoad==='function');
+  await page.evaluate(()=>{window.layoutItems=[1,2,3,4].map(id=>({bookmark_id:id,revision:1,kind:'message',status:'pending',snapshot:{title:'收藏 '+id,text:'用于连续筛选的内容',group_name:'测试群',date:'2026-10-30'}}));const original=api;api=(m,u,b)=>u.startsWith('/api/bookmarks?')?Promise.resolve({items:layoutItems,total:layoutItems.length,page:1,page_size:30,counts:{pending:layoutItems.length}}):original(m,u,b);return bookmarksLoad();});
+  await page.waitForTimeout(650);
+  await page.evaluate(()=>bookmarksLoad());assert.equal(await page.locator('#bookmarks-list').evaluate(n=>n.getAnimations({subtree:true}).filter(a=>a.constructor.name==='Animation').length),0,'identical cards do not replay');
+  const moved=await page.evaluate(()=>{const host=document.getElementById('bookmarks-list'),before=host.children[1].getBoundingClientRect().y;layoutItems=layoutItems.slice(1);return bookmarksLoad().then(()=>({before,after:host.children[0].getBoundingClientRect().y,running:host.children[0].getAnimations().some(a=>a.playState==='running'),parentAnimations:host.getAnimations().length,ghosts:document.querySelectorAll('[data-layout-exit]').length}));});
+  assert.ok(moved.running,'surviving bookmark animates into the vacant slot');assert.ok(Math.abs(moved.before-moved.after)<1,'no initial position jump');assert.equal(moved.parentAnimations,0,'no competing region fade');assert.ok(moved.ghosts>0,'removed card has a short exit');
+  assert.equal(await page.locator('[data-layout-exit]').evaluate(n=>n.inert&&n.getAttribute('aria-hidden')==='true'),true);
+  await page.waitForTimeout(650);assert.equal(await page.locator('[data-layout-exit]').count(),0);
+  await page.evaluate(()=>{layoutItems=[layoutItems[2],layoutItems[0],layoutItems[1]];return bookmarksLoad();});await page.waitForTimeout(60);
+  const quick=await page.evaluate(()=>{const host=document.getElementById('bookmarks-list'),before=host.children[1].getBoundingClientRect().y;layoutItems=[layoutItems[1],layoutItems[2],layoutItems[0]];return bookmarksLoad().then(()=>({before,after:host.children[0].getBoundingClientRect().y}));});
+  assert.ok(Math.abs(quick.before-quick.after)<1,'interrupted reorder preserves displayed position');
+  await page.waitForTimeout(650);
+  await page.emulateMedia({reducedMotion:'reduce'});await page.evaluate(()=>{layoutItems=layoutItems.slice(1);return bookmarksLoad();});assert.equal(await page.locator('[data-layout-exit]').count(),0);assert.equal(await page.locator('#bookmarks-list').evaluate(n=>n.getAnimations({subtree:true}).length),0);await page.emulateMedia({reducedMotion:'no-preference'});
+  await page.setViewportSize({width:390,height:844});await page.evaluate(()=>{layoutItems.reverse();return bookmarksLoad();});await page.waitForTimeout(650);assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
+  if(process.env.THEME_LAYOUT_QA_DIR)await page.screenshot({path:process.env.THEME_LAYOUT_QA_DIR+'/layout-mobile.png'});
+  await page.setViewportSize({width:1440,height:950});
+  await page.route('**/api/secondhand?*',route=>route.fulfill({json:{items:[],total:0,page:1,page_size:30,date_from:'2026-10-01',date_to:'2026-10-30',categories:[],lane_counts:{}}}));
+  await page.goto(origin+'/secondhand');await page.waitForFunction(()=>typeof marketLoad==='function');await page.waitForTimeout(150);
+  await page.evaluate(()=>{window.marketItems=[1,2,3,4,5,6].map(id=>({item_id:'item-'+id,feed_id:'feed-'+id,title:'交易商品 '+id,description:'测试商品内容',lane:'sale',category:'all',status:'unknown',seller_qq:100+id,seller_name:'测试卖家',group_count:1,published_at:'2026-10-30T12:00:00+08:00'}));window.marketResult=items=>({items,total:items.length,page:1,page_size:30,date_from:'2026-10-01',date_to:'2026-10-30',categories:[],lane_counts:{sale:items.length}});const original=api;api=(m,u,b)=>u.startsWith('/api/secondhand?')?Promise.resolve(marketResult(marketItems)):original(m,u,b);return marketLoad();});await page.waitForTimeout(650);
+  const marketMove=await page.evaluate(()=>{const host=marketN('market-list'),before=host.children[1].getBoundingClientRect();marketItems=marketItems.slice(1);return marketLoad().then(()=>({before:before.x,after:host.children[0].getBoundingClientRect().x,running:host.children[0].getAnimations().some(a=>a.playState==='running')}));});assert.ok(marketMove.running&&Math.abs(marketMove.before-marketMove.after)<1,'market cards move continuously into filtered slots');await page.waitForTimeout(650);
+  await page.evaluate(()=>{window.marketPending=[];api=(m,u,b)=>u.startsWith('/api/secondhand?')?new Promise(resolve=>marketPending.push(resolve)):Promise.resolve({});marketSwitchCategory('books');});
+  assert.match(await page.locator('#market-list').textContent(),/交易商品 2/,'category request preserves existing cards');
+  await page.evaluate(()=>{marketSwitchCategory('digital');marketPending[1](marketResult([marketItems[2]]));});await page.waitForTimeout(30);await page.evaluate(()=>marketPending[0](marketResult([marketItems[0]])));await page.waitForTimeout(650);assert.match(await page.locator('#market-list').textContent(),/交易商品 4/,'latest category response wins');assert.doesNotMatch(await page.locator('#market-list').textContent(),/交易商品 2/);
+  await page.goto(origin+'/reports');await page.waitForFunction(()=>typeof inboxRenderDashboard==='function');await page.waitForTimeout(400);
+  await page.evaluate(()=>{summaryCancelDetail();summaryView='points';summaryApplyView();summaryExpanded={};inboxQuery='';const original=api;api=(m,u,b)=>u.startsWith('/api/summary-reading?')?Promise.resolve({page:1,total:1,page_size:30,items:[{key:'layout-point',group_id:701,group_name:'保留群 1',text:'平铺测试：展开后仍可筛选',section:'讨论',report_kind:'daily',report_id:1,report_date:'2026-10-30',date_label:'2026-10-30',read:true,status:'legacy',source_ids:[]}]}):original(m,u,b);window.layoutDashboard={total:6,point_total:6,unread:0,items:Array.from({length:6},(_,i)=>({group_id:700+i,group_name:(i%2?'保留群 ':'其他群 ')+i,total:1,unread:0,report_count:1,preview:['布局连续重排']}))};inboxRenderDashboard(layoutDashboard);});await page.waitForTimeout(650);
+  const summaryMove=await page.evaluate(()=>{const host=document.getElementById('summary-points'),node=host.querySelector('[data-layout-key="group:701"]'),before=node.getBoundingClientRect();inboxFilterPage('保留群');const after=node.getBoundingClientRect();return {before:before.x,after:after.x,running:node.getAnimations().some(a=>a.playState==='running')};});assert.ok(summaryMove.running&&Math.abs(summaryMove.before-summaryMove.after)<1,'summary filter uses continuous movement');await page.waitForTimeout(650);
+  await page.locator('#summary-points [data-layout-key="group:701"] > summary').click();await page.locator('.summary-deck-drawer .inbox-row').waitFor();await page.waitForTimeout(780);await page.evaluate(()=>inboxFilterPage('保留群 1'));await page.waitForTimeout(650);assert.equal(await page.locator('.summary-deck-drawer .inbox-row').count(),1,'active deck survives matching filter');
+  await page.evaluate(()=>inboxFilterPage('没有匹配'));await page.waitForTimeout(650);assert.equal(await page.locator('.summary-deck-drawer').count(),0);await page.evaluate(()=>inboxFilterPage(''));await page.waitForTimeout(650);assert.equal(await page.locator('#summary-points .summary-group-stack:visible').count(),6);
+  await page.evaluate(()=>inboxFilterPage('保留群'));await page.waitForTimeout(650);await page.evaluate(()=>inboxRenderDashboard(layoutDashboard));
+  assert.doesNotMatch(await page.locator('[data-layout-exit]').allTextContents().then(parts=>parts.join(' ')),/其他群/,'refresh must not reveal previously filtered groups');await page.waitForTimeout(650);
+  await page.evaluate(()=>inboxFilterPage('保留群 1'));await page.evaluate(()=>document.getElementById('summary-points').hidden=true);await page.evaluate(()=>new Promise(requestAnimationFrame));assert.equal(await page.locator('[data-layout-exit]').count(),0,'hidden hosts cancel fixed exit snapshots');await page.evaluate(()=>{document.getElementById('summary-points').hidden=false;inboxFilterPage('');});await page.waitForTimeout(650);
+  if(process.env.THEME_LAYOUT_QA_DIR)await page.screenshot({path:process.env.THEME_LAYOUT_QA_DIR+'/layout-desktop.png'});
+  await page.evaluate(()=>{inboxQuery='';summaryExpanded={};inboxRenderDashboard(layoutDashboard);const original=api;api=(m,u,b)=>u.startsWith('/api/summary-reading?')&&new URLSearchParams(u.split('?')[1]).get('group_id')==='700'?new Promise(resolve=>window.resolveInactiveGroup=resolve):original(m,u,b);});await page.waitForTimeout(650);
+  await page.locator('#summary-points [data-layout-key="group:700"] > summary').click();await page.evaluate(()=>inboxDashboardMotion.close(true,false));await page.waitForTimeout(780);await page.evaluate(()=>inboxFilterPage('保留群'));await page.waitForTimeout(60);
+  const late=await page.evaluate(async()=>{const node=document.querySelector('#summary-points [data-layout-key="group:701"]'),before=node.getBoundingClientRect().x;resolveInactiveGroup({page:1,total:1,page_size:30,items:[{key:'late-inactive',group_id:700,text:'旧群的延迟响应',section:'讨论',report_kind:'daily',report_id:1,report_date:'2026-10-30',read:true,source_ids:[]}]});await Promise.resolve();await Promise.resolve();return {before,after:node.getBoundingClientRect().x,animations:node.getAnimations().length};});assert.ok(late.animations>0&&Math.abs(late.before-late.after)<1,'inactive group responses do not interrupt ongoing list movement');await page.waitForTimeout(650);
+  await page.evaluate(()=>inboxFilterPage('保留群'));await page.waitForTimeout(35);await page.evaluate(()=>document.documentElement.setAttribute('data-desktop-inactive',''));assert.equal(await page.locator('[data-layout-exit]').count(),0);assert.equal(await page.locator('#summary-points [data-layout-key]').evaluateAll(nodes=>nodes.flatMap(n=>n.getAnimations()).length),0,'inactive pages cancel layout motion');
+ }
+ assert.deepEqual(errors,[]);console.log('Theme interpolation/reversal and keyed list movement/exit/reduced motion verified.');
+}finally{await browser.close();}})().catch(e=>{console.error(e);process.exitCode=1;});

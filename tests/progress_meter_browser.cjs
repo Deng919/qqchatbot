@@ -1,0 +1,23 @@
+const {chromium}=require('playwright'),assert=require('node:assert/strict');
+const origin=process.argv[2];if(!origin)throw Error('Usage: node tests/progress_meter_browser.cjs <isolated origin>');
+(async()=>{const browser=await chromium.launch({headless:true});try{
+ const context=await browser.newContext({viewport:{width:1440,height:950}});await context.request.post(origin+'/login',{form:{password:'navigation-test-password'}});
+ const page=await context.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));await page.goto(origin+'/reports');await page.waitForFunction(()=>typeof summaryDrawProgress==='function');
+ await page.evaluate(()=>{window.meterData={status:'running',stage:'summary',completed:0,total:10,counts:{created:0,reused:0,skipped:0,failed:0},elapsed_seconds:10,current_group:{group_name:'测试群'}};document.getElementById('summary-run-result').hidden=false;summaryDrawProgress(meterData);});
+ assert.equal(await page.locator('#summary-progress-meter').count(),1,'summary has a radial meter');
+ assert.equal(await page.evaluate(()=>getComputedStyle(document.querySelector('#summary-progress-meter .generation-meter-track')).stroke!==getComputedStyle(document.getElementById('summary-run-result')).backgroundColor),true,'empty track stays visible against the panel');
+ await page.waitForTimeout(550);await page.evaluate(()=>summaryDrawProgress({...meterData,completed:5}));await page.waitForTimeout(90);
+ const value=await page.evaluate(()=>({number:parseInt(document.getElementById('summary-progress-percent').textContent),ring:100-Number(document.getElementById('summary-progress-ring').style.strokeDashoffset),actual:document.getElementById('summary-progress-bar').value}));
+ assert.ok(value.number>0&&value.number<50,'number animates between actual updates');assert.ok(Math.abs(value.ring-value.number)<1,'ring and number share the displayed value');assert.equal(value.actual,5,'accessible progress exposes the real count immediately');
+  await page.waitForTimeout(240);assert.equal(await page.locator('#summary-run-result').evaluate(n=>n.getAnimations().length),0,'animated percentage must not continually retrigger the parent refresh');
+ const reversal=await page.evaluate(()=>{const before=document.getElementById('summary-progress-percent').textContent;summaryDrawProgress({...meterData,completed:2});return {before,after:document.getElementById('summary-progress-percent').textContent};});assert.equal(reversal.before,reversal.after);await page.waitForTimeout(550);assert.equal(await page.locator('#summary-progress-percent').textContent(),'20%');
+ await page.evaluate(()=>summaryDrawProgress({...meterData,status:'failed',completed:2}));await page.waitForTimeout(550);assert.equal(await page.locator('#summary-progress-percent').textContent(),'20%','failure never fabricates completion');
+  if(process.env.THEME_LAYOUT_QA_DIR)await page.screenshot({path:process.env.THEME_LAYOUT_QA_DIR+'/progress-active.png'});
+ await page.evaluate(()=>{summaryDrawProgress({...meterData,completed:7});document.getElementById('summary-generation-progress').hidden=true;});await page.evaluate(()=>new Promise(requestAnimationFrame));assert.equal(await page.evaluate(()=>document.getElementById('summary-progress-meter')._progressFrame),0,'hidden meters stop their frame loop');
+ await page.emulateMedia({reducedMotion:'reduce'});await page.evaluate(()=>{document.getElementById('summary-generation-progress').hidden=false;summaryDrawProgress({...meterData,completed:10,status:'success'});});assert.equal(await page.locator('#summary-progress-percent').textContent(),'100%');
+ assert.equal(await page.locator('#range-progress-percent').textContent(),'100%');await page.emulateMedia({reducedMotion:'no-preference'});
+ await page.evaluate(()=>summaryDrawProgress({...meterData,total:0,completed:0}));await page.waitForTimeout(550);assert.equal(await page.locator('#summary-progress-percent').textContent(),'0%');
+ if(process.env.THEME_LAYOUT_QA_DIR)await page.screenshot({path:process.env.THEME_LAYOUT_QA_DIR+'/progress-desktop.png'});
+ await page.setViewportSize({width:390,height:844});assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);if(process.env.THEME_LAYOUT_QA_DIR)await page.screenshot({path:process.env.THEME_LAYOUT_QA_DIR+'/progress-mobile.png'});
+ assert.deepEqual(errors,[]);console.log('Radial progress uses real counts, synchronized interpolation, reversal, failure retention and reduced/hidden motion.');
+}finally{await browser.close();}})().catch(e=>{console.error(e);process.exitCode=1;});
