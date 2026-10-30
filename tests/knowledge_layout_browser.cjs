@@ -1,0 +1,19 @@
+const {chromium}=require('playwright'),assert=require('node:assert/strict');
+const origin=process.argv[2];if(!origin)throw Error('Usage: knowledge_layout_browser.cjs <synthetic origin>');
+(async()=>{const browser=await chromium.launch({headless:true});try{
+ const context=await browser.newContext({viewport:{width:1600,height:1000}});await context.request.post(origin+'/login',{form:{password:'navigation-test-password'}});
+ const page=await context.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));
+ await page.route('**/api/groups',r=>r.fulfill({json:{groups:[{group_id:264267227,name:'HUST 学习资料与经验分享群'},{group_id:433367705,name:'很长的群聊名称也应与群号分开显示的测试群'},{group_id:464928989,name:'同学交流'}]}}));
+ await page.route('**/api/knowledge?*',r=>r.fulfill({json:{total:1,page:1,page_size:20,items:[{item_id:1,item_type:'experience',title:'课程资料整理方法',group_name:'学习交流群',date:'2026-10-30',saved_at:'2026-10-30T10:00:00+08:00',preview:'先整理课程目录，再补充每一节的参考资料。'}]}}));
+ await page.goto(origin+'/bookmarks?view=knowledge');await page.locator('.knowledge-item').waitFor();const picker=page.locator('.knowledge-filters .group-selector');await picker.locator('input[value="433367705"]').waitFor({state:'attached'});
+ const form=page.locator('.knowledge-filters'),list=page.locator('#knowledge-list'),before=await form.boundingBox(),listBefore=await list.boundingBox();await picker.locator('summary').click();await page.waitForTimeout(50);
+ const after=await form.boundingBox(),listAfter=await list.boundingBox();assert.ok(Math.abs(after.height-before.height)<2,'opening groups must not enlarge the filter toolbar');assert.ok(Math.abs(listAfter.y-listBefore.y)<2,'opening groups must not push the results down');
+ const row=picker.locator('.group-selector-row').nth(1);assert.ok(await row.evaluate(n=>{const a=n.querySelector('span').getBoundingClientRect(),b=n.querySelector('small').getBoundingClientRect();return a.right+6<=b.left}),'group name and number have separate columns');
+ assert.ok(await picker.locator('input[value="264267227"]').evaluate(n=>{const r=n.getBoundingClientRect();return document.elementFromPoint(r.x+r.width/2,r.y+r.height/2)===n}),'checkbox is not clipped by ancestors');
+ if(process.env.KNOWLEDGE_QA_DIR)await page.screenshot({path:process.env.KNOWLEDGE_QA_DIR+'/knowledge-desktop-open.png'});
+ await picker.locator('input[value="264267227"]').check();await picker.locator('input[type=search]').press('Escape');assert.equal(await picker.evaluate(n=>n.open),false);await page.locator('#knowledge-q').fill('课程');await page.locator('#knowledge-type').selectOption('experience');await page.getByRole('button',{name:'筛选资料',exact:true}).click();await page.waitForFunction(()=>new URLSearchParams(location.search).get('group_ids')==='264267227');assert.equal(new URL(page.url()).searchParams.get('q'),'课程');assert.equal(new URL(page.url()).searchParams.get('item_type'),'experience');
+ if(process.env.KNOWLEDGE_QA_DIR)await page.screenshot({path:process.env.KNOWLEDGE_QA_DIR+'/knowledge-desktop.png'});
+ await page.setViewportSize({width:390,height:844});const mobileBefore=await list.boundingBox();await picker.locator('summary').click();await page.waitForTimeout(50);const panel=await picker.locator('.group-selector-body').boundingBox();assert.ok(panel.x>=0&&panel.x+panel.width<=390,'mobile dropdown stays on screen');assert.ok(Math.abs((await list.boundingBox()).y-mobileBefore.y)<2);assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
+ if(process.env.KNOWLEDGE_QA_DIR)await page.screenshot({path:process.env.KNOWLEDGE_QA_DIR+'/knowledge-mobile.png'});
+ await page.locator('label[for=knowledge-q]').click();assert.equal(await picker.evaluate(n=>n.open),false);assert.deepEqual(errors,[]);console.log('Knowledge toolbar stays compact; popup, name/number alignment, filtering and narrow layout verified.');
+}finally{await browser.close();}})().catch(e=>{console.error(e);process.exitCode=1});

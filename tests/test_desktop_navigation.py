@@ -53,7 +53,7 @@ def test_persistent_desktop_pages_in_independent_browser(web_client):
         assert server.started
         root = Path(__file__).resolve().parents[1]
         url = f'http://127.0.0.1:{port}'
-        for name, args in [('desktop_navigation_browser.cjs', []), ('desktop_navigation_edges.cjs', [str(candidate_id), '站点']), ('desktop_detail_motion.cjs', []), ('refresh_motion_browser.cjs', []), ('theme_layout_motion.cjs', []), ('progress_meter_browser.cjs', []), ('candidate_visual_browser.cjs', [])]:
+        for name, args in [('desktop_navigation_browser.cjs', []), ('desktop_navigation_edges.cjs', [str(candidate_id), '站点']), ('desktop_detail_motion.cjs', []), ('refresh_motion_browser.cjs', []), ('theme_layout_motion.cjs', []), ('progress_meter_browser.cjs', []), ('candidate_visual_browser.cjs', []), ('knowledge_layout_browser.cjs', [])]:
             result = subprocess.run([node, str(root/'tests'/name), url, *args], cwd=root,
                                     env=os.environ, capture_output=True, text=True, encoding='utf-8', timeout=100)
             assert result.returncode == 0, result.stdout + result.stderr

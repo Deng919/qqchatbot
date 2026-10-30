@@ -8,7 +8,7 @@
 <section id="knowledge-browse">
   <form class="knowledge-filters" onsubmit="knowledgeFilter(event)" aria-label="资料筛选">
     <div class="field"><label for="knowledge-q">关键词</label><input id="knowledge-q" class="input" type="search" maxlength="100" placeholder="标题、正文或说明"></div>
-    <div class="field"><label for="knowledge-group">来源群</label><select id="knowledge-group" data-group-selector="filter" class="input"><option value="">全部群</option></select></div>
+    <div class="field"><label for="knowledge-group">来源群</label><select id="knowledge-group" data-group-selector="filter" data-group-floating class="input" aria-label="来源群"><option value="">全部群</option></select></div>
     <div class="field"><label for="knowledge-type">分类</label><select id="knowledge-type" class="input"><option value="">全部分类</option><option value="resource">资源</option><option value="experience">经验</option></select></div>
     <button class="btn btn-primary" type="submit">筛选资料</button>
   </form>
@@ -21,7 +21,16 @@
   <div class="card-body"><p id="knowledge-meta" class="header-meta"></p><div id="knowledge-body" data-refresh-region="content"></div><section id="knowledge-sources"><h3>原消息与上下文</h3><p id="knowledge-source-note" class="header-meta"></p><div id="knowledge-source-choices" class="actions"></div><div id="knowledge-source-body" data-refresh-region="content"></div></section></div>
 </section>
 <style>
-.knowledge-filters{display:grid;grid-template-columns:2fr 1fr 1fr auto;gap:14px;align-items:end;margin:24px 0}.knowledge-filters .field{margin:0}.knowledge-filters select{width:100%}.knowledge-list{display:grid;gap:14px}.knowledge-item{padding:24px;border:1px solid var(--border);border-radius:16px;background:var(--surface)}.knowledge-item h2{font-size:20px;margin:8px 0 12px}.knowledge-preview,.knowledge-content{white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.8}.knowledge-content{margin:16px 0 24px}#knowledge-title{margin:0;font-size:22px;overflow-wrap:anywhere}#knowledge-detail .card-header{gap:16px;align-items:flex-start}#knowledge-body a{overflow-wrap:anywhere}#knowledge-sources{border-top:1px solid var(--border);margin-top:24px;padding-top:16px}@media(max-width:700px){.knowledge-filters{grid-template-columns:1fr 1fr}.knowledge-filters .field:first-child,.knowledge-filters button{grid-column:1/-1}.knowledge-item{padding:18px}#knowledge-detail .card-header{flex-direction:column}}
+.knowledge-filters{display:grid;grid-template-columns:minmax(0,1.8fr) minmax(0,1fr) minmax(0,.8fr) auto;gap:16px;align-items:end;margin:20px 0 24px}
+.knowledge-filters .field{margin:0;min-width:0}
+.knowledge-filters .field>label{display:block;margin-bottom:8px;font-weight:500}
+.knowledge-filters .input,.knowledge-filters .group-selector>summary,.knowledge-filters>button{height:42px;min-height:42px}
+.knowledge-filters .group-selector>summary{padding:0 12px}
+.knowledge-filters select{width:100%}
+.knowledge-filters>button{padding-inline:20px;white-space:nowrap}
+.knowledge-list{display:grid;gap:14px}.knowledge-item{padding:24px;border:1px solid var(--border);border-radius:16px;background:var(--surface)}.knowledge-item h2{font-size:20px;margin:8px 0 12px}.knowledge-preview,.knowledge-content{white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.8}.knowledge-content{margin:16px 0 24px}#knowledge-title{margin:0;font-size:22px;overflow-wrap:anywhere}#knowledge-detail .card-header{gap:16px;align-items:flex-start}#knowledge-body a{overflow-wrap:anywhere}#knowledge-sources{border-top:1px solid var(--border);margin-top:24px;padding-top:16px}
+@media(max-width:1100px){.knowledge-filters{grid-template-columns:minmax(0,1fr) minmax(0,1fr) auto}.knowledge-filters .field:first-child{grid-column:1/-1}}
+@media(max-width:700px){.knowledge-filters{grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:14px 12px}.knowledge-filters>button{grid-column:1/-1}.knowledge-item{padding:18px}#knowledge-detail .card-header{flex-direction:column}}
 </style>
 {% include "knowledge_script.html" %}
 {% endblock %}
