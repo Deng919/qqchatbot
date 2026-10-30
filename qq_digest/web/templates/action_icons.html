@@ -61,7 +61,8 @@
     bell:'<path d="M5 17V9a7 7 0 0 1 14 0v8l2 2H3Zm5 5h4"/>',
     chat:'<path d="M3 3h18v14H9l-6 4Z"/><path d="M7 7h10M7 12h7"/>',
     play:'<path d="m7 3 14 9-14 9Z"/>',
-    archive:'<path d="M4 7h16v14H4ZM3 3h18v4H3Zm6 9h6"/>'
+    archive:'<path d="M4 7h16v14H4ZM3 3h18v4H3Zm6 9h6"/>',
+    history:'<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>'
   };
   var names=Object.create(null);
   function group(icon,caption,labels,tone){labels.split('|').forEach(function(label){names[label]={icon:icon,caption:caption,tone:tone||''};});}
@@ -104,7 +105,7 @@
   labelled('check','标为已读');labelled('unread','标为未读');
   labelled('back','返回列表|返回阅读|返回资料列表|返回之前阅读|返回摘要阅读');
   var selector='button.btn,a.btn,.global-nav a,#workspace-tools-area a,.section-back',tip=null,active=null;
-  var navIcons={'摘要':'book','阅读摘要':'book','查找':'search','群聊':'groups','设置':'settings','二手信息':'archive','收藏':'star','提醒':'bell','功能开关':'settings'};
+  var navIcons={'摘要':'book','阅读摘要':'book','查找':'search','群聊':'groups','设置':'settings','二手信息':'archive','收藏':'star','提醒':'bell','运行记录':'history'};
   function disclosure(summary){
     if(!summary.classList.contains('action-disclosure'))summary.classList.add('action-disclosure');
     var expanded=summary.parentElement.open;summary.setAttribute('aria-expanded',String(expanded));

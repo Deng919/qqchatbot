@@ -9,7 +9,7 @@ def login(client):
     client.post('/login', data={'password': 'password123'})
 
 
-@pytest.mark.parametrize('path,active', [('/', 'reports'),('/reports','reports'),('/search','search'),('/groups','groups'),('/collect','groups'),('/settings','settings'),('/ai-settings','settings'),('/overview','settings')])
+@pytest.mark.parametrize('path,active', [('/', 'reports'),('/reports','reports'),('/search','search'),('/groups','groups'),('/collect','groups'),('/settings','settings'),('/ai-settings','settings')])
 def test_four_primary_entries_and_section_membership(web_client, path, active):
     client, _, _ = web_client
     login(client)
@@ -43,7 +43,7 @@ def test_optional_tools_are_visible_in_header_and_follow_feature_switches(web_cl
     assert re.search(r'<a href="/reports\?view=points"[^>]*>阅读摘要</a>', markup)
     more = re.search(r'<details[^>]+id="workspace-more"[^>]*>(.*?)</details>', markup, re.S)
     assert more is not None
-    for path in ('/bookmarks', '/settings?section=features'):
+    for path in ('/bookmarks', '/overview'):
         assert 'href="'+path+'"' in more.group(1)
         assert 'href="'+path+'"' not in markup.split('<details', 1)[0]
     assert 'href="/candidates"' not in tools.group(1) and 'href="/failures"' not in tools.group(1)
@@ -60,7 +60,22 @@ def test_optional_tools_are_visible_in_header_and_follow_feature_switches(web_cl
     assert 'href="/tasks"' not in page and 'href="/candidates"' not in page
     assert 'href="/failures"' not in page
     assert 'href="/topics"' not in page and 'href="/reminders"' not in page
-    assert 'href="/bookmarks"' in page and 'href="/settings?section=features"' in page
+    assert 'href="/bookmarks"' in page and 'href="/overview"' in page
+
+
+def test_records_replaces_feature_shortcut_without_duplicate_footer(web_client):
+    client, _, _ = web_client
+    login(client)
+    page = client.get('/overview').text
+    header = page.split('</header>', 1)[0]
+    assert len(re.findall(r'<a\b[^>]*href="/overview"', header)) == 1
+    assert re.search(r'<a href="/overview"[^>]*aria-current="page"[^>]*>运行记录</a>', header)
+    assert 'href="/settings?section=features"' not in header
+    assert 'inbox-sidebar-footer' not in re.sub(r'<style>.*?</style>', '', header, flags=re.S)
+    assert not re.search(r'id="nav-settings"[^>]*aria-current="page"', header)
+    settings = client.get('/settings?section=features').text
+    assert re.search(r'id="nav-settings"[^>]*aria-current="page"', settings)
+    assert 'data-settings-section="features"' in settings
 
 
 def test_settings_categories_and_group_details(web_client):

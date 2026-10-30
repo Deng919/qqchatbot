@@ -384,7 +384,7 @@
 </head>
 <body class="workspace-app{% if request.url.path in ['/','/reports'] %} workspace-reading{% endif %}">
   {% set storage_handoff = storage_handoff | default({}) %}
-  {% set workspace_links = [('reading','阅读摘要','/reports?view=points',true),('secondhand','二手信息','/secondhand',true),('bookmarks','收藏','/bookmarks',true),('reminders','提醒','/reminders',false),('features','功能开关','/settings?section=features',true)] %}
+  {% set workspace_links = [('reading','阅读摘要','/reports?view=points',true),('secondhand','二手信息','/secondhand',true),('bookmarks','收藏','/bookmarks',true),('reminders','提醒','/reminders',false),('records','运行记录','/overview',true)] %}
   <style>[data-feature-off] { display: none !important; }</style>
   <script>var featureFlags = {{ features | tojson }}, workspaceLinks = {{ workspace_links | tojson }};</script>
   <a class="skip-link" href="#main-content">跳到主要内容</a>
@@ -396,14 +396,14 @@
     <nav id="workspace-tools-area" class="extension-nav" aria-label="扩展功能">
       {% set reading_key, reading_label, reading_url, reading_default = workspace_links[0] %}
       <a href="{{ reading_url }}" data-summary-home onclick="navigateSummaryReading(event)" {% if request.url.path in ['/', '/reports'] %}aria-current="page" class="active"{% endif %}>{{ reading_label }}</a>
-      {% set more_active = request.url.path in ['/candidates','/bookmarks','/reminders'] or (request.url.path == '/settings' and (request.query_params.get('section') == 'features' or request.query_params.get('feature') or request.query_params.get('saved') == 'features')) %}
+      {% set more_active = request.url.path in ['/secondhand','/candidates','/bookmarks','/reminders','/overview','/failures'] %}
       <details id="workspace-more" class="workspace-more{% if more_active %} has-active{% endif %}" open>
         <summary class="workspace-more-summary">更多</summary>
         <div class="workspace-more-menu">
           {% for key,label,url,default in workspace_links[1:] %}
-          {% if key in ['bookmarks','features'] or features.get(key,default) %}
-          {% set selected = (key == 'bookmarks' and request.url.path == '/candidates') or url == request.url.path or (key == 'features' and request.url.path == '/settings' and (request.query_params.get('section') == 'features' or request.query_params.get('feature') or request.query_params.get('saved') == 'features')) %}
-          <a href="{{ url }}" {% if selected %}aria-current="page" class="{% if key == 'features' %}extension-manage {% endif %}active"{% else %}class="{% if key == 'features' %}extension-manage{% endif %}"{% endif %}>{{ label }}</a>
+          {% if key in ['bookmarks','records'] or features.get(key,default) %}
+          {% set selected = (key == 'bookmarks' and request.url.path == '/candidates') or url == request.url.path or (key == 'records' and request.url.path == '/failures') %}
+          <a href="{{ url }}" {% if selected %}aria-current="page" class="active"{% endif %}>{{ label }}</a>
           {% endif %}
           {% endfor %}
         </div>
@@ -416,7 +416,6 @@
       <a class="inbox-manage-groups" href="/groups">＋ 管理群聊</a>
     </section>
     {% endif %}
-    <a class="inbox-sidebar-footer" href="/overview">运行记录</a>
   </header>
   <main id="main-content">
     <div id="storage-handoff-banner" role="status" aria-live="polite" {% if not storage_handoff.get('read_only') %}hidden{% endif %}

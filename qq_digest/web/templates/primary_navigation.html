@@ -1,5 +1,5 @@
 {% set page_path = request.url.path %}
-{% set extension_selected = page_path in ['/secondhand','/bookmarks','/candidates','/reminders'] or (page_path == '/settings' and (request.query_params.get('section') == 'features' or request.query_params.get('feature') or request.query_params.get('saved') == 'features')) %}
+{% set extension_selected = page_path in ['/secondhand','/bookmarks','/candidates','/reminders','/overview','/failures'] %}
 {% set primary_section = '' if extension_selected else 'reports' if page_path in ['/', '/reports'] else 'search' if page_path in ['/search','/archive-qa'] else 'groups' if page_path in ['/groups','/collect'] else 'settings' %}
 <nav class="global-nav" aria-label="主要导航">
   <a href="/reports" id="nav-reports" {% if primary_section == 'reports' %}aria-current="page" class="active"{% endif %}>摘要</a>
