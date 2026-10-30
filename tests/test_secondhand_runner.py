@@ -4,8 +4,8 @@ from types import SimpleNamespace
 import httpx
 import pytest
 
-from qq_digest.secondhand_runner import refresh, discover_secondhand
-from tests.test_secondhand import market, message, offer
+from qq_digest.secondhand_runner import refresh, discover_secondhand, accept_batch
+from tests.test_secondhand import market, message, offer, ingest
 
 
 class AI:
@@ -84,6 +84,20 @@ def test_bad_item_does_not_fail_unrelated_sources(market):
     result=refresh(config,market.archive,'2026-10-13','2026-10-19',collect=False,ai=PartlyInvalid())
     assert result['processed']==1 and result['offers']==1 and result['failed']==1
     assert market.db.execute('SELECT count(*) FROM market_scans').fetchone()[0]==1
+
+
+def test_conflicting_duplicate_source_keeps_old_listing_and_accepts_other_sources(market):
+    good,bad=ingest(market,[message(),message(mid='bad',sender=200)])
+    original=offer(bad)
+    market.accept_units([bad],{'items':[original]},record_scan=False)
+    before=tuple(market.db.execute('SELECT * FROM market_posts').fetchone())
+    offers,processed,failed,reasons=accept_batch(market,[good,bad],{
+        'items':[offer(good),original,dict(original,condition='')],
+    })
+    assert (offers,processed,failed)==(1,1,1) and any('冲突' in reason for reason in reasons)
+    assert tuple(market.db.execute('SELECT * FROM market_posts WHERE source_key=?',(bad['key'],)).fetchone())==before
+    assert market.db.execute('SELECT count(*) FROM market_posts').fetchone()[0]==2
+    assert [row['source_key'] for row in market.db.execute('SELECT * FROM market_scans')]==[good['key']]
 
 
 def test_recovered_image_removes_only_its_derived_failure(market,tmp_path,monkeypatch):

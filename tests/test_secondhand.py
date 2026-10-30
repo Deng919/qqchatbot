@@ -47,6 +47,42 @@ def test_cross_group_dedup_keeps_sources_and_idempotence(market):
     assert len(market.detail(items[0]['item_id'])['sources'])==2
 
 
+@pytest.mark.parametrize('price', ['800', ''])
+@pytest.mark.parametrize('second_title', ['戴尔U2720显示器', '戴尔u2720显示器', '戴尔 U2720 显示器'])
+def test_duplicate_payload_keeps_one_single_listing_and_first_title(market, price, second_title):
+    unit=ingest(market,[message()])[0]
+    first=offer(unit,price)
+    payload={'items':[first,dict(first,title=second_title)]}
+    assert market.accept_units([unit],payload,validate_only=True)==1
+    assert market.db.execute('SELECT count(*) FROM market_posts').fetchone()[0]==0
+    assert market.accept_units([unit],payload)==1
+    item=market.list_items(date_from='2026-10-13',date_to='2026-10-19')['items'][0]
+    assert item['title']=='戴尔U2720显示器'
+    assert item['source_count']==1 and item['bundle_mode']=='single' and item['components']==[]
+
+
+@pytest.mark.parametrize('changed', [
+    {'price':700,'price_text':'700'},
+    {'condition':''},
+    {'description':''},
+    {'evidence':'戴尔U2720显示器，完好带底座，价格800元','description':''},
+    {'status':'sold'},
+])
+def test_conflicting_duplicate_payload_is_rejected_before_replacing_old_rows(market, changed):
+    unit=ingest(market,[message(text='出戴尔U2720显示器，完好带底座，价格800元，备用报价700元，已售')])[0]
+    first=offer(unit)
+    market.accept_units([unit],{'items':[first]})
+    before=[tuple(row) for row in market.db.execute('SELECT * FROM market_posts')]
+    scans=[tuple(row) for row in market.db.execute('SELECT * FROM market_scans')]
+    payload={'items':[first,dict(first,**changed)]}
+    with pytest.raises(ValueError,match='冲突'):
+        market.accept_units([unit],payload,validate_only=True)
+    with pytest.raises(ValueError,match='冲突'):
+        market.accept_units([unit],payload)
+    assert [tuple(row) for row in market.db.execute('SELECT * FROM market_posts')]==before
+    assert [tuple(row) for row in market.db.execute('SELECT * FROM market_scans')]==scans
+
+
 def test_different_sellers_and_two_different_goods_stay_separate(market):
     units=ingest(market,[message(),message(22,'b',sender=200),message(mid='c',text='出戴尔U2720显示器，屏幕有划痕缺底座，价格800元')])
     market.accept_units(units,{'items':[offer(unit) for unit in units]})
@@ -186,6 +222,63 @@ def test_bundle_stays_one_listing_and_exposes_components(market):
     assert listed['items'][0]['bundle_count'] == 3
     detail = market.detail(listed['items'][0]['item_id'])
     assert [component['title'] for component in detail['item']['components']] == ['狼人杀', '三国杀', 'UNO']
+
+
+@pytest.mark.parametrize('ending', ['打包18块，不单出', '打包18块，不能单出', '一起18r'])
+@pytest.mark.parametrize('explicit', [True, False])
+def test_bundle_accepts_negated_separate_sale_and_explicit_together_price(market, ending, explicit):
+    text='出橘子汽水和柠檬汽水，'+ending
+    unit=ingest(market,[message(text=text)])[0]
+    price_text='18r' if ending.endswith('18r') else '18块'
+    if explicit:
+        rows=[dict(offer(unit,'18',title='橘子汽水'),price_text=price_text,bundle_mode='bundle',bundle_label='橘子汽水',
+                   components=[{'title':name,'evidence':name} for name in ['橘子汽水','柠檬汽水']])]
+    else:
+        rows=[dict(offer(unit,'18',title=name),price_text=price_text) for name in ['橘子汽水','柠檬汽水']]
+    assert market.accept_units([unit],{'items':rows})==1
+    item=market.list_items(date_from='2026-10-13',date_to='2026-10-19')['items'][0]
+    assert item['bundle_mode']=='bundle' and item['price']==18
+    assert [part['title'] for part in item['components']]==['橘子汽水','柠檬汽水']
+
+
+@pytest.mark.parametrize('ending', ['打包18块，可单出', '打包18块，可拆', '一起看电影', '一起18分钟后取'])
+def test_bundle_still_rejects_separate_sale_and_together_without_total_price(market, ending):
+    unit=ingest(market,[message(text='出橘子汽水和柠檬汽水，'+ending)])[0]
+    row=dict(offer(unit,'',title='橘子汽水'),bundle_mode='bundle',bundle_label='橘子汽水',
+             components=[{'title':name,'evidence':name} for name in ['橘子汽水','柠檬汽水']])
+    with pytest.raises(ValueError,match='打包出售缺少原文依据'):
+        market.accept_units([unit],{'items':[row]})
+    assert market.db.execute('SELECT count(*) FROM market_posts').fetchone()[0]==0
+
+
+@pytest.mark.parametrize('source,title', [
+    ('求购u盘，容量不限','U盘'),('求购U盘，容量不限','u盘'),
+    ('出售6e运动鞋，42码，价格500元','6e'),('出售6E运动鞋，42码，价格500元','6e'),
+])
+def test_evidenced_short_mixed_item_names_are_accepted(market, source, title):
+    unit=ingest(market,[message(text=source)])[0]
+    row=offer(unit,'',title=title)
+    row['direction']='want' if source.startswith('求购') else 'sale'
+    assert market.accept_units([unit],{'items':[row]})==1
+    item=market.list_items(date_from='2026-10-13',date_to='2026-10-19')['items'][0]
+    assert item['title']==title and item['evidence']==source and item['price'] is None
+
+
+@pytest.mark.parametrize('title', ['U盘','6e','10','99'])
+def test_short_mixed_names_need_evidence_and_two_digit_prices_are_not_names(market, title):
+    unit=ingest(market,[message(text='出键盘10元，鼠标99元')])[0]
+    with pytest.raises(ValueError,match='物品名称无法核对原文'):
+        market.accept_units([unit],{'items':[offer(unit,'',title=title)]})
+    assert market.db.execute('SELECT count(*) FROM market_posts').fetchone()[0]==0
+
+
+def test_bundle_components_accept_evidenced_single_letter_mixed_names(market):
+    unit=ingest(market,[message(text='出U盘和运动鞋，打包50元')])[0]
+    row=dict(offer(unit,'50',title='运动鞋'),price_text='50元',bundle_mode='bundle',bundle_label='运动鞋',
+             components=[{'title':name,'evidence':name} for name in ['U盘','运动鞋']])
+    assert market.accept_units([unit],{'items':[row]})==1
+    item=market.list_items(date_from='2026-10-13',date_to='2026-10-19')['items'][0]
+    assert [part['title'] for part in item['components']]==['U盘','运动鞋']
 
 
 def test_separately_priced_items_from_one_source_stay_separate(market):

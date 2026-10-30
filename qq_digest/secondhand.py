@@ -46,7 +46,13 @@ def identity_body(value):
 
 _PRICE_TEXT_RE = re.compile(r'^\s*(?:价格\s*[:：]?\s*)?(?:￥|¥)?\d+(?:\.\d+)?\s*(?:元|块|rmb|r)?\s*$', re.I)
 _PROMOTION_RE = re.compile(r'会员|权益|年卡|课程|资料|代开|代购|优惠|快递', re.I)
-_BUNDLE_RE = re.compile(r'打包|全套|整套|整包|合集|整箱|一起(?:出|卖|售)|全部(?:出|卖|售)')
+_BUNDLE_RE = re.compile(r'打包|全套|整套|整包|合集|整箱|一起(?:出|卖|售)|全部(?:出|卖|售)|一起\s*(?:￥|¥)?\s*\d+(?:\.\d+)?\s*(?:元|块|rmb|r)(?![a-z])',re.I)
+_NAME_TERMS_RE = re.compile(r'[a-zA-Z0-9]{3,}|[a-zA-Z][a-zA-Z0-9]|[0-9][a-zA-Z]|[a-zA-Z][\u4e00-\u9fff]+|[\u4e00-\u9fff]{2,}')
+
+
+def _has_separate_sale(text):
+    text=re.sub(r'不(?:能|支持|接受)?(?:单独|单出|可拆|分别)','',text)
+    return bool(re.search(r'单独|单出|可拆|分别',text))
 
 
 def _item_identity(unit,direction,title,evidence,mode='single',components=()):
@@ -74,7 +80,7 @@ def _join_split_bundles(posts, sources):
         separately_priced=len(re.findall(r'\d+(?:\.\d+)?\s*(?:元|块|rmb|r)(?![a-z])',evidence,re.I))>1
         mode='bundle' if _BUNDLE_RE.search(evidence) else 'collection'
         if (len(rows)<2 or (not shared and mode!='bundle') or (mode=='collection' and prices) or len(prices)>1
-                or separately_priced or re.search(r'单独|单出|可拆|分别',text) or any(row[23]!='single' for row in rows)):
+                or separately_priced or _has_separate_sale(text) or any(row[23]!='single' for row in rows)):
             result.extend(rows);continue
         parent=list(rows[0]);label=evidence[:80].strip()
         components=[{'title':row[9],'evidence':row[16],'price_text':''} for row in rows]
@@ -101,7 +107,7 @@ def _components(item, *, text, evidence, title):
     if not label: label=title if title in evidence else evidence[:80]
     if not isinstance(raw,list) or not 2<=len(raw)<=100:
         raise ValueError('打包组件格式无效')
-    if mode=='bundle' and (not _BUNDLE_RE.search(evidence) or re.search(r'单独|单出|可拆|分别',evidence)):
+    if mode=='bundle' and (not _BUNDLE_RE.search(evidence) or _has_separate_sale(evidence)):
         raise ValueError('打包出售缺少原文依据')
     if len(re.findall(r'\d+(?:\.\d+)?\s*(?:元|块|rmb|r)(?![a-z])',evidence,re.I))>1:
         raise ValueError('独立价格不能作为整体打包价格')
@@ -111,7 +117,7 @@ def _components(item, *, text, evidence, title):
         name=component.get('title');part=component.get('evidence')
         if not isinstance(name,str) or not 2<=len(name.strip())<=160 or not isinstance(part,str) or not part.strip() or part not in evidence:
             raise ValueError('打包组件缺少原文证据')
-        terms=re.findall(r'[a-zA-Z0-9]{2,}|[\u4e00-\u9fff]{2,}',name)
+        terms=_NAME_TERMS_RE.findall(name)
         if not any(term.casefold() in part.casefold() for term in terms):
             raise ValueError('打包组件名称无法核对原文')
         component_price=component.get('price_text','')
@@ -195,7 +201,7 @@ class SecondhandService:
             text=unit['text'];title=item.get('title');evidence=item.get('evidence')
             if not isinstance(title,str) or not 2<=len(title.strip())<=160 or title.strip() in {'商品','物品','二手','已出','出了','求购'}:raise ValueError('缺少明确物品名称')
             if not isinstance(evidence,str) or not evidence.strip() or evidence not in text:raise ValueError('商品缺少原文证据')
-            terms=re.findall(r'[a-zA-Z0-9]{3,}|[a-zA-Z]{2}|[\u4e00-\u9fff]{2,}',title)
+            terms=_NAME_TERMS_RE.findall(title)
             if not any(term.casefold() in evidence.casefold() for term in terms):raise ValueError('物品名称无法核对原文')
             direction=item.get('direction');status=item.get('status','unknown')
             if direction not in {'sale','want'} or status not in {'unknown','sold','fulfilled'}:raise ValueError('交易类型或状态无效')
@@ -225,7 +231,14 @@ class SecondhandService:
                 elif candidates:status='unknown'
             prepared.append((post_key,item_key,unit['group_id'],unit['msg_id'],unit['key'],unit['path'],unit['seller_qq'],unit['seller_name'],unit['forwarder_qq'],title.strip(),direction,
                 description,condition,price,price_text,status,evidence,unit['published_at'],unit['forwarded_at'],int(unit['incomplete']),int(bool(unit.get('original_time_unknown'))),bundle_key,bundle_label,bundle_mode,json.dumps(components,ensure_ascii=False,separators=(',',':'))))
-        prepared=_join_split_bundles(prepared,sources)
+        unique={}
+        for row in prepared:
+            previous=unique.get(row[0])
+            if previous is not None:
+                if normalized(previous[9])!=normalized(row[9]) or previous[:9]+previous[10:]!=row[:9]+row[10:]:
+                    raise ValueError('同一来源的重复商品字段冲突')
+            else:unique[row[0]]=row
+        prepared=_join_split_bundles(list(unique.values()),sources)
         if validate_only:return len(prepared)
         with self.archive.transaction():
             inherited=[]
