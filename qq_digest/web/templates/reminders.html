@@ -12,13 +12,13 @@
 <section id="reminders-inbox">
   <label><input type="checkbox" id="reminders-unread" onchange="remindersLoad(1)"> 只看未读</label>
   <p class="header-meta" id="reminders-count" aria-live="polite"></p>
-  <div id="reminders-list"></div>
+  <div id="reminders-list" data-refresh-region="content"></div>
   <div class="reminder-actions reminder-pages"><button class="btn btn-sm" id="reminders-prev" type="button" onclick="remindersLoad(reminderPage-1)">上一页</button><span id="reminders-page-label"></span><button class="btn btn-sm" id="reminders-next" type="button" onclick="remindersLoad(reminderPage+1)">下一页</button></div>
 </section>
 <section id="reminders-rules" hidden>
   <div class="reminder-heading"><h2>我的规则</h2><button class="btn btn-primary" type="button" onclick="remindersEdit()">新建规则</button></div>
   <p class="header-meta">关键词、资源和故障只提醒新增内容。</p>
-  <div id="reminder-rules-list"></div>
+  <div id="reminder-rules-list" data-refresh-region="content"></div>
 </section>
 <dialog id="reminder-dialog" class="reminder-dialog" aria-labelledby="reminder-edit-title">
   <form id="reminder-form" onsubmit="remindersSave(event)" oninput="remindersChanged()" onchange="remindersChanged()">
@@ -33,7 +33,7 @@
     <label><input type="checkbox" id="reminder-enabled" checked> 启用规则</label>
     <p id="reminder-error" role="alert"></p>
     <div class="reminder-actions"><button class="btn" id="reminder-preview-button" type="button" onclick="remindersPreview()">预览匹配</button><button class="btn btn-primary" id="reminder-save" type="submit">保存规则</button></div>
-    <div id="reminder-preview" aria-live="polite"></div>
+    <div id="reminder-preview" data-refresh-region="content" aria-live="polite"></div>
   </form>
 </dialog>
 <style>

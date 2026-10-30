@@ -7,7 +7,7 @@
   <nav class="setup-steps" aria-label="设置步骤">
     {% for label in ['数据源','群聊','导入','AI','计划','预览'] %}<button class="btn" type="button" data-setup-step="{{ loop.index }}">{{ loop.index }} {{ label }}</button>{% endfor %}
   </nav>
-  <p id="setup-status" role="status" aria-live="polite">正在读取设置…</p>
+  <p id="setup-status" data-refresh-region="content" role="status" aria-live="polite">正在读取设置…</p>
   <p id="setup-pause" class="header-meta" hidden>设置期间暂停自动采集、日报和巡检。点击“返回摘要”可退出设置并恢复自动运行，已保存内容会保留。</p>
   <button class="btn btn-sm" type="button" id="setup-reload" hidden>重新载入</button>
   <fieldset id="setup-fields" disabled>
@@ -26,14 +26,14 @@
     <section class="card setup-card" data-setup-panel="2" hidden aria-labelledby="setup-groups-title">
       <h2 id="setup-groups-title">选择群聊</h2><p class="header-meta">未选群保持原设置。</p>
       <div class="field" hidden><label for="setup-group-filter">筛选群名或群号</label><input class="input" id="setup-group-filter" type="search"></div>
-      <div id="setup-group-list" class="setup-group-list"></div>
+      <div id="setup-group-list" data-refresh-region="content" class="setup-group-list"></div>
       <div class="setup-row"><button class="btn" type="button" id="setup-scan">重新扫描</button><button class="btn btn-primary" type="button" id="setup-save-groups">保存并继续</button></div>
     </section>
     <section class="card setup-card" data-setup-panel="3" hidden aria-labelledby="setup-import-title">
       <h2 id="setup-import-title">首次导入</h2>
       <div class="setup-row"><div class="field"><label for="setup-start">开始日期</label><input class="input" id="setup-start" type="date"></div><div class="field"><label for="setup-end">结束日期</label><input class="input" id="setup-end" type="date"></div></div>
       <p class="header-meta">最多 31 天。重复导入会去重。</p>
-      <div id="setup-import-list"></div>
+      <div id="setup-import-list" data-refresh-region="content"></div>
       <div class="setup-row"><button class="btn btn-primary" type="button" id="setup-import">导入所选群</button><button class="btn" type="button" id="setup-import-next">继续</button></div>
     </section>
     <section class="card setup-card" data-setup-panel="4" hidden aria-labelledby="setup-ai-title">
@@ -55,9 +55,9 @@
     </section>
     <section class="card setup-card" data-setup-panel="6" hidden aria-labelledby="setup-preview-title">
       <h2 id="setup-preview-title">查看导入结果</h2>
-      <p id="setup-preview-scope"></p><div id="setup-preview-groups"></div>
+      <p id="setup-preview-scope"></p><div id="setup-preview-groups" data-refresh-region="content"></div>
       <p class="header-meta">仅代表本地可读记录。更早的缺失消息无法确认。</p>
-      <div id="setup-preview-samples"></div>
+      <div id="setup-preview-samples" data-refresh-region="content"></div>
       <div class="setup-row"><button class="btn btn-primary" type="button" id="setup-finish">完成设置</button><a class="btn" id="setup-open-reports" href="/reports" hidden>去生成摘要</a><a class="btn" id="setup-open-search" href="/search" hidden>查找原消息</a></div>
     </section>
   </fieldset>

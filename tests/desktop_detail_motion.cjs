@@ -36,6 +36,8 @@ if(!url)throw new Error('Usage: node tests/desktop_detail_motion.cjs <isolated-t
    api=function(method,url,payload){if(method==='GET'&&url.startsWith('/api/summary-reading?')){const id=new URLSearchParams(url.split('?')[1]).get('group_id');return Promise.resolve({page:1,total:6,page_size:30,items:Array.from({length:6},(_,i)=>({key:'motion-'+id+'-'+i,group_id:Number(id),group_name:'动画测试群',text:'讨论标题：用于检验卡片向下展开的正文。',section:'讨论',report_kind:'daily',report_id:1,report_date:'2026-10-30',date_label:'2026-10-30',read:true,status:'legacy',source_ids:[]}))});}return original(method,url,payload);};
    window.motionDashboardData={total:6,point_total:36,unread:0,items:Array.from({length:6},(_,i)=>({group_id:700+i,group_name:'动画测试群 '+(i+1),total:6,unread:0,report_count:1,preview:['卡片应保持原来的列和顶部位置。']}))};inboxRenderDashboard(motionDashboardData);
   });
+  // Measure cover anchoring after the independent result-entrance transition settles.
+  await reports.evaluate(async()=>{await new Promise(requestAnimationFrame);await Promise.all(document.getElementById('summary-points').getAnimations().map(animation=>animation.finished.catch(()=>{})));});
   for(const index of [1,2]){
    const card=reports.locator('.summary-group-stack').nth(index),cover=card.locator('summary'),before=await cover.boundingBox();
    await cover.click();await page.waitForTimeout(35);const after=await cover.boundingBox();

@@ -191,7 +191,6 @@
     win.addEventListener('resize',function(){indicator(record,true);});
     win.document.addEventListener('DOMContentLoaded',function(){
       new win.MutationObserver(function(){if(record===active)indicator(record);}).observe(win.document.querySelector('.global-header'),{subtree:true,childList:true,attributes:true,attributeFilter:['class','aria-current']});
-      win.addEventListener('qq-digest-workspace-restore',function(){if(typeof win.showSettingsCategory==='function')win.showSettingsCategory(new URLSearchParams(win.location.search).get('section')||'ai',false);});
       new win.MutationObserver(function(){syncTheme(record);}).observe(win.document.documentElement,{attributes:true,attributeFilter:['data-theme']});
     });
     win.document.addEventListener('qq-digest-session-restored',function(){if(pendingAuth){var pending=pendingAuth;pendingAuth=null;navigate(pending.url,pending.options);}});

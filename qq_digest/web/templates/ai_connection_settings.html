@@ -4,8 +4,8 @@
   <div class="card-header" id="summary-provider-title">摘要引擎</div>
   <p class="settings-note">首选失败时使用备用连接。</p>
   <dl class="settings-meta">
-    <div><dt>首选</dt><dd id="summary-primary">加载中...</dd></div>
-    <div><dt>备用</dt><dd id="summary-fallback">加载中...</dd></div>
+    <div><dt>首选</dt><dd id="summary-primary" data-refresh-region="content">加载中...</dd></div>
+    <div><dt>备用</dt><dd id="summary-fallback" data-refresh-region="content">加载中...</dd></div>
   </dl>
 </section>
 {% endif %}
@@ -14,7 +14,7 @@
   <div class="card-header" id="multi-ai-title">其他 AI 连接</div>
   <p class="settings-note">兼容 OpenAI Chat Completions 的接口可以单独配置。密钥只保存在本机。</p>
   <button id="multi-ai-reload" class="btn btn-sm" type="button" onclick="loadAIConnections()">重新载入连接设置</button>
-  <div id="multi-ai-list" class="multi-ai-list"><p class="settings-note">加载中...</p></div>
+  <div id="multi-ai-list" data-refresh-region="content" class="multi-ai-list"><p class="settings-note">加载中...</p></div>
   <form id="multi-ai-form" onsubmit="saveAIConnection(event)">
     <div class="multi-ai-fields">
       <div class="field"><label for="multi-ai-id">连接 ID</label><input id="multi-ai-id" class="input" pattern="[A-Za-z0-9_-]{1,50}" required></div>
@@ -46,9 +46,9 @@
   <div class="card-header" id="deepseek-settings-title">DeepSeek API</div>
   <p class="settings-note">密钥保存在本机，不在页面显示。</p>
   <dl class="settings-meta">
-    <div><dt>接口地址</dt><dd id="deepseek-base-url">加载中...</dd></div>
-    <div><dt>模型</dt><dd id="deepseek-model">加载中...</dd></div>
-    <div><dt>本地密钥</dt><dd id="deepseek-key-status">加载中...</dd></div>
+    <div><dt>接口地址</dt><dd id="deepseek-base-url" data-refresh-region="content">加载中...</dd></div>
+    <div><dt>模型</dt><dd id="deepseek-model" data-refresh-region="content">加载中...</dd></div>
+    <div><dt>本地密钥</dt><dd id="deepseek-key-status" data-refresh-region="content">加载中...</dd></div>
   </dl>
   <form id="deepseek-key-form" onsubmit="saveDeepSeekKey(event)">
     <div class="field"><label for="deepseek-api-key">输入新的 API Key</label><input id="deepseek-api-key" class="input" type="password" autocomplete="new-password" spellcheck="false" required></div>

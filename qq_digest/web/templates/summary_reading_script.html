@@ -65,7 +65,7 @@
     document.querySelectorAll('[data-summary-days]').forEach(function(b){var active=b.dataset.summaryDays==='today'?from===dates.end&&to===dates.end:from===dates.start&&to===dates.end;b.classList.toggle('active',active);b.setAttribute('aria-pressed',String(active));});
     if(typeof inboxApplyView==='function')inboxApplyView();
   }
-  function summaryCancelDetail(){if(typeof inboxClearSelection==='function')inboxClearSelection();summaryNavigationToken++;summaryPointToken++;reportLoadToken++;closeReport();if(!document.getElementById('summary-source-panel').hidden)summaryCloseSource();}
+  function summaryCancelDetail(){if(typeof inboxClearSelection==='function')inboxClearSelection(true);summaryNavigationToken++;summaryPointToken++;reportLoadToken++;closeReport();if(!document.getElementById('summary-source-panel').hidden)summaryCloseSource();}
   function summarySetView(view) { if(!['points','groups','manage'].includes(view))return; if(view!==summaryView||summaryDetailActive||summaryPointReference)summaryHistoryPush();summaryCancelDetail();summaryView=view; summaryPointToken++;reportLoadToken++;summaryPendingScroll=null;summaryApplyView();summarySave();loadReports(); }
   function summarySetDates(mode) { var d=recentWeekDates(),from=mode==='today'?d.end:d.start;if(!summaryDetailActive&&!summaryPointReference&&document.getElementById('report-from').value===from&&document.getElementById('report-to').value===d.end)return;document.getElementById('report-from').value=from;document.getElementById('report-to').value=d.end;refreshDateHints();filterReports(); }
   function summaryChangeDate(changed) {
@@ -111,7 +111,7 @@
   function summaryLoadPoints(keepScroll) {
     if(summaryEmptySelection())return;
     var token=++summaryPointToken,host=document.getElementById('summary-points'),state=summaryValues();
-    if((!!state.from!==!!state.to)||state.from>state.to){host.textContent='请选择完整的日期范围，开始日期不能晚于结束日期。';document.getElementById('summary-reading-pages').hidden=true;return;}
+    if((!!state.from!==!!state.to)||state.from>state.to){summaryShowResult('请选择完整的日期范围，开始日期不能晚于结束日期。','failed');if(!host.children.length)host.textContent='请选择有效日期后重试。';document.getElementById('summary-reading-pages').hidden=true;return;}
     if(keepScroll)summaryPendingScroll=summaryScrollPosition();
     host.setAttribute('aria-busy','true');
     if(typeof inboxBeginDashboard==='function')inboxBeginDashboard();
@@ -138,7 +138,7 @@
         appendBookmarkAction(footer,{kind:'report',report_kind:item.report_kind||'daily',report_id:Number(item.report_id),point_key:item.key});
         var read=summaryButton(item.read?'标为未读':'标为已读',function(){read.disabled=true;api('POST','/api/summary-reading/read',{key:item.key,read:!item.read}).then(function(){summaryLoadPoints(true);}).catch(function(e){read.disabled=false;summaryShowResult('已读状态保存失败：'+e.message,'failed');});},'btn btn-sm summary-read-button');footer.appendChild(read);card.appendChild(footer);host.appendChild(card);
       });summaryPages(data);summarySave();summaryRestoreScroll();
-    }).catch(function(e){if(token!==summaryPointToken)return;host.textContent='要点读取失败：'+e.message;host.appendChild(summaryButton('重试',function(){summaryLoadPoints();}));document.getElementById('summary-reading-pages').hidden=true;}).finally(function(){if(token===summaryPointToken)host.removeAttribute('aria-busy');});
+    }).catch(function(e){if(token!==summaryPointToken)return;summaryShowResult('要点读取失败：'+e.message+(host.children.length?'；已保留上次结果。':''),'failed');if(!host.children.length)host.textContent='要点暂时无法读取。';document.getElementById('summary-run-actions').appendChild(summaryButton('重试',function(){summaryLoadPoints();}));document.getElementById('summary-reading-pages').hidden=true;}).finally(function(){if(token===summaryPointToken)host.removeAttribute('aria-busy');});
   }
   function summaryRenderGroups(data) {
     if(summaryView!=='groups')return;var host=document.getElementById('summary-groups');host.textContent='';
@@ -237,7 +237,7 @@
     var visit=readVisit();
     return Promise.all([groups,waitForVisit?visit:Promise.resolve()]).then(function(){if(navigationToken!==summaryNavigationToken)return;loadReports();var kind=url.get('kind'),id=Number(url.get('id'));var full=['daily','range'].includes(kind)&&Number.isInteger(id)&&id>0;if(full)viewReport(kind,id);else if(url.get('generate')==='1')openRangeSummary();if(summaryView==='points'&&summaryPointReference)summaryRestorePoint(!full);});
   }
-  window.addEventListener('qq-digest-workspace-restore',function(){summaryCancelDetail();summarySinceRevision++;summaryInit();});
+  window.addEventListener('qq-digest-workspace-restore',function(){summaryCancelDetail();summaryDetailActive=false;summarySinceRevision++;summaryInit();});
   window.addEventListener('pagehide',summarySave);document.addEventListener('keydown',function(event){if(event.key==='Escape'&&!document.getElementById('summary-source-panel').hidden)summaryCloseSource();});
   summaryInit();
 </script>

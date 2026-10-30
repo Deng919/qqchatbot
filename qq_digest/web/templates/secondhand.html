@@ -4,8 +4,8 @@
 {% block page_description %}{% endblock %}
 {% block actions %}<button class="btn" type="button" onclick="marketShowDismissed()">不感兴趣列表</button><button class="btn" type="button" onclick="marketShowBlocks()">屏蔽名单</button><button class="btn btn-primary" type="button" id="market-refresh" onclick="marketRefresh()">更新交易信息</button>{% endblock %}
 {% block content %}
-<p class="market-notice" id="market-progress" role="status" hidden></p>
-<div id="market-interest-note" class="market-interest-note" role="status" hidden></div>
+<p class="market-notice" id="market-progress" data-refresh-region="content" role="status" hidden></p>
+<div id="market-interest-note" data-refresh-region="content" class="market-interest-note" role="status" hidden></div>
 <p id="market-overview-label" class="market-overview-label">全部商品 · 交易概览</p>
 <nav class="market-lanes" aria-label="交易概览与筛选">
   <button type="button" id="market-lane-sale" class="market-lane is-active" aria-pressed="true" onclick="marketSwitchLane('sale')">闲置出售</button>
@@ -33,25 +33,25 @@
     <button class="btn" type="button" onclick="marketRecent()">重置为近七天</button>
   </div></details>
 </form>
-<div id="market-list" class="market-list" aria-live="polite"></div>
+<div id="market-list" data-refresh-region="content" class="market-list" aria-live="polite"></div>
 <div id="market-pages" class="market-pages" hidden><button id="market-prev" class="btn btn-sm" type="button" onclick="marketPage(-1)">上一页</button><span id="market-page-label"></span><button id="market-next" class="btn btn-sm" type="button" onclick="marketPage(1)">下一页</button></div>
 </section>
 </div>
-<div class="market-maintenance"><details class="market-groups"><summary id="market-groups-title">接入的二手群</summary><div id="market-group-settings"></div></details><button class="btn btn-sm" type="button" onclick="marketUnavailable()">未解析来源</button></div>
+<div class="market-maintenance"><details class="market-groups"><summary id="market-groups-title">接入的二手群</summary><div id="market-group-settings" data-refresh-region="content"></div></details><button class="btn btn-sm" type="button" onclick="marketUnavailable()">未解析来源</button></div>
 <dialog id="market-dialog" class="market-dialog" aria-labelledby="market-title">
   <div class="market-dialog-heading"><h2 id="market-title">商品详情</h2><button class="btn btn-sm" type="button" onclick="marketClose()">关闭</button></div>
-  <p id="market-detail-note" role="status"></p><div id="market-components" class="market-components"></div><p id="market-description" class="market-text"></p>
-  <div id="market-detail-images"></div>
+  <p id="market-detail-note" role="status"></p><div id="market-components" data-refresh-region="content" class="market-components"></div><p id="market-description" data-refresh-region="content" class="market-text"></p>
+  <div id="market-detail-images" data-refresh-region="content"></div>
   <div class="actions"><button id="market-favorite" class="btn" type="button" onclick="marketFavorite()">收藏</button><button id="market-block-seller" class="btn" type="button" onclick="marketBlockSeller()">屏蔽原发布人</button></div>
-  <h3>发布来源与价格记录</h3><div id="market-sources"></div><div id="market-context"></div>
+  <h3>发布来源与价格记录</h3><div id="market-sources"></div><div id="market-context" data-refresh-region="content"></div>
 </dialog>
 <dialog id="market-blocks-dialog" class="market-dialog" aria-labelledby="market-blocks-title">
   <div class="market-dialog-heading"><h2 id="market-blocks-title">屏蔽名单</h2><button class="btn btn-sm" type="button" onclick="marketN('market-blocks-dialog').close()">关闭</button></div>
   <form class="market-block-form" onsubmit="marketBlock(event)"><label for="market-block-qq">QQ 号</label><input id="market-block-qq" class="input" inputmode="numeric" pattern="[0-9]+" required maxlength="19"><button id="market-block-submit" class="btn btn-primary" type="submit">屏蔽此人</button></form>
-  <p id="market-block-note" role="status"></p><div id="market-block-list"></div>
+  <p id="market-block-note" role="status"></p><div id="market-block-list" data-refresh-region="content"></div>
 </dialog>
-<dialog id="market-unavailable-dialog" class="market-dialog" aria-labelledby="market-unavailable-title"><div class="market-dialog-heading"><h2 id="market-unavailable-title">未解析来源</h2><button class="btn btn-sm" type="button" onclick="marketN('market-unavailable-dialog').close()">关闭</button></div><div id="market-unavailable-list"></div><div id="market-unavailable-context"></div></dialog>
-<dialog id="market-dismissed-dialog" class="market-dialog" aria-labelledby="market-dismissed-title"><div class="market-dialog-heading"><h2 id="market-dismissed-title">不感兴趣的商品</h2><button class="btn btn-sm" type="button" onclick="marketN('market-dismissed-dialog').close()">关闭</button></div><div id="market-dismissed-list"></div></dialog>
+<dialog id="market-unavailable-dialog" class="market-dialog" aria-labelledby="market-unavailable-title"><div class="market-dialog-heading"><h2 id="market-unavailable-title">未解析来源</h2><button class="btn btn-sm" type="button" onclick="marketN('market-unavailable-dialog').close()">关闭</button></div><div id="market-unavailable-list" data-refresh-region="content"></div><div id="market-unavailable-context"></div></dialog>
+<dialog id="market-dismissed-dialog" class="market-dialog" aria-labelledby="market-dismissed-title"><div class="market-dialog-heading"><h2 id="market-dismissed-title">不感兴趣的商品</h2><button class="btn btn-sm" type="button" onclick="marketN('market-dismissed-dialog').close()">关闭</button></div><div id="market-dismissed-list" data-refresh-region="content"></div></dialog>
 <style>
 .market-overview-label{font-size:12px;color:var(--text-soft);margin:0 0 12px}.market-lanes{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;margin:0 0 24px}
 .market-lane{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px 12px;align-items:center;text-align:left;padding:18px 20px;border:1px solid var(--border);border-radius:10px;background:var(--surface-subtle);color:var(--text-soft);font:inherit;cursor:pointer;transition:background .18s,border-color .18s;min-width:0}

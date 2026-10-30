@@ -25,17 +25,17 @@
   </form>
   <section id="find-home" class="find-home">
     <div class="find-recent-heading"><h3>最近搜索</h3><button class="find-text-button" type="button" id="find-clear-recent" onclick="clearFindRecent()" hidden>清空</button></div>
-    <div id="find-recent" class="find-recent"></div>
+    <div id="find-recent" data-refresh-region="content" class="find-recent"></div>
   </section>
   <section id="find-results-card" class="card find-results-card" hidden aria-busy="false"><div class="card-header"><span id="search-result-title">查找结果</span><span class="header-meta" id="search-count" role="status"></span></div>
-    <p id="find-result-scope" class="find-result-scope"></p><div id="search-results"></div>
+    <p id="find-result-scope" class="find-result-scope"></p><div id="search-results" data-refresh-region="content"></div>
     <div class="search-pages" id="search-pages" hidden><button class="btn btn-sm" id="search-prev" type="button" onclick="searchPage(-1)">上一页</button><span id="search-page-label"></span><button class="btn btn-sm" id="search-next" type="button" onclick="searchPage(1)">下一页</button></div>
   </section>
 </div>
 <div id="find-context-overlay" class="find-context-overlay" hidden onclick="closeFindContext()"></div>
 <aside id="find-context" class="find-context" data-backdrop-id="find-context-overlay" role="dialog" aria-modal="true" aria-labelledby="find-context-title" hidden>
   <header class="find-context-header"><div><h2 id="find-context-title">原消息与前后讨论</h2><p id="find-context-meta"></p></div><button class="btn btn-sm" id="find-context-close" type="button" onclick="closeFindContext()">关闭</button></header>
-  <div id="find-context-body" class="find-context-body"></div><div id="find-context-actions" class="find-context-actions"></div>
+  <div id="find-context-body" data-refresh-region="content" class="find-context-body"></div><div id="find-context-actions" class="find-context-actions"></div>
 </aside>
 {% include "find_style.html" %}
 {% include "find_helpers.html" %}

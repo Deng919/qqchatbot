@@ -4,7 +4,7 @@
   <p id="attachment-status" class="header-meta" role="status"></p>
   <div class="actions"><button id="attachment-read" class="btn btn-primary" type="button" onclick="attachmentRead()">读取待处理附件</button></div>
   <p class="header-meta">最近 200 条附件消息，每次最多读取 20 个。未下载的附件，请先在 QQ 下载。</p>
-  <div id="attachment-items"></div>
+  <div id="attachment-items" data-refresh-region="content"></div>
 </dialog>
 <style>
 #attachment-dialog{width:min(760px,calc(100vw - 32px));max-height:85vh;box-sizing:border-box;border:1px solid var(--border);border-radius:12px;background:var(--surface,#fff);color:var(--text);padding:24px;overflow-y:auto}#attachment-dialog::backdrop{background:#142b2760}.attachment-item{padding:18px 0;border-top:1px solid var(--border);overflow-wrap:anywhere}.attachment-item h3{font-size:15px;margin:0 0 8px}.attachment-item pre{font:inherit;white-space:pre-wrap;line-height:1.7}.attachment-item summary{cursor:pointer;color:var(--primary)}

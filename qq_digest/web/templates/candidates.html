@@ -18,7 +18,7 @@
     <button class="btn btn-primary btn-sm" type="button" onclick="loadCandidates()">筛选</button>
   </div>
   <p id="candidate-feedback" role="status" hidden></p><nav id="candidate-pages" class="actions" aria-label="候选分页" hidden><button id="candidate-prev" class="btn btn-sm" onclick="candidateChangePage(-1)">上一页</button><span id="candidate-page-label"></span><button id="candidate-next" class="btn btn-sm" onclick="candidateChangePage(1)">下一页</button></nav>
-  <div class="candidate-list" id="candidate-list">
+  <div class="candidate-list" id="candidate-list" data-refresh-region="content">
     {% for c in candidates %}
     <article class="candidate-item"><div class="candidate-title">{{ c.title }}</div><div class="candidate-reason">{{ c.reason }}</div>
       {% if c.link and (c.link.startswith('https://') or c.link.startswith('http://')) %}<a href="{{ c.link }}" target="_blank" rel="noopener noreferrer">{{ c.link }}</a>
@@ -30,7 +30,7 @@
 <aside id="candidate-detail" class="candidate-detail" data-backdrop-id="candidate-detail-backdrop" hidden aria-live="polite">
   <div class="section-header"><span>候选详情</span><button class="btn btn-sm" aria-label="关闭候选详情" type="button" onclick="closeCandidateDetail()">关闭</button></div>
   <p id="candidate-detail-feedback" role="status" hidden></p>
-  <div id="candidate-detail-content"></div>
+  <div id="candidate-detail-content" data-refresh-region="content"></div>
   <div id="candidate-detail-actions" class="candidate-detail-actions"></div>
   <form id="candidate-edit-form" class="candidate-edit-form" hidden onsubmit="saveCandidateEdit(event)">
     <div class="field"><label for="edit-type">类型</label><select id="edit-type"><option value="resource">资源</option><option value="experience">经验</option></select></div>

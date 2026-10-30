@@ -5,10 +5,10 @@
 {% block actions %}<a class="btn btn-primary" href="/reports?generate=1">生成摘要</a>{% endblock %}
 {% block content %}
 <section class="metrics" aria-label="归档统计">
-  <a class="metric metric-link" href="/groups" aria-label="查看已启用群组"><div class="stat" id="stat-groups">--</div><div class="stat-label">已启用群组 <span aria-hidden="true">↗</span></div></a>
-  <a class="metric metric-link" href="/search?kind=message" aria-label="搜索归档消息"><div class="stat" id="stat-messages">--</div><div class="stat-label">归档消息 <span aria-hidden="true">↗</span></div></a>
-  <a class="metric metric-link" href="/candidates" aria-label="查看待审核重点" {% if not features.get('review',true) %}data-feature-off{% endif %}><div class="stat" id="stat-pending">--</div><div class="stat-label">待审核重点 <span aria-hidden="true">↗</span></div></a>
-  <a class="metric metric-link" href="/reports" aria-label="查看已生成摘要"><div class="stat" id="stat-reports">--</div><div class="stat-label">已生成摘要 <span aria-hidden="true">↗</span></div></a>
+  <a class="metric metric-link" href="/groups" aria-label="查看已启用群组"><div class="stat" id="stat-groups" data-refresh-region="content">--</div><div class="stat-label">已启用群组 <span aria-hidden="true">↗</span></div></a>
+  <a class="metric metric-link" href="/search?kind=message" aria-label="搜索归档消息"><div class="stat" id="stat-messages" data-refresh-region="content">--</div><div class="stat-label">归档消息 <span aria-hidden="true">↗</span></div></a>
+  <a class="metric metric-link" href="/candidates" aria-label="查看待审核重点" {% if not features.get('review',true) %}data-feature-off{% endif %}><div class="stat" id="stat-pending" data-refresh-region="content">--</div><div class="stat-label">待审核重点 <span aria-hidden="true">↗</span></div></a>
+  <a class="metric metric-link" href="/reports" aria-label="查看已生成摘要"><div class="stat" id="stat-reports" data-refresh-region="content">--</div><div class="stat-label">已生成摘要 <span aria-hidden="true">↗</span></div></a>
 </section>
 
 <nav class="overview-links" aria-label="常用操作">
@@ -17,20 +17,20 @@
   <a href="/reports"><span><strong>阅读摘要</strong><small>直接阅读各群要点，或按群查看完整摘要</small></span><span aria-hidden="true">↗</span></a>
 {% if features.get('review',true) %}  <a href="/candidates"><span><strong>处理审核</strong><small>整理待确认的重点信息</small></span><span aria-hidden="true">↗</span></a>{% endif %}
 </nav>
-<section class="health-strip" aria-live="polite"><span class="health-dot" id="health-dot"></span><strong id="health-service">服务状态读取中</strong><span id="health-sync">最近同步：读取中</span><span id="health-daily">每日摘要：读取中</span><span id="health-job">最近任务：读取中</span><span id="health-send">发送失败：读取中</span></section>
+<section class="health-strip" aria-live="polite"><span class="health-dot" id="health-dot"></span><strong id="health-service" data-refresh-region="content">服务状态读取中</strong><span id="health-sync" data-refresh-region="content">最近同步：读取中</span><span id="health-daily" data-refresh-region="content">每日摘要：读取中</span><span id="health-job" data-refresh-region="content">最近任务：读取中</span><span id="health-send" data-refresh-region="content">发送失败：读取中</span></section>
 
-<section id="daily-coverage" class="daily-coverage" aria-label="每日摘要覆盖范围" aria-live="polite">
+<section id="daily-coverage" data-refresh-region="content" class="daily-coverage" aria-label="每日摘要覆盖范围" aria-live="polite">
   <div class="daily-coverage-heading"><strong id="daily-coverage-title">每日摘要覆盖范围读取中</strong><a id="daily-coverage-report-link" href="/reports">查看报告 ↗</a></div>
   <p id="daily-coverage-counts"></p><ul id="daily-coverage-notes"></ul>
 </section>
 <div class="dashboard-grid">
   <section class="card">
-    <div class="card-header"><span>自动任务</span><span class="header-meta" id="scheduler-info">读取中...</span></div>
-    <div class="status-line"><span>聊天记录自动导入</span><strong id="collection-info">读取中...</strong></div>
+    <div class="card-header"><span>自动任务</span><span class="header-meta" id="scheduler-info" data-refresh-region="content">读取中...</span></div>
+    <div class="status-line"><span>聊天记录自动导入</span><strong id="collection-info" data-refresh-region="content">读取中...</strong></div>
     <div class="table-wrap">
       <table class="table responsive-table job-table">
         <thead><tr><th>任务</th><th>状态</th><th>开始</th><th>结束</th><th>错误</th></tr></thead>
-        <tbody id="job-list"><tr><td colspan="5" class="empty">加载中...</td></tr></tbody>
+        <tbody id="job-list" data-refresh-region="content"><tr><td colspan="5" class="empty">加载中...</td></tr></tbody>
       </table>
     </div>
     <div class="mobile-job-note">手机端仅显示最近 5 条任务</div>
@@ -41,7 +41,7 @@
     <div class="table-wrap">
       <table class="table responsive-table group-stats-table">
         <thead><tr><th>群名</th><th>消息</th><th>最近同步</th></tr></thead>
-        <tbody id="group-stats"><tr><td colspan="3" class="empty">加载中...</td></tr></tbody>
+        <tbody id="group-stats" data-refresh-region="content"><tr><td colspan="3" class="empty">加载中...</td></tr></tbody>
       </table>
     </div>
   </section>

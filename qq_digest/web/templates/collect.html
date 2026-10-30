@@ -8,7 +8,7 @@
 <section class="card history-inspection" id="history-inspection" aria-label="多群历史缺口巡检" {% if not features.get('history_inspection',true) %}data-feature-off{% endif %}>
   <div class="card-header"><span>历史缺口巡检 <small class="header-meta">下方所选群</small></span><button class="btn btn-sm" id="inspection-run" type="button" onclick="runHistoryInspection()">立即巡检</button></div>
   <div class="inspection-body">
-    <p id="inspection-status" role="status">正在读取巡检记录...</p>
+    <p id="inspection-status" data-refresh-region="content" role="status">正在读取巡检记录...</p>
     <p class="inspection-note">补采后请重新检查。源库缺失或无法读取时，不能核实缺口。</p>
     <details><summary>巡检设置</summary>
       <form id="inspection-settings" class="inspection-settings" onsubmit="saveInspectionSettings(event)" oninput="updateInspectionDirty()">
@@ -23,7 +23,7 @@
   </div>
   <div class="table-wrap"><table class="table responsive-table inspection-table">
     <thead><tr><th>群</th><th>状态</th><th>检查范围</th><th>待补日期与数量</th></tr></thead>
-    <tbody id="inspection-list"><tr><td class="empty" colspan="4">读取中...</td></tr></tbody>
+    <tbody id="inspection-list" data-refresh-region="content"><tr><td class="empty" colspan="4">读取中...</td></tr></tbody>
   </table></div>
   <div class="inspection-pages" id="inspection-pages" hidden><button class="btn btn-sm" id="inspection-prev" onclick="changeInspectionPage(-1)">上一页</button><span id="inspection-page-label"></span><button class="btn btn-sm" id="inspection-next" onclick="changeInspectionPage(1)">下一页</button></div>
 </section>
@@ -40,8 +40,8 @@
 <p class="group-result" id="collect-operation-result" role="status" hidden></p>
 <section class="card">
   <div class="card-header">更新结果 <span id="collect-count" class="header-meta"></span></div>
-  <div class="status-line" id="collect-gap-summary" hidden></div>
-  <div class="msg-list" id="collect-results">
+  <div class="status-line" id="collect-gap-summary" data-refresh-region="content" hidden></div>
+  <div class="msg-list" id="collect-results" data-refresh-region="content">
     <div class="empty" id="collect-empty">选择群聊和日期后更新</div>
   </div>
   <div id="collect-next" class="actions" hidden></div>

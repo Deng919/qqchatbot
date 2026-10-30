@@ -1,8 +1,8 @@
 <section id="storage-management" class="card setting-card" data-settings-panel="storage" aria-labelledby="storage-management-title">
   <div class="setting-heading storage-heading"><div><h2 id="storage-management-title">存储空间</h2><p>程序文件占用</p></div><button id="storage-refresh" class="btn btn-sm" type="button">刷新占用</button></div>
-  <p id="storage-total" class="storage-total">尚未读取</p>
-  <div id="storage-categories" class="storage-categories"></div>
-  <div id="storage-disks" class="storage-meta"></div>
+  <p id="storage-total" data-refresh-region="content" class="storage-total">尚未读取</p>
+  <div id="storage-categories" data-refresh-region="content" class="storage-categories"></div>
+  <div id="storage-disks" data-refresh-region="content" class="storage-meta"></div>
   <details class="storage-directories"><summary>使用目录</summary><div id="storage-paths" class="storage-meta"></div></details>
   <div id="storage-warnings" class="storage-meta" hidden></div>
   <form id="storage-policy-form" class="storage-policy">
@@ -19,13 +19,13 @@
     <div class="storage-actions"><button id="storage-save" class="btn btn-primary" type="submit" disabled>保存策略</button><button id="storage-policy-reload" class="btn" type="button" hidden>读取最新策略</button></div>
   </form>
   <div class="storage-actions"><button id="storage-preview" class="btn" type="button" disabled>清理预览</button><button id="storage-clean" class="btn" type="button" disabled>立即清理</button></div>
-  <div id="storage-preview-details" class="storage-preview-details" hidden>
+  <div id="storage-preview-details" data-refresh-region="content" class="storage-preview-details" hidden>
     <p id="storage-preview-summary"></p>
     <details open><summary>待清理项目</summary><ul id="storage-candidates" class="storage-file-list"></ul></details>
     <details><summary>受保护项目</summary><ul id="storage-protected" class="storage-file-list"></ul></details>
   </div>
-  <div id="storage-last-result" class="storage-last-result" hidden></div>
-  <p id="storage-result" class="setting-result" role="status" aria-live="polite" hidden></p>
+  <div id="storage-last-result" data-refresh-region="content" class="storage-last-result" hidden></div>
+  <p id="storage-result" data-refresh-region="content" class="setting-result" role="status" aria-live="polite" hidden></p>
 </section>
 <style>
   .storage-heading { align-items: flex-start; flex-wrap: wrap; }

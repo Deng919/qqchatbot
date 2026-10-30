@@ -22,7 +22,7 @@
     inboxN('inbox-workspace').classList.toggle('inbox-dashboard-detail',dashboardDetail);
     inboxGroupButtons.forEach(function(entry){entry.button.setAttribute('aria-pressed',String(inboxN('report-group').value===entry.value));});
   }
-  function inboxClearSelection(){if(inboxDashboardMotion){inboxDashboardMotion.destroy();inboxDashboardMotion=null;}inboxReadRevision++;inboxDashboardRevision++;summaryPointReference=null;inboxSelectedKey=null;inboxItems=[];inboxQuery='';inboxMobileOpen=false;inboxDashboardActive=false;inboxN('inbox-page-query').value='';inboxN('summary-points').textContent='正在读取讨论…';inboxApplyView();}
+  function inboxClearSelection(keepContent){if(inboxDashboardMotion){if(keepContent)inboxDashboardMotion.pause();else{inboxDashboardMotion.destroy();inboxDashboardMotion=null;}}inboxReadRevision++;inboxDashboardRevision++;summaryPointReference=null;inboxSelectedKey=null;if(!keepContent)inboxItems=[];inboxQuery='';inboxMobileOpen=false;if(!keepContent)inboxDashboardActive=false;inboxN('inbox-page-query').value='';if(!keepContent||!inboxN('summary-points').children.length)inboxN('summary-points').textContent='正在读取讨论…';inboxApplyView();}
   function inboxBackToList(){if(summaryBackInScope())return;summaryPointReference=null;inboxMobileOpen=false;inboxApplyView();if(inboxDashboardMotion)inboxDashboardMotion.layout();inboxDashboardCards.forEach(function(entry){entry.restorePosition();});if(inboxMobile()||inboxDashboardActive)inboxN('summary-points').focus();if(inboxDashboardActive&&typeof summaryScrollTo==='function')summaryScrollTo(summaryBrowseScroll);summarySave();}
   function inboxSaveRead(item,nextRead){
     var pending=inboxReadSaves.get(item.key);
@@ -84,7 +84,7 @@
     });return visible;
   }
   function inboxRenderPoints(items){
-    inboxDashboardActive=false;
+    if(inboxDashboardMotion){inboxDashboardMotion.destroy();inboxDashboardMotion=null;}inboxDashboardActive=false;
     inboxItems=items;var visible=inboxVisibleItems();
     if(!visible.some(function(item){return item.key===inboxSelectedKey;})){inboxSelectedKey=null;inboxMobileOpen=false;}
     if(!inboxSelectedKey&&!inboxMobile()&&visible.length)inboxSelectedKey=visible[0].key;

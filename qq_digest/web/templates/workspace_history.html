@@ -45,7 +45,7 @@
     if(workspaceHasUnsaved()){event.preventDefault();event.returnValue='';}
   });
   if(!window.qqDesktopPage&&window.navigation)navigation.addEventListener('currententrychange',function(event){
-    if(event.navigationType==='traverse'&&event.from.sameDocument){window.workspaceHistoryRestoring=true;location.reload();return;}
+    if(event.navigationType==='traverse'&&event.from.sameDocument){window.workspaceHistoryRestoring=true;try{window.dispatchEvent(new Event('qq-digest-workspace-restore'));}finally{window.workspaceHistoryRestoring=false;workspaceNavigationApproved=false;}}
     workspaceHistoryUpdate();
   });
   window.addEventListener('pageshow',workspaceHistoryUpdate);

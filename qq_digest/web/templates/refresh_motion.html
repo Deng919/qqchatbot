@@ -1,0 +1,33 @@
+<script>
+// Only declared result regions participate; forms and existing deck motion keep their own lifecycle.
+(function(){
+  var states=new Map(),pending=new Set(),frame=0,media=matchMedia('(prefers-reduced-motion: reduce)');
+  function stop(state){if(state.animation){state.animation.cancel();state.animation=null;}}
+  function flush(){
+    frame=0;var batch=Array.from(pending);pending.clear();
+    batch.forEach(function(node){
+      var state=states.get(node),content=node.innerHTML;if(content===state.content)return;state.content=content;
+      var editing=node.contains(document.activeElement)&&document.activeElement.matches('input,textarea,select,[contenteditable="true"]');
+      if(media.matches||document.hidden||document.documentElement.hasAttribute('data-desktop-inactive')||!node.getClientRects().length||editing||typeof node.animate!=='function'){stop(state);return;}
+      var opacity=state.animation?getComputedStyle(node).opacity:.78;stop(state);
+      var animation=node.animate([{opacity:opacity,translate:'0 4px'},{opacity:1,translate:'0 0'}],{duration:260,easing:'cubic-bezier(.16,1,.3,1)'});state.animation=animation;
+      animation.onfinish=function(){if(state.animation===animation){state.animation=null;animation.cancel();}};
+    });
+  }
+  function suspend(){if(frame)cancelAnimationFrame(frame);frame=0;pending.clear();states.forEach(stop);}
+  var observer=new MutationObserver(function(records){
+    var inactive=document.documentElement.hasAttribute('data-desktop-inactive')||document.hidden;if(inactive)suspend();
+    records.forEach(function(record){var node=record.target.nodeType===1?record.target:record.target.parentElement;while(node&&!states.has(node))node=node.parentElement;if(node){if(inactive)states.get(node).content=node.innerHTML;else pending.add(node);}});
+    if(pending.size&&!frame)frame=requestAnimationFrame(flush);
+  });
+  function observe(node){
+    if(!node||states.has(node))return;states.set(node,{content:node.innerHTML,animation:null});
+    var deep=node.getAttribute('data-refresh-region')!=='replace';observer.observe(node,{childList:true,characterData:deep,subtree:deep});
+  }
+  function start(){document.querySelectorAll('[data-refresh-region]').forEach(observe);observer.observe(document.documentElement,{attributes:true,attributeFilter:['data-desktop-inactive']});}
+  media.addEventListener('change',function(){if(media.matches)states.forEach(stop);});
+  window.addEventListener('pagehide',suspend);document.addEventListener('visibilitychange',function(){if(document.hidden)suspend();});
+  window.WorkspaceRefresh={observe:observe};
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',start);else start();
+})();
+</script>

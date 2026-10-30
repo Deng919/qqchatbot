@@ -14,9 +14,9 @@
   <button class="btn btn-primary" id="qa-preview-button" type="submit">查找相关消息</button>
   <p class="muted">只查询归档文字和已有附件识别缓存；查找消息不会下载附件、补采或调用 AI。</p>
 </form>
-<p id="qa-status" role="status"></p>
-<section class="card" id="qa-preview" hidden><h2>本次发送内容</h2><p id="qa-scope"></p><p id="qa-preview-note"></p><div id="qa-messages"></div><button class="btn btn-primary" id="qa-send" type="button" onclick="archiveQAAsk()">发送给 DeepSeek</button></section>
-<section class="card" id="qa-result" hidden><h2>回答</h2><p id="qa-answer" class="qa-text"></p><div id="qa-sources" class="actions"></div><div id="qa-original" hidden><h3>原消息</h3><p id="qa-original-meta"></p><p id="qa-original-text" class="qa-text"></p></div></section>
+<p id="qa-status" data-refresh-region="content" role="status"></p>
+<section class="card" id="qa-preview" hidden><h2>本次发送内容</h2><p id="qa-scope"></p><p id="qa-preview-note"></p><div id="qa-messages" data-refresh-region="content"></div><button class="btn btn-primary" id="qa-send" type="button" onclick="archiveQAAsk()">发送给 DeepSeek</button></section>
+<section class="card" id="qa-result" data-refresh-region="content" hidden><h2>回答</h2><p id="qa-answer" class="qa-text"></p><div id="qa-sources" class="actions"></div><div id="qa-original" hidden><h3>原消息</h3><p id="qa-original-meta"></p><p id="qa-original-text" class="qa-text"></p></div></section>
 </div>
 {% include "archive_qa_style.html" %}
 {% include "archive_qa_script.html" %}

@@ -26,7 +26,7 @@
   </div>
   <label class="inbox-page-search" for="inbox-page-query"><span>⌕</span><input id="inbox-page-query" type="search" placeholder="筛选本页群聊" oninput="inboxFilterPage(this.value)" autocomplete="off"></label>
 </section>
-<section id="summary-run-result" class="summary-result" role="status" hidden><p id="summary-run-message"></p>
+<section id="summary-run-result" data-refresh-region="content" class="summary-result" role="status" hidden><p id="summary-run-message"></p>
   <div id="summary-generation-progress" class="generation-progress" hidden>
     <div class="generation-progress-heading"><strong id="summary-progress-stage" aria-live="polite"></strong><span id="summary-progress-count"></span></div>
     <progress id="summary-progress-bar" max="1" value="0" aria-label="摘要生成进度"></progress>

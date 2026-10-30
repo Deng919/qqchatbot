@@ -12,7 +12,7 @@
   </section>
   <section class="card setting-card" data-settings-panel="automatic" aria-labelledby="automatic-title">
     <div class="setting-heading"><div><h2 id="automatic-title">自动运行</h2></div></div>
-    <form id="automatic-form"><fieldset id="automatic-options" disabled style="border:0;padding:0;margin:0"><div id="automatic-list">正在读取自动运行设置…</div></fieldset><p id="automatic-schedule" class="setting-help"></p><button class="btn btn-primary" id="automatic-save" disabled>保存自动运行设置</button><p id="automatic-result" class="setting-result" role="status" hidden></p></form>
+    <form id="automatic-form"><fieldset id="automatic-options" disabled style="border:0;padding:0;margin:0"><div id="automatic-list">正在读取自动运行设置…</div></fieldset><p id="automatic-schedule" data-refresh-region="content" class="setting-help"></p><button class="btn btn-primary" id="automatic-save" disabled>保存自动运行设置</button><p id="automatic-result" class="setting-result" role="status" hidden></p></form>
   </section>
   <section class="card setting-card" data-settings-panel="features" aria-labelledby="features-title">
     <div class="setting-heading"><div><h2 id="features-title">功能开关</h2></div><span class="setting-index">功能</span></div>
@@ -23,10 +23,10 @@
       <fieldset id="feature-options" disabled style="border:0;padding:0;margin:0"><div id="features-list"><p>正在读取功能设置…</p></div></fieldset>
 
       <button type="submit" class="btn btn-primary" id="features-save" disabled>保存功能设置</button>
-      <p id="features-result" class="setting-result" role="status" hidden></p>
+      <p id="features-result" data-refresh-region="content" class="setting-result" role="status" hidden></p>
     </form>
   </section>
-  <div id="desktop-required" class="card" hidden>这些设置需使用桌面版。</div>
+  <div id="desktop-required" data-refresh-region="content" class="card" hidden>这些设置需使用桌面版。</div>
 
   {% include "storage_management.html" %}
 
@@ -62,7 +62,7 @@
     <div class="setting-row"><select id="backup-schedule" class="input" disabled><option value="weekly">每周</option><option value="daily">每天</option><option value="off">关闭</option></select><a class="setting-muted" href="/settings?section=storage">备份保留策略</a></div>
     <div class="setting-row"><button id="backup-data" class="btn btn-primary" type="button" disabled>立即备份</button><button id="open-backup" class="btn" type="button" disabled>打开备份目录</button></div>
     <p class="setting-help">备份含聊天及目录内的密钥，请妥善保管。</p>
-    <p id="backup-result" class="setting-result" role="status" hidden></p>
+    <p id="backup-result" data-refresh-region="content" class="setting-result" role="status" hidden></p>
   </section>
 
   <section class="card setting-card" data-settings-panel="backup" aria-labelledby="restore-title">
@@ -80,7 +80,7 @@
       <label class="restore-confirm"><input id="confirm-restore" type="checkbox"><span>我已核对备份内容和新位置</span></label>
       <button id="restore-data" class="btn btn-primary" type="button" disabled>恢复并切换</button>
     </div>
-    <p id="restore-result" class="setting-result" role="status" hidden></p>
+    <p id="restore-result" data-refresh-region="content" class="setting-result" role="status" hidden></p>
   </section>
 </div>
 <style>

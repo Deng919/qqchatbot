@@ -1,6 +1,6 @@
 <section class="card" id="group-detail" aria-labelledby="group-detail-title" hidden>
   <div class="card-header"><span id="group-detail-title">群聊详情</span><button class="btn btn-sm" type="button" onclick="closeGroupDetail()">关闭详情</button></div>
-  <p id="group-detail-stats" class="header-meta"></p><div class="actions" id="group-detail-links"></div>
+  <p id="group-detail-stats" data-refresh-region="content" class="header-meta"></p><div class="actions" id="group-detail-links"></div>
   <form id="group-detail-form" onsubmit="saveGroupDetail(event)">
     <label class="group-check"><input id="group-daily" type="checkbox"> 为这个群每天自动生成摘要</label>
     <p class="header-meta">仅关注的群参与自动运行。</p>
@@ -20,7 +20,7 @@
       <div class="group-danger"><p>同时删除该群的归档消息、摘要和知识候选。请先备份。</p><button class="btn btn-danger btn-sm" type="button" onclick="deleteGroup(selectedGroupId)">删除群聊及数据</button></div>
     </details>
     <button class="btn btn-primary" id="group-detail-save" type="submit">保存群聊设置</button>
-    <p id="group-detail-result" class="group-result" role="status" hidden></p>
+    <p id="group-detail-result" data-refresh-region="content" class="group-result" role="status" hidden></p>
   </form>
 </section>
 <style>

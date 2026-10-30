@@ -13,8 +13,8 @@
 <section id="summary-reading-section" aria-label="摘要内容">
   <p id="summary-reading-count" class="header-meta" aria-live="polite"></p>
   <p id="summary-reading-warning" class="summary-warning" role="status" hidden></p>
-  <div id="summary-points" class="summary-cards" aria-live="polite" tabindex="-1"><div class="empty">正在读取摘要要点…</div></div>
-  <div id="summary-groups" class="summary-cards" hidden aria-live="polite"></div>
+  <div id="summary-points" data-refresh-region="replace" class="summary-cards" aria-live="polite" tabindex="-1"><div class="empty">正在读取摘要要点…</div></div>
+  <div id="summary-groups" data-refresh-region="content" class="summary-cards" hidden aria-live="polite"></div>
   <div id="summary-reading-pages" class="summary-pages" hidden><button class="btn btn-sm" id="summary-reading-prev" type="button" onclick="summaryChangePage(-1)">上一页</button><span id="summary-reading-page-label"></span><button class="btn btn-sm" id="summary-reading-next" type="button" onclick="summaryChangePage(1)">下一页</button></div>
 </section>
 
@@ -25,7 +25,7 @@
     <div class="inbox-detail-bar"><button class="btn btn-sm" id="inbox-back" type="button" onclick="inboxBackToList()">← 返回列表</button><span id="inbox-detail-section"></span></div>
     <div id="inbox-detail-meta" class="inbox-detail-meta"></div>
     <h2 id="inbox-detail-title" tabindex="-1"></h2>
-    <p id="inbox-detail-body" class="inbox-detail-body"></p>
+    <p id="inbox-detail-body" data-refresh-region="content" class="inbox-detail-body"></p>
     <div id="inbox-detail-actions" class="inbox-detail-actions"></div>
   </article>
 <div class="report-layout" id="report-layout">
@@ -34,7 +34,7 @@
     <div class="table-wrap">
       <table class="table responsive-table report-table">
         <thead><tr><th>类型</th><th>日期范围</th><th>群名</th><th title="实际纳入摘要的消息条数">参考消息数</th><th>候选数</th><th>更新时间</th><th>操作</th></tr></thead>
-        <tbody id="report-list"><tr><td colspan="7" class="empty">加载中...</td></tr></tbody>
+        <tbody id="report-list" data-refresh-region="content"><tr><td colspan="7" class="empty">加载中...</td></tr></tbody>
       </table>
     </div>
     <div class="report-pages" id="report-pages" hidden><button class="btn btn-sm" id="report-prev" type="button" onclick="changeReportPage(-1)">上一页</button><span id="report-page-label"></span><button class="btn btn-sm" id="report-next" type="button" onclick="changeReportPage(1)">下一页</button></div>
@@ -42,7 +42,7 @@
   <section class="card report-detail" id="report-detail" hidden>
     <div class="card-header"><span id="summary-report-title" class="summary-report-title">完整摘要</span><button class="btn btn-sm" aria-label="返回摘要阅读" type="button" onclick="summaryBackFromReport()">返回阅读</button></div>
     <div class="report-detail-scroll">
-      <div id="report-content" class="report-content"></div>
+      <div id="report-content" data-refresh-region="content" class="report-content"></div>
       <details class="summary-report-tools"><summary id="summary-coverage-label">消息范围与统计</summary>
       <section id="report-completeness" class="coverage-notice" aria-label="报告覆盖范围" aria-live="polite"></section>
       </details>
@@ -61,14 +61,14 @@
             <button class="btn" type="submit">保存纠错意见</button>
           </fieldset></form>
         </details>
-        <div id="report-corrections"></div>
+        <div id="report-corrections" data-refresh-region="content"></div>
         <details><summary>重新生成这份报告</summary><p class="header-meta">按原范围重新生成，保留旧版。无精确时间记录的旧报告按原日期生成；纠错意见不参与生成。</p>
           <form onsubmit="regenerateSelectedReport(event)"><fieldset id="regeneration-fields"><div class="field"><label for="regeneration-reason">重新生成原因</label><textarea class="input" id="regeneration-reason" rows="2" maxlength="2000" required placeholder="例如：补采后重新核对摘要"></textarea></div><button class="btn" id="report-regenerate" type="submit">保留旧版并重新生成</button></fieldset></form>
         </details>
       </section>
       </details>
-      <section id="report-evidence" class="report-evidence" aria-label="逐条来源"></section>
-      <section id="report-source-context" class="report-source-context" aria-label="关联的消息与上下文" hidden></section>
+      <section id="report-evidence" data-refresh-region="content" class="report-evidence" aria-label="逐条来源"></section>
+      <section id="report-source-context" data-refresh-region="content" class="report-source-context" aria-label="关联的消息与上下文" hidden></section>
     </div>
   </section>
 </div>
@@ -78,7 +78,7 @@
 <div id="summary-source-backdrop" class="range-summary-backdrop" hidden onclick="summaryCloseSource()"></div>
 <aside id="summary-source-panel" class="range-summary-panel" data-backdrop-id="summary-source-backdrop" role="dialog" aria-modal="true" aria-labelledby="summary-source-title" hidden>
   <div class="range-panel-header"><div><h2 id="summary-source-title">关联的消息</h2><p id="summary-source-scope"></p></div><button id="summary-source-close" class="btn btn-sm" type="button" onclick="summaryCloseSource()">关闭</button></div>
-  <div id="summary-source-choices" class="actions"></div><div id="summary-source-messages" aria-live="polite"></div>
+  <div id="summary-source-choices" class="actions"></div><div id="summary-source-messages" data-refresh-region="content" aria-live="polite"></div>
 </aside>
 
 <div id="range-summary-backdrop" class="range-summary-backdrop" hidden onclick="closeRangeSummary()"></div>
@@ -104,7 +104,7 @@
         <div class="field"><label for="range-end-date">结束日期</label><input class="input" id="range-end-date" type="date" required oninput="rangeFormDirty=true" onchange="onRangeDateChange()"></div>
       </div>
       <div id="range-selection-summary" class="range-selection-summary">已选择 0 个群，共 1 天</div>
-      <section class="range-input-preview" aria-label="本地消息预览"><p id="range-preview-status" role="status">选择群聊后查看消息数量。</p><div id="range-preview-groups"></div><p class="header-meta">使用本地消息，最多 7 天。实际纳入数量见生成结果。</p><div id="range-preview-actions" class="actions"></div></section>
+      <section class="range-input-preview" aria-label="本地消息预览"><p id="range-preview-status" role="status">选择群聊后查看消息数量。</p><div id="range-preview-groups" data-refresh-region="content"></div><p class="header-meta">使用本地消息，最多 7 天。实际纳入数量见生成结果。</p><div id="range-preview-actions" class="actions"></div></section>
       <div id="range-result" class="range-result" hidden></div>
     </fieldset>
     <div class="range-panel-footer"><button class="btn" type="button" onclick="closeRangeSummary()">收起，继续阅读</button><button class="btn btn-primary" id="range-submit-btn" type="submit" disabled>开始生成</button></div>
@@ -115,8 +115,8 @@
 <aside id="report-qa-dialog" class="report-qa-dialog" data-backdrop-id="report-qa-backdrop" hidden role="dialog" aria-modal="true" aria-labelledby="report-qa-title">
   <div class="range-panel-header"><div><h2 id="report-qa-title">询问这份报告</h2><p id="report-qa-scope"></p></div><button class="btn btn-sm" type="button" onclick="closeReportQA()" aria-label="关闭问答">关闭</button></div>
   <p class="report-qa-privacy">相关聊天片段会发送到 DeepSeek；对话不保存。</p>
-  <div id="report-qa-messages" class="report-qa-messages" aria-live="polite"></div>
-  <div id="report-qa-sources" class="report-qa-sources"></div>
+  <div id="report-qa-messages" data-refresh-region="content" class="report-qa-messages" aria-live="polite"></div>
+  <div id="report-qa-sources" data-refresh-region="content" class="report-qa-sources"></div>
   <form id="report-qa-form" onsubmit="askReport(event)"><label for="report-qa-question">你的问题</label><textarea class="input" id="report-qa-question" maxlength="2000" rows="3" required placeholder="例如：这次 503 错误后来解决了吗？"></textarea><button class="btn btn-primary" id="report-qa-submit" type="submit">发送问题</button></form>
 </aside>
 

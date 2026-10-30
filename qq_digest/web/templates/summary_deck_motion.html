@@ -52,7 +52,7 @@
     }
     function refresh(entry,before){if(active!==entry||disposed)return;reflow(before);entry.restorePosition();if(!revealed&&visibleNotes(entry).length){revealed=true;pull(entry);}}
     function layout(){if(!active||disposed)return;if(active.card.hidden){close(false,false);return;}stopLayout();stopFlights();place();active.restorePosition();}
-    function blank(event){if(active&&grid.parentElement.contains(event.target)&&!event.target.closest('.summary-group-stack,.summary-deck-drawer,a,button,input,select,textarea,summary,dialog,[role="dialog"]'))close(true,false);}
+    function blank(event){if(active&&grid.parentElement&&grid.parentElement.contains(event.target)&&!event.target.closest('.summary-group-stack,.summary-deck-drawer,a,button,input,select,textarea,summary,dialog,[role="dialog"]'))close(true,false);}
     function escape(event){if(event.key==='Escape'&&!event.defaultPrevented&&active&&grid.getBoundingClientRect().width&&!event.target.closest('dialog,[role="dialog"]')){event.preventDefault();close(true,true);}}
     function reduced(){if(media.matches){stopLayout();stopFlights();}}
     document.addEventListener('click',blank);document.addEventListener('keydown',escape);if(media.addEventListener)media.addEventListener('change',reduced);
