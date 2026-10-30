@@ -1,6 +1,9 @@
 from datetime import datetime, timezone
 from types import SimpleNamespace
 
+import httpx
+import pytest
+
 from qq_digest.secondhand_runner import refresh, discover_secondhand
 from tests.test_secondhand import market, message, offer
 
@@ -108,3 +111,52 @@ def test_force_refresh_reprocesses_done_sources(market):
     refresh(config,market.archive,'2026-10-13','2026-10-19',collect=False,ai=ai)
     result=refresh(config,market.archive,'2026-10-13','2026-10-19',collect=False,ai=ai,force=True)
     assert len(ai.calls)==2 and result['processed']==1
+
+
+@pytest.mark.parametrize('response_kind,failed_sources,stored_offers', [
+    ('valid', 0, 2), ('invalid', 2, 0), ('partial', 1, 1), ('malformed', 2, 0),
+    ('invalid_source_type', 2, 0), ('invalid_direction_type', 1, 1),
+])
+def test_market_business_validation_updates_exact_api_attempt_usage(
+    market, tmp_path, response_kind, failed_sources, stored_offers,
+):
+    import json
+    from qq_digest.ai.client import AIClient
+    from qq_digest.ai_usage import UsageService
+
+    market.archive.ingest([message(), message(mid='b', sender=200)])
+    usage = UsageService(tmp_path / 'usage.sqlite')
+
+    def respond(request):
+        units = json.loads(json.loads(request.content)['messages'][-1]['content'])['sources']
+        rows = [offer(unit) for unit in units]
+        if response_kind == 'invalid':
+            for row in rows:
+                row['evidence'] = 'invented'
+        elif response_kind == 'partial':
+            rows[1]['evidence'] = 'invented'
+        elif response_kind == 'invalid_source_type':
+            rows[0]['source_key'] = []
+        elif response_kind == 'invalid_direction_type':
+            rows[1]['direction'] = []
+        payload = {'items': 'invalid'} if response_kind == 'malformed' else {'items': rows}
+        return httpx.Response(200, json={
+            'choices': [{'message': {'content': json.dumps(payload)}}],
+            'usage': {'prompt_tokens': 17, 'completion_tokens': 9},
+        })
+
+    ai = AIClient(base_url='https://example.com/v1', api_key='synthetic', model='test',
+                  transport=httpx.MockTransport(respond), max_retries=1, usage_service=usage)
+    config = SimpleNamespace(summary=SimpleNamespace(timezone='Asia/Shanghai'))
+    try:
+        result = refresh(config, market.archive, '2026-10-13', '2026-10-19', collect=False, ai=ai)
+    finally:
+        ai.close()
+
+    assert result['failed'] == failed_sources and result['offers'] == stored_offers
+    assert market.db.execute('SELECT count(*) FROM market_posts').fetchone()[0] == stored_offers
+    snapshot = usage.snapshot()
+    assert snapshot['calls'] == 1
+    assert snapshot['failed'] == int(failed_sources > 0)
+    assert snapshot['successful'] == int(failed_sources == 0)
+    assert snapshot['input_tokens'] == 17 and snapshot['output_tokens'] == 9

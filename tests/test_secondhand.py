@@ -217,6 +217,36 @@ def test_optional_fields_and_price_text_must_be_source_verifiable(market):
         market.accept_units([unit], {'items': [bad]})
 
 
+@pytest.mark.parametrize('price_text', ['价格800元', '价格：800元', '价格 800元'])
+def test_literal_price_label_is_accepted_without_rewriting_source(market, price_text):
+    unit = ingest(market, [message(text='出戴尔U2720显示器，完好带底座，' + price_text)])[0]
+    row = dict(offer(unit), price_text=price_text)
+
+    assert market.accept_units([unit], {'items': [row]}) == 1
+    stored = market.db.execute('SELECT price,price_text,evidence FROM market_posts').fetchone()
+    assert stored['price'] == 800 and stored['price_text'] == price_text
+    assert stored['evidence'] == unit['text']
+
+
+@pytest.mark.parametrize('price_text', [
+    '价格800-900元', '价格800至900元', '价格不是800元', '不低于800元',
+    '戴尔U2720显示器800元', '价格800元不含配件',
+])
+def test_price_label_does_not_admit_ranges_negations_or_product_text(market, price_text):
+    unit = ingest(market, [message(text='出戴尔U2720显示器，完好带底座，' + price_text)])[0]
+    with pytest.raises(ValueError, match='价格原文'):
+        market.accept_units([unit], {'items': [dict(offer(unit), price_text=price_text)]})
+    assert market.db.execute('SELECT count(*) FROM market_posts').fetchone()[0] == 0
+
+
+def test_labeled_price_still_requires_exact_source_and_matching_amount(market):
+    unit = ingest(market, [message()])[0]
+    for values in ({'price_text': '价格900元'}, {'price_text': '价格800元', 'price': 900}):
+        with pytest.raises(ValueError, match='价格'):
+            market.accept_units([unit], {'items': [dict(offer(unit), **values)]})
+    assert market.db.execute('SELECT count(*) FROM market_posts').fetchone()[0] == 0
+
+
 def test_activity_metrics_label_repeated_sales_and_long_wanted(market):
     sale_messages = [
         message(gid=11, mid='sale-1', day=17),

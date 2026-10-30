@@ -44,7 +44,7 @@ def identity_body(value):
     return normalized(value)
 
 
-_PRICE_TEXT_RE = re.compile(r'^\s*(?:￥|¥)?\d+(?:\.\d+)?\s*(?:元|块|rmb|r)?\s*$', re.I)
+_PRICE_TEXT_RE = re.compile(r'^\s*(?:价格\s*[:：]?\s*)?(?:￥|¥)?\d+(?:\.\d+)?\s*(?:元|块|rmb|r)?\s*$', re.I)
 _PROMOTION_RE = re.compile(r'会员|权益|年卡|课程|资料|代开|代购|优惠|快递', re.I)
 _BUNDLE_RE = re.compile(r'打包|全套|整套|整包|合集|整箱|一起(?:出|卖|售)|全部(?:出|卖|售)')
 
