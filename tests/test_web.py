@@ -1,6 +1,7 @@
 from datetime import datetime, timedelta
 import json
 from pathlib import Path
+import yaml
 from types import SimpleNamespace
 from zoneinfo import ZoneInfo
 
@@ -31,7 +32,11 @@ def web_client(tmp_path):
         excerpt="看这个站点",
         message_ids=["m1"],
     )
+    config_path=tmp_path/'config'/'config.yaml'
+    config_path.parent.mkdir()
+    config_path.write_text(yaml.safe_dump({'security':{'web_password_hash':'x'*32},'ai':{'base_url':'https://api.example.com/v1','model':'gpt-test','api_key_env':'QQ_DIGEST_AI_API_KEY'},'summary':{'hour':9,'minute':30,'timezone':'Asia/Shanghai'}}),encoding='utf-8')
     app = create_app(
+        config_path=config_path,
         archive=archive,
         candidates=candidates,
         knowledge=KnowledgeWriter(tmp_path / "knowledge"),
@@ -55,6 +60,11 @@ def web_client(tmp_path):
     )
     client = TestClient(app)
     return client, candidate_id, tmp_path / "knowledge"
+
+
+def save_ai_key(client,key):
+    data=client.get('/api/ai-settings').json()
+    return client.put('/api/ai-settings',json={name:data[name] for name in ('base_url','model','json_mode')}|{'expected_revision':data['revision'],'api_key':key})
 
 
 def test_candidates_requires_login(web_client):
@@ -319,8 +329,8 @@ def test_ai_settings_requires_login(web_client):
 
     assert client.get("/ai-settings", follow_redirects=False).status_code == 303
     assert client.get("/api/ai-settings").status_code == 401
-    assert client.put("/api/ai-settings/key", json={"api_key": "example-key"}).status_code == 401
-    assert client.post("/api/ai-settings/test").status_code == 401
+    assert client.put("/api/ai-settings", json={"expected_revision":"a"*64,"base_url":"http://localhost:62406/v1","model":"model","api_key":"example-key"}).status_code == 401
+    assert client.post("/api/ai-settings/test",json={"expected_revision":client.app.state.first_use.store.revision}).status_code == 401
 
 
 def test_failure_center_requires_login_and_shows_persisted_error(web_client):
@@ -584,7 +594,7 @@ def test_ask_report_returns_checked_sources_without_leaking_key(web_client, tmp_
     client.app.state.config.ai.ui_api_key_file = str(tmp_path / "deepseek-key.txt")
     client.app.state.config.ai.base_url = "https://api.deepseek.com"
     client.post("/login", data={"password": "password123"})
-    client.put("/api/ai-settings/key", json={"api_key": "synthetic-private-key"})
+    save_ai_key(client,"synthetic-private-key")
 
     class FakeAI:
         def __init__(self, **kwargs):
@@ -597,7 +607,7 @@ def test_ask_report_returns_checked_sources_without_leaking_key(web_client, tmp_
         def close(self):
             pass
 
-    monkeypatch.setattr("qq_digest.web.app.AIClient", FakeAI)
+    monkeypatch.setattr("qq_digest.ai.factory.AIClient", FakeAI)
     response = client.post(f"/api/reports/daily/{report_id}/ask", json={
         "question": "原因是什么？", "history": [{"role": "user", "content": "先看报错"}],
     })
@@ -619,7 +629,7 @@ def test_report_qa_dialog_has_ephemeral_controls(web_client):
     assert 'role="dialog"' in page
     assert 'id="report-qa-question"' in page
     assert 'id="report-qa-sources"' in page
-    assert "聊天片段会发送到 DeepSeek" in page
+    assert "聊天片段会发送到 Cockpit" in page
     assert "qaHistory = []" in page
 
 
@@ -640,23 +650,19 @@ def test_ai_settings_page_saves_key_without_echoing_it(web_client, tmp_path):
 
     page = client.get("/ai-settings")
     before = client.get("/api/ai-settings").json()
-    saved = client.put("/api/ai-settings/key", json={"api_key": "synthetic-example-key"})
+    saved = save_ai_key(client,"synthetic-example-key")
     after = client.get("/api/ai-settings").json()
 
     assert page.status_code == 200
-    assert 'id="deepseek-api-key"' in page.text
+    assert 'id="cockpit-key"' in page.text
     assert 'type="password"' in page.text
     assert "synthetic-example-key" not in page.text
-    assert before == {
-        "base_url": "https://api.example.com/v1",
-        "model": "gpt-test",
-        "provider_priority": ["chatgpt_bridge", "compatible"],
-        "bridge_model": "",
-        "key_configured": False,
-    }
+    assert before['base_url']=='https://api.example.com/v1'
+    assert before['model']=='gpt-test' and not before['key_configured']
+    assert 'provider_priority' not in before and 'connections' not in before
     assert saved.status_code == 200
     assert "synthetic-example-key" not in saved.text
-    assert key_path.read_text(encoding="utf-8").strip() == "synthetic-example-key"
+    assert Path(client.app.state.config.ai.ui_api_key_file).read_text(encoding="utf-8").strip() == "synthetic-example-key"
     assert after["key_configured"] is True
     assert "synthetic-example-key" not in str(after)
 
@@ -667,7 +673,7 @@ def test_ai_settings_rejects_invalid_key(web_client, tmp_path):
     client.app.state.config.ai.ui_api_key_file = str(key_path)
     client.post("/login", data={"password": "password123"})
 
-    response = client.put("/api/ai-settings/key", json={"api_key": "two words"})
+    response = save_ai_key(client,"two words")
 
     assert response.status_code == 422
     assert not key_path.exists()
@@ -678,7 +684,7 @@ def test_ai_settings_connection_test_requires_positive_json_result(web_client, t
     client.app.state.config.ai.ui_api_key_file = str(tmp_path / "deepseek-api-key.txt")
     client.app.state.config.ai.base_url = "https://api.deepseek.com"
     client.post("/login", data={"password": "password123"})
-    client.put("/api/ai-settings/key", json={"api_key": "synthetic-example-key"})
+    save_ai_key(client,"synthetic-example-key")
 
     class FakeAI:
         def __init__(self, **kwargs):
@@ -690,12 +696,12 @@ def test_ai_settings_connection_test_requires_positive_json_result(web_client, t
         def close(self):
             self.closed = True
 
-    monkeypatch.setattr("qq_digest.web.app.AIClient", FakeAI)
+    monkeypatch.setattr("qq_digest.ai.factory.AIClient", FakeAI)
 
-    response = client.post("/api/ai-settings/test")
+    response = client.post("/api/ai-settings/test",json={"expected_revision":client.app.state.first_use.store.revision})
 
     assert response.status_code == 503
-    assert "DeepSeek 连接失败" in response.text
+    assert "Cockpit 连接测试失败" in response.text
 
 
 def test_ai_settings_connection_failure_does_not_echo_key(web_client, tmp_path, monkeypatch):
@@ -705,7 +711,7 @@ def test_ai_settings_connection_failure_does_not_echo_key(web_client, tmp_path, 
     key_path = tmp_path / "secrets" / "deepseek-api-key.txt"
     client.app.state.config.ai.ui_api_key_file = str(key_path)
     client.post("/login", data={"password": "password123"})
-    client.put("/api/ai-settings/key", json={"api_key": "synthetic-example-key"})
+    save_ai_key(client,"synthetic-example-key")
 
     class FailingAI:
         def __init__(self, **kwargs):
@@ -717,9 +723,9 @@ def test_ai_settings_connection_failure_does_not_echo_key(web_client, tmp_path, 
         def close(self):
             pass
 
-    monkeypatch.setattr("qq_digest.web.app.AIClient", FailingAI)
+    monkeypatch.setattr("qq_digest.ai.factory.AIClient", FailingAI)
 
-    response = client.post("/api/ai-settings/test")
+    response = client.post("/api/ai-settings/test",json={"expected_revision":client.app.state.first_use.store.revision})
 
     assert response.status_code == 503
     assert "synthetic-example-key" not in response.text
@@ -1783,6 +1789,7 @@ def test_run_daily_preflight_failure_remains_server_error(
     client, _, _ = web_client
     cfg = client.app.state.config
     cfg.ntqq.enabled = True
+    monkeypatch.setenv(cfg.ai.api_key_env,"synthetic-preflight-key")
     cfg.ntqq.db_dir = str(tmp_path / "decrypted")
     monkeypatch.setattr(
         "qq_digest.refresh.refresh_database",

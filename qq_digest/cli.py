@@ -139,27 +139,15 @@ def doctor(config_path: Path = typer.Option(Path("config/config.yaml"))) -> None
     except Exception as exc:
         warn(f"磁盘检查失败: {exc}")
 
-    # 5. AI providers
-    typer.echo("=== AI 服务 ===")
-    ok(f"调用顺序: {' -> '.join(config.ai.provider_priority)}")
-    if "chatgpt_bridge" in config.ai.provider_priority:
-        wrapper = Path(config.ai.bridge_wrapper_path)
-        accounts = Path(config.ai.bridge_account_directory)
-        if wrapper.is_file() and accounts.is_dir():
-            ok("本地 GPT bridge 包装器和 codexID 目录可用")
-        else:
-            warn("本地 GPT bridge 不完整，将在调用失败时使用后备服务")
-    if "compatible" in config.ai.provider_priority:
-        try:
-            config.resolve_api_key()
-            ok("兼容接口 API key 已设置")
-            ok(f"兼容接口 base_url: {config.resolve_base_url()}")
-            ok(f"兼容接口 model: {config.ai.model}")
-        except Exception as exc:
-            if config.ai.provider_priority == ["compatible"]:
-                block(f"兼容接口不可用: {exc}")
-            else:
-                warn(f"后备兼容接口不可用: {exc}")
+    # 5. Cockpit connection
+    typer.echo("=== Cockpit AI ===")
+    try:
+        config.resolve_api_key()
+        ok("Cockpit API key 已设置")
+        ok(f"Cockpit base_url: {config.resolve_base_url()}")
+        ok(f"Cockpit model: {config.ai.model}")
+    except Exception as exc:
+        block(f"Cockpit 不可用: {exc}")
 
     # 6. QQ Bot
     typer.echo("=== QQ Bot ===")

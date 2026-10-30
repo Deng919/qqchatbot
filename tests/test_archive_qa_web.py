@@ -27,7 +27,7 @@ def test_qa_auth_switch_preview_and_sources(browsing_client,monkeypatch):
         def __init__(self,**kwargs):pass
         def chat(self,messages):calls.append(messages);return {'answer':'方案A','source_ids':['s1']}
         def close(self):calls.append('closed')
-    monkeypatch.setattr('qq_digest.web.archive_qa_routes.AIClient',Client)
+    monkeypatch.setattr('qq_digest.ai.factory.AIClient',Client)
     data=client.post('/api/archive-qa/preview',json=payload()).json()
     answer=client.post('/api/archive-qa/ask',json={'ticket':data['ticket']})
     assert answer.status_code==200 and answer.json()['sources'][0]['group_id']==11
@@ -44,7 +44,7 @@ def test_qa_auth_switch_preview_and_sources(browsing_client,monkeypatch):
 def test_no_messages_need_no_key_or_paid_client(browsing_client,monkeypatch):
     client,ar,config=browsing_client;login(client);enable(client)
     def forbidden(**kwargs):raise AssertionError('Must not construct paid client without evidence')
-    monkeypatch.setattr('qq_digest.web.archive_qa_routes.AIClient',forbidden)
+    monkeypatch.setattr('qq_digest.ai.factory.AIClient',forbidden)
     data=client.post('/api/archive-qa/preview',json=payload()).json()
     result=client.post('/api/archive-qa/ask',json={'ticket':data['ticket']})
     assert result.status_code==200 and '无法确认' in result.json()['answer']
@@ -70,22 +70,22 @@ def test_independent_same_second_logins_cannot_share_evidence(browsing_client,mo
     assert client.get('/api/archive-qa/sources/'+ticket+'/s1').status_code==410
 
 
-@pytest.mark.parametrize('failure',['missing_config','missing_key','public_url'])
+@pytest.mark.parametrize('failure',['missing_config','missing_key','invalid_url'])
 def test_configuration_errors_are_generic_service_errors(browsing_client,monkeypatch,failure):
     from qq_digest.config import ConfigError
     client,ar,config=browsing_client;login(client);enable(client)
     def forbidden(**kwargs):raise AssertionError('Configuration failure must not construct a network client')
-    monkeypatch.setattr('qq_digest.web.archive_qa_routes.AIClient',forbidden)
+    monkeypatch.setattr('qq_digest.ai.factory.AIClient',forbidden)
     add_message(ar,'evidence',datetime(2026,10,5,12,tzinfo=timezone.utc),text='接口配置方案A')
     ticket=client.post('/api/archive-qa/preview',json=payload()).json()['ticket']
     if failure=='missing_config':client.app.state.config=None
     elif failure=='missing_key':
         def missing_key(self):raise ConfigError('synthetic missing key')
         monkeypatch.setattr(type(config),'resolve_api_key',missing_key)
-    else:monkeypatch.setattr('qq_digest.web.archive_qa_routes.is_public_distribution',lambda:True)
+    else:config.ai.base_url='invalid'
     result=client.post('/api/archive-qa/ask',json={'ticket':ticket})
     assert result.status_code==503
-    assert result.json()['detail']=='问答暂不可用，请检查 DeepSeek API Key 和网络后重试'
+    assert result.json()['detail']=='问答暂不可用，请检查 Cockpit API Key 和网络后重试'
 
 
 def test_page_uses_configured_timezone_and_search_navigation(browsing_client):
@@ -108,7 +108,7 @@ def test_preview_endpoint_is_read_only_with_unread_attachments(browsing_client, 
         raise AssertionError('Preview must not read attachments or invoke AI')
     monkeypatch.setattr('qq_digest.attachments.AttachmentService.prepare', forbidden)
     monkeypatch.setattr('qq_digest.collector.ntqq.NTQQCollector.collect', forbidden)
-    monkeypatch.setattr('qq_digest.web.archive_qa_routes.AIClient', forbidden)
+    monkeypatch.setattr('qq_digest.ai.factory.AIClient', forbidden)
     before = ar.connection.total_changes
 
     result = client.post('/api/archive-qa/preview', json=payload())

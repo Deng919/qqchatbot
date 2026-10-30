@@ -45,7 +45,7 @@ def test_report_ask_endpoint_uses_snapshot_window_and_body(browsing_client, tmp_
             return {'answer': '范围内消息', 'source_ids': ['inside', 'before', 'cutoff', 'after']}
         def close(self):
             pass
-    monkeypatch.setattr('qq_digest.web.app.AIClient', FakeAI)
+    monkeypatch.setattr('qq_digest.ai.factory.AIClient', FakeAI)
 
     response = client.post(f'/api/reports/daily/{report_id}/ask', json={'question': '消息范围？'})
 
@@ -64,7 +64,7 @@ def test_report_ask_corrupt_window_is_422_without_ai(browsing_client, tmp_path, 
     report_id, _ = publish_revision(client, archive, config, tmp_path, window)
     def forbidden(*args, **kwargs):
         raise AssertionError('Corrupt windows must be rejected before constructing AI')
-    monkeypatch.setattr('qq_digest.web.app.AIClient', forbidden)
+    monkeypatch.setattr('qq_digest.ai.factory.AIClient', forbidden)
 
     response = client.post(f'/api/reports/daily/{report_id}/ask', json={'question': '消息范围？'})
 

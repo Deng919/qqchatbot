@@ -1,4 +1,4 @@
-"""Local, non-repository storage for the DeepSeek API key entered in the UI."""
+"""Local, non-repository storage for the Cockpit API key entered in the UI."""
 
 from __future__ import annotations
 
@@ -79,7 +79,7 @@ def save_ui_api_key(path: Path, value: str) -> None:
     temporary_path: Path | None = None
     try:
         with tempfile.NamedTemporaryFile(
-            mode="w", encoding="utf-8", dir=path.parent, prefix=".deepseek-key-",
+            mode="w", encoding="utf-8", dir=path.parent, prefix=".ai-key-",
             delete=False,
         ) as temporary:
             temporary_path = Path(temporary.name)

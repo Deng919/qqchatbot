@@ -22,9 +22,7 @@ from typing import Literal
 
 from ..archive import Archive, IngestResult
 from ..sender_identity import sender_fields
-from ..ai.client import AIClient, AIError, AILimitExceeded
-from ..ai_usage import usage_for
-from ..ai.key_store import save_ui_api_key, ui_api_key_exists
+from ..ai.client import AIError, AILimitExceeded
 from ..candidates import CandidateService
 from ..failure_center import FailureCenterService
 from ..report_completeness import ReportCompletenessService
@@ -72,10 +70,6 @@ class ManualRangePayload(BaseModel):
     start_date: date
     end_date: date
     detail_mode: str | None = None
-
-
-class AIKeyPayload(BaseModel):
-    api_key: str
 
 
 class CandidateEditPayload(BaseModel):
@@ -195,22 +189,6 @@ def _config(request: Request) -> Config:
     return request.app.state.config
 
 
-def _ai_connection_view(config: Config, connection) -> dict:
-    return {
-        "id": connection.id,
-        "name": connection.name,
-        "provider": connection.provider,
-        "base_url": connection.base_url,
-        "model": connection.model,
-        "supports_vision": connection.supports_vision,
-        "key_configured": bool(
-            (connection.ui_api_key_file and ui_api_key_exists(Path(connection.ui_api_key_file)))
-            or (connection.api_key_env and os.environ.get(connection.api_key_env))
-            or (connection.api_key_file and Path(connection.api_key_file).is_file())
-        ),
-    }
-
-
 def _archive(request: Request) -> Archive:
     return request.app.state.archive
 
@@ -270,39 +248,9 @@ def _reference_message_count(json_path: str) -> int | None:
     return count if type(count) is int and count >= 0 else None
 
 
-def _test_deepseek_connection(config: Config) -> None:
-    client = AIClient(
-        base_url=config.resolve_base_url(),
-        api_key=config.resolve_api_key(),
-        model=config.ai.model,
-        json_mode=True,
-        timeout_seconds=min(config.ai.timeout_seconds, 30),
-        max_retries=1,
-        usage_service=usage_for(config),
-        purpose='connection_test',
-    )
-    try:
-        response = client.chat(
-            [
-                {"role": "system", "content": "Respond with a JSON object only."},
-                {"role": "user", "content": 'Connection test. Respond with JSON {"ok": true}.'},
-            ]
-        )
-        if not isinstance(response, dict) or response.get("ok") is not True:
-            from ..ai.client import reject_response
-            reject_response(response)
-            raise AIError("DeepSeek 连接测试未得到预期响应")
-    finally:
-        client.close()
-
-
-def _test_ai_connection(config: Config, connection_id: str) -> None:
+def _test_ai_connection(config: Config) -> None:
     from ..ai.factory import build_ai_client
-    selected = next((item for item in config.ai.connections if item.id == connection_id), None)
-    if selected is None:
-        raise ConfigError("AI 连接不存在")
     test_config = config.model_copy(deep=True)
-    test_config.ai.purpose_connections = {"connection_test": connection_id}
     test_config.ai.max_retries = 1
     test_config.ai.timeout_seconds = min(config.ai.timeout_seconds, 30)
     client = build_ai_client(test_config, purpose="connection_test")
@@ -487,7 +435,7 @@ def create_app(
                          templates=templates, require_login=require_login, operations=operations)
     from .ai_connection_routes import add_ai_connection_routes
     add_ai_connection_routes(app, require_login=require_login,
-        test_connection=lambda cfg, ident: _test_ai_connection(cfg, ident))
+        test_connection=lambda cfg: _test_ai_connection(cfg))
     feature_service = add_feature_routes(app, archive=archive, cookie=cookie, require_login=require_login, operations=operations)
     from .secondhand_routes import add_secondhand_routes
     add_secondhand_routes(app,archive=archive,config=config,templates=templates,require_login=require_login,operations=operations)
@@ -803,62 +751,6 @@ def create_app(
     async def desktop_open_folder(request: Request, payload: OpenFolderPayload):
         bridge = _desktop_bridge(request)
         return await guarded_to_thread(bridge.open_folder, payload.kind)
-
-    # ------------------------------------------------------------------
-    # API: DeepSeek settings
-    # ------------------------------------------------------------------
-    @app.get("/api/ai-settings")
-    async def api_ai_settings(request: Request):
-        require_login(request)
-        cfg = _config(request)
-        result = {
-            "base_url": cfg.ai.base_url,
-            "model": cfg.ai.model,
-            "provider_priority": cfg.ai.provider_priority,
-            **({} if is_public_distribution() else {"bridge_model": cfg.ai.bridge_model}),
-            "key_configured": bool(
-                cfg.ai.ui_api_key_file
-                and ui_api_key_exists(Path(cfg.ai.ui_api_key_file))
-            ),
-        }
-        if cfg.ai.connections or cfg.ai.purpose_connections:
-            result["connections"] = [_ai_connection_view(cfg, item) for item in cfg.ai.connections]
-            result["purpose_connections"] = {
-                purpose: cfg.ai.purpose_connections.get(purpose, "")
-                for purpose in ("summary", "report_qa", "archive_qa", "vision")
-            }
-        return result
-
-    @app.put("/api/ai-settings/key")
-    async def api_save_ai_key(request: Request, payload: AIKeyPayload):
-        require_login(request)
-        cfg = _config(request)
-        if not cfg.ai.ui_api_key_file:
-            raise HTTPException(status_code=503, detail="本地 API Key 保存路径未配置")
-        try:
-            await guarded_to_thread(
-                save_ui_api_key, Path(cfg.ai.ui_api_key_file), payload.api_key
-            )
-        except ValueError as exc:
-            raise HTTPException(status_code=422, detail=str(exc)) from exc
-        except OSError as exc:
-            raise HTTPException(status_code=500, detail="保存 API Key 失败") from exc
-        return {"ok": True, "key_configured": True}
-
-    @app.post("/api/ai-settings/test")
-    async def api_test_ai_settings(request: Request):
-        require_login(request)
-        cfg = _config(request)
-        try:
-            await guarded_to_thread(_test_deepseek_connection, cfg)
-        except AILimitExceeded as exc:
-            raise HTTPException(429, detail=str(exc)) from exc
-        except (AIError, ConfigError, OSError, ValueError) as exc:
-            raise HTTPException(
-                status_code=503,
-                detail="DeepSeek 连接失败，请检查 API Key、接口配置和网络",
-            ) from exc
-        return {"ok": True}
 
     # ------------------------------------------------------------------
     # API: Stats
@@ -1623,16 +1515,8 @@ def create_app(
                 from dataclasses import replace
                 from ..attachments import AttachmentService
                 prepared_evidence=replace(evidence,messages=AttachmentService(_archive(request),cfg).prepare(evidence.messages))
-                selected = getattr(cfg.ai, 'connection_for', lambda _purpose: None)('report_qa')
-                if selected is not None:
-                    from ..ai.factory import build_ai_client
-                    client = build_ai_client(cfg, purpose='report_qa')
-                else:
-                    client = AIClient(
-                        base_url=cfg.resolve_base_url(), api_key=cfg.resolve_api_key(),
-                        model=cfg.ai.model, json_mode=True,
-                        timeout_seconds=cfg.ai.timeout_seconds, max_retries=2,
-                        usage_service=usage_for(cfg), purpose='report_qa')
+                from ..ai.factory import build_ai_client
+                client = build_ai_client(cfg, purpose='report_qa')
                 try:
                     return answer_report_question(
                         prepared_evidence,
@@ -1654,7 +1538,7 @@ def create_app(
         except (AIError, ConfigError, OSError, ValueError) as exc:
             raise HTTPException(
                 status_code=503,
-                detail="DeepSeek 问答暂不可用，请检查 API Key、接口和网络",
+                detail="Cockpit 问答暂不可用，请检查 API Key、接口和网络",
             ) from exc
 
     @app.get("/api/candidates")

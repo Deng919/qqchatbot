@@ -86,7 +86,7 @@ class Setup : Form {
    File.WriteAllText(secret,RandomHex(32),new UTF8Encoding(false));
    var config=new Dictionary<string,object> {
     {"data_dir",data}, {"security",new {web_password_hash=HashPassword(password),session_secret_env="QQ_DIGEST_SESSION_SECRET",session_secret_file=secret,session_hours=12}},
-    {"ai",new {provider_priority=new[]{"compatible"},base_url="https://api.deepseek.com",model="deepseek-flash",api_key_env="DEEPSEEK_API_KEY",api_key_file="",ui_api_key_file=Path.Combine(data,"secrets","deepseek-api-key.txt"),json_mode=true}},
+    {"ai",new {base_url="http://127.0.0.1:62406/v1",model="gpt-6.1-sol",api_key_env="COCKPIT_API_KEY",api_key_file="",ui_api_key_file=Path.Combine(data,"secrets","cockpit-api-key.txt"),json_mode=true}},
     {"groups",new object[0]}, {"ntqq",new {enabled=false,qq_number=0,db_dir=""}}, {"qq_bot",new {enabled=false,app_id=""}}
    };
    string configDir=Path.Combine(data,"config");Directory.CreateDirectory(configDir);
@@ -106,7 +106,7 @@ class Setup : Form {
   for(int i=0;i<2;i++) {var box=boxes[i];string folder=i==0?"QQDigestDesktop-"+Version:"QQDigestData";var browse=new Button {Text="…",Left=570,Top=15+i*48,Width=50}; browse.Click+=(s,e)=>{using(var d=new FolderBrowserDialog()) {if(d.ShowDialog()==DialogResult.OK) box.Text=Path.Combine(d.SelectedPath,folder);}};Controls.Add(browse);}
   password.UseSystemPasswordChar=confirm.UseSystemPasswordChar=true;
   shortcut.Text="创建桌面快捷方式";shortcut.Checked=true;shortcut.SetBounds(20,210,250,25);Controls.Add(shortcut);
-  Controls.Add(new Label {Text="需要 Windows x64 和 Microsoft Edge WebView2 Runtime。\n请使用自己的 DeepSeek API Key，安装包不包含密钥或默认密码。",Left=20,Top=245,Width=610,Height=45});
+  Controls.Add(new Label {Text="需要 Windows x64 和 Microsoft Edge WebView2 Runtime。\n请使用自己的 Cockpit API Key，安装包不包含密钥或默认密码。",Left=20,Top=245,Width=610,Height=45});
   var install=new Button {Text="安装",Left=520,Top=300,Width=100};Controls.Add(install);
   install.Click+=(s,e)=>{try {
    if(password.Text!=confirm.Text) throw new Exception("两次输入的密码不一致。");

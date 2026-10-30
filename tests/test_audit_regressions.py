@@ -170,7 +170,7 @@ def test_multiday_context_contains_dates(tmp_path):
     assert "2026-09-02" in context.text and "2026-09-03" in context.text, "Messages on different days both carry only 10:00"
 
 
-def test_unconfigured_fallback_does_not_block_primary(tmp_path):
+def test_unconfigured_cockpit_key_fails_without_provider_fallback(tmp_path):
     from qq_digest.ai.factory import build_ai_client
     cfg = Config(data_dir=tmp_path, archive_path=tmp_path / "archive.sqlite",
         report_dir=tmp_path / "reports", knowledge_dir=tmp_path / "knowledge",
@@ -178,8 +178,8 @@ def test_unconfigured_fallback_does_not_block_primary(tmp_path):
         security=SecurityConfig(web_password_hash="unused"),
         ai=AIConfig(base_url="https://example.com/v1", model="test", api_key_env="AUDIT_UNUSED_KEY"))
     with patch.object(Config, "resolve_api_key", side_effect=ConfigError("Missing optional fallback key")):
-        client = build_ai_client(cfg)
-        client.close()
+        with pytest.raises(ConfigError,match="Missing optional fallback key"):
+            build_ai_client(cfg)
 
 
 def test_api_key_file_is_read_with_environment_precedence(tmp_path, monkeypatch):
@@ -191,10 +191,9 @@ def test_api_key_file_is_read_with_environment_precedence(tmp_path, monkeypatch)
         security=SecurityConfig(web_password_hash="unused"),
         ai=AIConfig(base_url="https://example.com/v1", model="test", api_key_env="AUDIT_TEST_KEY", api_key_file=str(key_file)))
     monkeypatch.delenv("AUDIT_TEST_KEY", raising=False)
-    with patch.object(Config, "_discover_codex_api_key", side_effect=AssertionError("Must use explicit credential")):
-        assert cfg.resolve_api_key() == "synthetic-api-key"
-        monkeypatch.setenv("AUDIT_TEST_KEY", "environment-key")
-        assert cfg.resolve_api_key() == "environment-key"
+    assert cfg.resolve_api_key() == "synthetic-api-key"
+    monkeypatch.setenv("AUDIT_TEST_KEY", "environment-key")
+    assert cfg.resolve_api_key() == "environment-key"
 
 
 def test_seed_does_not_resurrect_deleted_configured_group(tmp_path):

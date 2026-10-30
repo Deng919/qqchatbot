@@ -1,128 +1,31 @@
-
-{% if not public_distribution() %}
-<section class="card ai-settings-card" aria-labelledby="summary-provider-title">
-  <div class="card-header" id="summary-provider-title">摘要引擎</div>
-  <p class="settings-note">首选失败时使用备用连接。</p>
-  <dl class="settings-meta">
-    <div><dt>首选</dt><dd id="summary-primary" data-refresh-region="content">加载中...</dd></div>
-    <div><dt>备用</dt><dd id="summary-fallback" data-refresh-region="content">加载中...</dd></div>
-  </dl>
-</section>
-{% endif %}
-{% if not public_distribution() %}
-<section class="card ai-settings-card" id="multi-ai-settings" aria-labelledby="multi-ai-title">
-  <div class="card-header" id="multi-ai-title">其他 AI 连接</div>
-  <p class="settings-note">兼容 OpenAI Chat Completions 的接口可以单独配置。密钥只保存在本机。</p>
-  <button id="multi-ai-reload" class="btn btn-sm" type="button" onclick="loadAIConnections()">重新载入连接设置</button>
-  <div id="multi-ai-list" data-refresh-region="content" class="multi-ai-list"><p class="settings-note">加载中...</p></div>
-  <form id="multi-ai-form" onsubmit="saveAIConnection(event)">
-    <div class="multi-ai-fields">
-      <div class="field"><label for="multi-ai-id">连接 ID</label><input id="multi-ai-id" class="input" pattern="[A-Za-z0-9_-]{1,50}" required></div>
-      <div class="field"><label for="multi-ai-name">显示名称</label><input id="multi-ai-name" class="input" maxlength="100" required></div>
-      <div class="field"><label for="multi-ai-url">接口地址</label><input id="multi-ai-url" class="input" type="url" placeholder="https://example.com/v1" required></div>
-      <div class="field"><label for="multi-ai-model">模型</label><input id="multi-ai-model" class="input" maxlength="200" required></div>
-      <div class="field"><label for="multi-ai-key">API Key（留空保留原值）</label><input id="multi-ai-key" class="input" type="password" autocomplete="new-password" spellcheck="false"></div>
-    </div>
-    <label class="multi-ai-check"><input id="multi-ai-json" type="checkbox" checked> 请求 JSON 模式（接口不支持时关闭）</label>
-    <label class="multi-ai-check"><input id="multi-ai-vision" type="checkbox"> 支持图片／扫描内容</label>
-    <div class="settings-actions"><button class="btn btn-primary" id="multi-ai-save" type="submit">保存连接</button><button class="btn" id="multi-ai-reset" type="button" onclick="resetAIConnectionForm()">新建连接</button></div>
+<section class="card ai-settings-card" aria-labelledby="cockpit-settings-title">
+  <div class="card-header" id="cockpit-settings-title">Cockpit AI</div>
+  <p class="settings-note">摘要、问答、识图和二手识别共用此连接。密钥保存在本机，不在页面显示。</p>
+  <form id="cockpit-form" onsubmit="saveCockpit(event)">
+    <fieldset id="cockpit-fields" disabled>
+      <div class="field"><label for="cockpit-url">接口地址</label><input id="cockpit-url" class="input" type="url" maxlength="2000" required placeholder="http://127.0.0.1:62406/v1"></div>
+      <div class="field"><label for="cockpit-model">模型</label><input id="cockpit-model" class="input" maxlength="200" required></div>
+      <div class="field"><label for="cockpit-key">API Key（留空保留已有密钥）</label><input id="cockpit-key" class="input" type="password" autocomplete="new-password" spellcheck="false" maxlength="4096"><span id="cockpit-key-status" class="settings-note"></span></div>
+      <label><input id="cockpit-json" type="checkbox"> 请求 JSON 模式</label>
+      <div class="settings-actions"><button class="btn btn-primary" type="submit">保存连接</button><button id="cockpit-test" class="btn" type="button" onclick="testCockpit()">测试已保存连接</button></div>
+    </fieldset>
   </form>
-  <form id="multi-ai-purpose-form" onsubmit="saveAIPurposes(event)">
-    <h3 class="multi-ai-subtitle">用途选择</h3>
-    <div class="multi-ai-purpose-grid">
-      <label>摘要<select class="input" id="ai-purpose-summary"></select></label>
-      <label>报告问答<select class="input" id="ai-purpose-report_qa"></select></label>
-      <label>归档问答<select class="input" id="ai-purpose-archive_qa"></select></label>
-      <label>附件识图<select class="input" id="ai-purpose-vision"></select></label>
-    </div>
-    <button class="btn" type="submit">保存用途选择</button><p id="multi-ai-result" class="settings-note" role="status" hidden></p>
-  </form>
+  <p id="cockpit-status" class="settings-note" role="status"></p>
+  <button class="btn" type="button" id="cockpit-reload" onclick="loadAISettings()">重新载入</button>
+  <p class="settings-note">测试只发送示例请求，不含聊天内容。修改后需先保存。</p>
 </section>
-<style>
-  .multi-ai-list{display:grid;gap:8px;margin:0 0 20px}.multi-ai-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 12px;border:1px solid var(--border);border-radius:8px}.multi-ai-row small{display:block;color:var(--text-soft);overflow-wrap:anywhere}.multi-ai-fields,.multi-ai-purpose-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.multi-ai-check{display:flex;align-items:center;gap:8px;margin:14px 0}.multi-ai-subtitle{font-size:15px;margin:24px 0 12px}.multi-ai-purpose-grid{margin-bottom:14px}.multi-ai-purpose-grid label{display:grid;gap:5px;font-size:13px}@media(max-width:600px){.multi-ai-fields,.multi-ai-purpose-grid{grid-template-columns:1fr}.multi-ai-row{align-items:flex-start;flex-direction:column}}
-</style>
-{% endif %}
-<section class="card ai-settings-card" aria-labelledby="deepseek-settings-title">
-  <div class="card-header" id="deepseek-settings-title">DeepSeek API</div>
-  <p class="settings-note">密钥保存在本机，不在页面显示。</p>
-  <dl class="settings-meta">
-    <div><dt>接口地址</dt><dd id="deepseek-base-url" data-refresh-region="content">加载中...</dd></div>
-    <div><dt>模型</dt><dd id="deepseek-model" data-refresh-region="content">加载中...</dd></div>
-    <div><dt>本地密钥</dt><dd id="deepseek-key-status" data-refresh-region="content">加载中...</dd></div>
-  </dl>
-  <form id="deepseek-key-form" onsubmit="saveDeepSeekKey(event)">
-    <div class="field"><label for="deepseek-api-key">输入新的 API Key</label><input id="deepseek-api-key" class="input" type="password" autocomplete="new-password" spellcheck="false" required></div>
-    <div class="settings-actions">
-      <button class="btn btn-primary" id="deepseek-save-btn" type="submit">保存 API Key</button>
-      <button class="btn" id="deepseek-test-btn" type="button" onclick="testDeepSeekConnection()">测试已保存连接</button>
-    </div>
-  </form>
-  <p id="deepseek-test-hint" class="settings-note" role="status" hidden>新 API Key 尚未保存，请先点击“保存 API Key”。测试只使用已保存的连接。</p>
-  <p class="settings-note">测试只发送示例请求，不含聊天内容。</p>
-</section>
-<style>
-  .ai-settings-card { max-width: 680px; }
-  .settings-note { margin: 0 0 18px; color: var(--text-soft); font-size: 13px; }
-  .settings-meta { display: grid; gap: 10px; margin: 0 0 22px; }
-  .settings-meta div { display: grid; grid-template-columns: 100px minmax(0, 1fr); gap: 10px; }
-  .settings-meta dt { color: var(--text-dim); }
-  .settings-meta dd { min-width: 0; margin: 0; overflow-wrap: anywhere; }
-  .settings-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 14px 0 16px; }
-  @media (max-width: 430px) { .settings-meta div { grid-template-columns: 1fr; gap: 2px; } .settings-actions .btn { flex: 1 1 100%; } }
-</style>
+<style>.ai-settings-card{max-width:680px}.settings-note{margin:12px 0;color:var(--text-soft);font-size:13px}.settings-actions{display:flex;gap:8px;flex-wrap:wrap;margin:16px 0}#cockpit-fields{border:0;padding:0;margin:0;min-width:0}</style>
 <script>
-  function loadAISettings() {
-    api('GET', '/api/ai-settings').then(function(data) {
-      {% if not public_distribution() %}
-      var providers = data.provider_priority || [];
-      function providerLabel(name) {
-        if (name === 'chatgpt_bridge') return '本机 ChatGPT 桥接' + (data.bridge_model ? ' · ' + data.bridge_model : '');
-        if (name === 'compatible') return 'DeepSeek API · ' + (data.model || '未配置模型');
-        return name || '未配置';
-      }
-      document.getElementById('summary-primary').textContent = providerLabel(providers[0]);
-      document.getElementById('summary-fallback').textContent = providers[1] ? providerLabel(providers[1]) : '无';
-      {% endif %}
-      document.getElementById('deepseek-base-url').textContent = data.base_url || '未配置';
-      document.getElementById('deepseek-model').textContent = data.model || '未配置';
-      document.getElementById('deepseek-key-status').textContent = data.key_configured ? '已保存到本机' : '尚未通过网页保存';
-    }).catch(function(error) { toast('加载 AI 设置失败：' + error.message, 'error'); });
-  }
-  var deepSeekTesting=false;
-  function updateDeepSeekTestReady() {
-    var field=document.getElementById('deepseek-api-key');
-    document.getElementById('deepseek-test-btn').disabled=deepSeekTesting||field.disabled||!!field.value;
-    document.getElementById('deepseek-test-hint').hidden=!field.value;
-  }
-  document.getElementById('deepseek-api-key').addEventListener('input',updateDeepSeekTestReady);
-  function saveDeepSeekKey(event) {
-    event.preventDefault();
-    var field = document.getElementById('deepseek-api-key');
-    var button = document.getElementById('deepseek-save-btn');
-    if (button.disabled) return;
-    button.disabled = true;
-    field.disabled = true;
-    updateDeepSeekTestReady();
-    api('PUT', '/api/ai-settings/key', {api_key: field.value}).then(function() {
-      field.value = '';
-      toast('API Key 已保存到本机', 'success');
-      loadAISettings();
-    }).catch(function(error) { toast('保存失败：' + error.message, 'error'); })
-      .finally(function() { button.disabled = false; field.disabled = false; updateDeepSeekTestReady(); });
-  }
-  function testDeepSeekConnection() {
-    if(deepSeekTesting||document.getElementById('deepseek-api-key').value||document.getElementById('deepseek-api-key').disabled){updateDeepSeekTestReady();return;}
-    deepSeekTesting=true;updateDeepSeekTestReady();
-    api('POST', '/api/ai-settings/test', {}).then(function() {
-      toast('已保存的 DeepSeek 连接测试成功', 'success');
-    }).catch(function(error) { toast(error.message, 'error'); })
-      .finally(function() { deepSeekTesting=false;updateDeepSeekTestReady(); });
-  }
+  var cockpitState=null,cockpitBusy=false,cockpitDirty=false;
+  function cockpitNode(id){return document.getElementById('cockpit-'+id);}
+  function cockpitControls(){cockpitNode('fields').disabled=cockpitBusy||!cockpitState||!cockpitState.available;cockpitNode('test').disabled=cockpitBusy||cockpitDirty;cockpitNode('reload').disabled=cockpitBusy;}
+  function cockpitApply(data){cockpitState=data;cockpitNode('url').value=data.base_url;cockpitNode('model').value=data.model;cockpitNode('json').checked=data.json_mode;cockpitNode('key').value='';cockpitNode('key-status').textContent=data.key_configured?'已有本地密钥':'尚未配置密钥';cockpitDirty=false;}
+  function cockpitStatus(text){cockpitNode('status').textContent=text;}
+  async function loadAISettings(){if(cockpitBusy)return;cockpitBusy=true;cockpitControls();try{cockpitApply(await api('GET','/api/ai-settings'));cockpitStatus('已读取保存的连接。');}catch(error){cockpitStatus(error.message);}finally{cockpitBusy=false;cockpitControls();}}
+  cockpitNode('form').addEventListener('input',function(){cockpitDirty=!!cockpitNode('key').value||!cockpitState||cockpitNode('url').value.trim()!==cockpitState.base_url||cockpitNode('model').value.trim()!==cockpitState.model||cockpitNode('json').checked!==cockpitState.json_mode;cockpitStatus(cockpitDirty?'设置尚未保存，请先保存再测试。':'已读取保存的连接。');cockpitControls();});
+  async function saveCockpit(event){event.preventDefault();if(cockpitBusy||!cockpitState)return;cockpitBusy=true;cockpitControls();try{var data=await api('PUT','/api/ai-settings',{expected_revision:cockpitState.revision,base_url:cockpitNode('url').value.trim(),model:cockpitNode('model').value.trim(),json_mode:cockpitNode('json').checked,api_key:cockpitNode('key').value});cockpitApply(data);cockpitStatus('连接已保存。');}catch(error){cockpitStatus(error.message);}finally{cockpitBusy=false;cockpitControls();}}
+  async function testCockpit(){if(cockpitBusy||cockpitDirty||!cockpitState)return;cockpitBusy=true;cockpitControls();try{await api('POST','/api/ai-settings/test',{expected_revision:cockpitState.revision});cockpitStatus('Cockpit 连接测试成功。');}catch(error){cockpitStatus(error.message);}finally{cockpitBusy=false;cockpitControls();}}
+  document.addEventListener('qq-digest-check-unsaved',function(event){if(cockpitDirty||(typeof usageDraftDirty!=='undefined'&&usageDraftDirty))event.preventDefault();});
   loadAISettings();
-  document.addEventListener('qq-digest-check-unsaved',function(event){
-    if(document.getElementById('deepseek-api-key').value || (typeof aiConnectionDirty!=='undefined'&&aiConnectionDirty) || (typeof aiPurposeDirty!=='undefined'&&aiPurposeDirty) || (typeof usageDraftDirty!=='undefined'&&usageDraftDirty))event.preventDefault();
-  });
 </script>
 {% include "ai_usage_settings.html" %}
-
-{% if not public_distribution() %}{% include "ai_connections_script.html" %}{% endif %}

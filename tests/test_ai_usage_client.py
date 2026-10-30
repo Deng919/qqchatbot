@@ -56,20 +56,6 @@ def test_network_error_and_malformed_response_are_accounted(tmp_path):
     client.close()
 
 
-def test_limit_does_not_trigger_fallback(tmp_path):
-    from qq_digest.ai.client import AILimitExceeded
-    from qq_digest.ai.bridge import FallbackAIClient
-    sent=[]
-    class Blocked:
-        def chat(self,_):raise AILimitExceeded('调用已达上限')
-        def close(self):pass
-    class Extra:
-        def chat(self,_):sent.append(True);return {}
-        def close(self):pass
-    with pytest.raises(AILimitExceeded):FallbackAIClient(primary=Blocked(),fallback=Extra()).chat([])
-    assert sent==[]
-
-
 @pytest.mark.parametrize('body',[None,{'choices':[{'message':None}]},{'choices':[{'message':{'content':{}}}]}])
 def test_malformed_message_shape_is_recorded_as_failure(tmp_path,body):
     usage=UsageService(tmp_path/'a.sqlite')
@@ -81,7 +67,7 @@ def test_malformed_message_shape_is_recorded_as_failure(tmp_path,body):
 
 def test_factory_and_connection_test_share_usage_store(tmp_path,monkeypatch):
     from qq_digest.ai.factory import build_ai_client
-    from qq_digest.web.app import _test_deepseek_connection
+    from qq_digest.web.app import _test_ai_connection
     from qq_digest.config import Config,AIConfig,SecurityConfig
     cfg=Config(data_dir=tmp_path,archive_path=tmp_path/'a.sqlite',report_dir=tmp_path/'reports',knowledge_dir=tmp_path/'knowledge',
         work_dir=tmp_path/'work',log_dir=tmp_path/'logs',security=SecurityConfig(web_password_hash='fake'),
@@ -92,7 +78,7 @@ def test_factory_and_connection_test_share_usage_store(tmp_path,monkeypatch):
     def post(self,*args,**kwargs):sent.append(True);return ok(usage={'prompt_tokens':1,'completion_tokens':1})
     monkeypatch.setattr(httpx.Client,'post',post)
     client=build_ai_client(cfg);client.chat([]);client.close()
-    with pytest.raises(AIError,match='调用已达上限'):_test_deepseek_connection(cfg)
+    with pytest.raises(AIError,match='调用已达上限'):_test_ai_connection(cfg)
     assert len(sent)==1
 
 
@@ -114,13 +100,13 @@ def test_business_invalid_summary_is_failed_with_usage_preserved(tmp_path):
 
 def test_business_invalid_connection_is_failed(tmp_path,monkeypatch):
     from qq_digest.config import Config,AIConfig,SecurityConfig
-    from qq_digest.web.app import _test_deepseek_connection
+    from qq_digest.web.app import _test_ai_connection
     cfg=Config(data_dir=tmp_path,archive_path=tmp_path/'a.sqlite',report_dir=tmp_path/'reports',knowledge_dir=tmp_path/'knowledge',
         work_dir=tmp_path/'work',log_dir=tmp_path/'logs',security=SecurityConfig(web_password_hash='fake'),
         ai=AIConfig(base_url='https://api.deepseek.com',model='model',api_key_env='SYNTHETIC_KEY',provider_priority=['compatible']))
     monkeypatch.setenv('SYNTHETIC_KEY','synthetic')
     monkeypatch.setattr(httpx.Client,'post',lambda *args,**kwargs:ok('{"ok":false}',{'prompt_tokens':1,'completion_tokens':2}))
-    with pytest.raises(AIError,match='预期响应'):_test_deepseek_connection(cfg)
+    with pytest.raises(AIError,match='预期响应'):_test_ai_connection(cfg)
     assert UsageService(cfg.archive_path).snapshot()['failed']==1
 
 

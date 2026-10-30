@@ -1,13 +1,13 @@
 # QQ Digest Windows 公开测试版
 
-公开版仅支持 **DeepSeek API**，请使用自己的 API Key。安装包不包含账号、密钥、默认密码、聊天记录或开发者配置。调用 API 可能产生 DeepSeek 费用。默认模型为 `deepseek-flash`，可在 AI 设置中修改。
+公开版仅支持 **Cockpit API**，请使用自己的 API Key。安装包不包含账号、密钥、默认密码、聊天记录或开发者配置。调用由本机 Cockpit 服务转发。默认模型为 `gpt-6.1-sol`，可在 AI 设置中修改。
 
 ## 安装与首次使用
 
 1. 从 GitHub 预发布页面下载 `QQDigest-0.2.0-beta.1-Windows-x64-Setup.exe` 和 `.sha256`。用 `Get-FileHash <安装包路径> -Algorithm SHA256` 核对哈希。
 2. 系统需要 Windows x64，以及 [Microsoft Edge WebView2 Runtime](https://developer.microsoft.com/microsoft-edge/webview2/)。安装程序不会下载依赖，也不会自动启动应用。
 3. 选择尚不存在的程序目录和数据目录；两个目录必须分开，不能互相包含。输入并确认至少 8 个字符的登录密码。已有目录不会被覆盖。
-4. 打开 `QQDigestDesktop.exe` 或桌面快捷方式，用刚才设置的密码登录。在首次设置或 AI 设置中填入自己的 DeepSeek API Key。官方地址是 `https://api.deepseek.com`。
+4. 打开 `QQDigestDesktop.exe` 或桌面快捷方式，用刚才设置的密码登录。在首次设置或 AI 设置中填入自己的 Cockpit API Key。默认本地地址是 `http://127.0.0.1:62406/v1`。
 
 有 D 盘时，程序默认安装到 `D:\Apps\QQDigestDesktop-0.2.0-beta.1`；没有 D 盘时安装到 `%LOCALAPPDATA%\Programs\QQDigestDesktop-0.2.0-beta.1`。数据默认保存在 `%LOCALAPPDATA%\QQDigest\Data`，包含 `config/config.yaml`、`session-secret.txt`、归档及日志。数据目录的访问权限仅授予当前用户、SYSTEM 和管理员；AI Key 通过首次设置或 AI 设置保存到数据目录中的密钥文件；具体路径由配置决定。程序目录中的 `launcher.json` 指向独立的数据配置。
 

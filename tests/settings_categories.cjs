@@ -1,6 +1,6 @@
 const fs=require('fs'),vm=require('vm'),assert=require('node:assert/strict');
 const source=fs.readFileSync('qq_digest/web/templates/settings.html','utf8');
-const nodes=new Map([['feature-tasks',{checked:true}],['feature-auto_daily',{checked:true}],['deepseek-api-key',{value:'unsaved-synthetic-key'}]]);
+const nodes=new Map([['feature-tasks',{checked:true}],['feature-auto_daily',{checked:true}],['cockpit-key',{value:'unsaved-synthetic-key'}]]);
 global.document={getElementById:id=>nodes.get(id)};
 global.savedFeatures={revision:3,catalog:[{key:'tasks',group:'扩展功能'},{key:'auto_daily',group:'自动任务'}],values:{tasks:false,auto_daily:false}};
 global.featureFlags={...savedFeatures.values};global.location={href:''};
@@ -16,7 +16,7 @@ vm.runInThisContext(source.slice(source.indexOf('  function saveFeatureCategory(
   assert.deepEqual(calls[0],{values:{auto_daily:true},expected_revision:3});
   assert.equal(savedFeatures.revision,4,'the next save must use the new revision');
   assert.equal(nodes.get('feature-tasks').checked,true,'other category draft stays on screen');
-  assert.equal(nodes.get('deepseek-api-key').value,'unsaved-synthetic-key');
+  assert.equal(nodes.get('cockpit-key').value,'unsaved-synthetic-key');
   saveFeatureCategory({preventDefault(){}},false);
   await new Promise(setImmediate);
   assert.deepEqual(calls[1],{values:{tasks:true},expected_revision:4});

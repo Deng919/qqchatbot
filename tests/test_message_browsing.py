@@ -154,7 +154,7 @@ def test_messages_are_read_only_and_do_not_collect_or_call_ai(browsing_client, m
         pytest.fail("message browsing must not collect, generate, or open another archive")
 
     monkeypatch.setattr(web_module, "NTQQCollector", forbidden)
-    monkeypatch.setattr(web_module, "AIClient", forbidden)
+    monkeypatch.setattr("qq_digest.ai.factory.AIClient", forbidden)
     monkeypatch.setattr(Archive, "open", forbidden)
     before = archive.connection.total_changes
     login(client)

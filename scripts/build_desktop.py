@@ -28,7 +28,7 @@ TEMPLATES = (
     "progress_meter.html",
     "primary_navigation.html", "section_navigation.html", "group_details.html",
     "group_selector.html", "group_batch_feedback.html", "group_batch_controls.html",
-    "ai_connection_settings.html", "ai_connections_script.html", "settings_categories_script.html",
+    "ai_connection_settings.html", "settings_categories_script.html",
     "ai_usage_settings.html", "ai_usage_script.html",
     "storage_management.html", "storage_management_script.html",
     "find_style.html", "find_helpers.html", "find_script.html",
@@ -54,10 +54,10 @@ def build_command(cache: Path, *, public=False, version='0.2.0-beta.1') -> list[
     ]
     if public:
         profile = cache / 'distribution.json'
-        profile.write_text(json.dumps({'edition': 'deepseek-only', 'version': version}), encoding='utf-8')
+        profile.write_text(json.dumps({'edition': 'cockpit-only', 'version': version}), encoding='utf-8')
         hook = cache / 'public_runtime_hook.py'
         hook.write_text('import sys\nsys._qq_digest_public_build = True\n', encoding='utf-8')
-        command.extend(['--exclude-module', 'qq_digest.ai.bridge', '--add-data', f'{profile};qq_digest', '--runtime-hook', str(hook)])
+        command.extend(['--add-data', f'{profile};qq_digest', '--runtime-hook', str(hook)])
     template_dir = PROJECT / "qq_digest" / "web" / "templates"
     for name in TEMPLATES:
         source = template_dir / name
@@ -75,7 +75,7 @@ def finalize_release(release: Path, config: Path, *, public=False, version='0.2.
     if public:
         for source, name in [(PROJECT / 'LICENSE', 'LICENSE.txt'), (PROJECT / 'docs' / 'PUBLIC_BETA.md', '使用说明.md')]:
             shutil.copyfile(source, release / name)
-        write_release(release, version, DESKTOP_BACKEND_ID + '-deepseek-only', compatibility='archive-2026-10-06-deepseek-only')
+        write_release(release, version, DESKTOP_BACKEND_ID + '-cockpit-only', compatibility='archive-2026-10-06-deepseek-only')
         return
     (release / "launcher.json").write_text(
         json.dumps({"config_path": str(config)}, ensure_ascii=False, indent=2) + "\n",

@@ -16,7 +16,7 @@ from qq_digest.ai.client import AIClient, AIError
 from qq_digest.ai_usage import UsageLimitError, UsageService, normalize_rates
 from qq_digest.backup_restore import backup_data, inspect_backup, restore_backup
 from qq_digest.collector.ntqq import NTQQCollector
-from qq_digest.config import AIConfig, AIConnectionConfig
+from qq_digest.config import AIConfig
 from qq_digest.desktop_settings import export_reports, migrate_storage
 from qq_digest.notify.notifier import SendResult
 from tests.test_backup_restore import _data
@@ -248,8 +248,7 @@ def _rate(model):
 @pytest.mark.parametrize("length", [100, 101, 200])
 def test_accepted_model_lengths_reach_http_and_account_usage(tmp_path, length):
     model = "m" * length
-    profile = AIConnectionConfig(id="synthetic", name="Synthetic", base_url="https://api.example.com", model=model)
-    AIConfig(base_url=profile.base_url, model=model, api_key_env="SYNTHETIC")
+    profile = AIConfig(base_url="https://api.example.com", model=model, api_key_env="SYNTHETIC")
     usage = UsageService(tmp_path / "usage.sqlite")
     sent = []
 
@@ -287,8 +286,6 @@ def test_rate_and_attempt_model_limits_match_profiles(tmp_path, length):
 
 def test_model_length_201_rejected_at_config_rates_and_attempt_boundaries(tmp_path):
     model = "m" * 201
-    with pytest.raises(ValidationError):
-        AIConnectionConfig(id="synthetic", name="Synthetic", base_url="https://api.example.com", model=model)
     with pytest.raises(ValidationError):
         AIConfig(base_url="https://api.example.com", model=model, api_key_env="SYNTHETIC")
     with pytest.raises(ValueError):

@@ -1,5 +1,6 @@
 import pytest
 from tests.test_web import web_client
+from tests.test_cockpit_only import client,setup_env
 from qq_digest.ai_usage import usage_for
 from tests.test_message_browsing import browsing_client,add_message
 
@@ -38,16 +39,16 @@ def test_usage_saving_obeys_backup_lock_and_active_config(web_client):
     assert client.get('/api/ai-usage').status_code==503
 
 
-def test_connection_test_reports_limit_without_request(web_client,monkeypatch,respx_mock):
-    client,_,_=web_client;login(client)
-    monkeypatch.setenv('QQ_DIGEST_AI_API_KEY','synthetic')
+def test_connection_test_reports_limit_without_request(client,monkeypatch,respx_mock):
+    cfg=client.app.state.config
+    monkeypatch.setenv(cfg.ai.api_key_env,'synthetic')
     cfg=client.app.state.config
     cfg.ai.base_url='https://api.deepseek.com'
     service=usage_for(cfg);service.update(1,[],0)
     attempt=service.reserve(cfg.ai.base_url,cfg.ai.model,'summary',30)
     service.finish(attempt,'success',None)
     route=respx_mock.post(cfg.ai.base_url+'/chat/completions').mock(side_effect=AssertionError('limit must block HTTP'))
-    response=client.post('/api/ai-settings/test')
+    response=client.post('/api/ai-settings/test',json={'expected_revision':client.get('/api/ai-settings').json()['revision']})
     assert response.status_code==429 and '调用已达上限' in response.text
     assert route.call_count==0
 

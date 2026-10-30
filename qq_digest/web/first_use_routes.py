@@ -43,7 +43,6 @@ class Import(Version):
 
 
 class AI(Version):
-    provider: Literal['compatible', 'chatgpt_bridge']
     base_url: str = Field(default='', max_length=1024)
     model: str = Field(default='', max_length=200)
     api_key: str = Field(default='', max_length=4096)
@@ -64,7 +63,7 @@ def add_first_use_routes(app, *, config, config_path, archive, templates, requir
 
     @app.exception_handler(RequestValidationError)
     async def validation_error(request: Request, exc: RequestValidationError):
-        if request.url.path.startswith(('/api/setup/', '/api/ai-settings/connections', '/api/ai-settings/purposes')):
+        if request.url.path.startswith(('/api/setup/', '/api/ai-settings')):
             return JSONResponse(status_code=422, content={'detail': '输入无效，请检查账号、日期、地址、模型和数值范围'})
         return await request_validation_exception_handler(request, exc)
 
@@ -144,7 +143,7 @@ def add_first_use_routes(app, *, config, config_path, archive, templates, requir
 
     @app.post('/api/setup/ai', dependencies=[Depends(require_login)])
     async def ai(payload: AI):
-        return await mutate(lambda svc: svc.set_ai(payload.expected_revision, payload.provider, payload.base_url, payload.model, payload.api_key))
+        return await mutate(lambda svc: svc.set_ai(payload.expected_revision, payload.base_url, payload.model, payload.api_key))
 
     @app.post('/api/setup/ai-test', dependencies=[Depends(require_login)])
     async def test(payload: Version):

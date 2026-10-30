@@ -58,7 +58,7 @@ def test_handoff_blocks_all_writes_keeps_reads_and_new_runtime_writable(runtime,
     assert response.status_code == 200, response.text
     assert response.json()['restart_required'] is True
     for method, url, body in [('PATCH', '/api/groups/123', {}),
-        ('PUT', '/api/ai-settings/key', {'api_key': 'synthetic'}),
+        ('PUT', '/api/ai-settings', {'expected_revision':client.app.state.first_use.store.revision,'base_url':'https://example.com','model':'test','api_key':'synthetic'}),
         ('POST', '/api/desktop-settings/backup-schedule', {'schedule': 'off'}),
         ('DELETE', '/api/reminder-rules/1', None)]:
         denied = client.request(method, url, json=body)
@@ -217,20 +217,21 @@ def test_direct_bridge_writes_reject_inflight_transfer(runtime, method, args):
 def test_canceled_http_writer_retains_admission_until_worker_finishes(runtime, monkeypatch):
     import httpx
     import importlib
-    app_module = importlib.import_module('qq_digest.web.app')
+    app_module = importlib.import_module('qq_digest.web.ai_connection_routes')
     client, bridge, root = runtime
     entered, release = Event(), Event()
-    key_path = root / 'synthetic-key.txt'
-    client.app.state.config.ai.ui_api_key_file = str(key_path)
+    state=client.get('/api/ai-settings').json()
+    payload=dict(expected_revision=state['revision'],base_url=state['base_url'],model=state['model'],api_key='synthetic')
     def save(path, value):
         entered.set()
         release.wait(5)
+        Path(path).parent.mkdir(parents=True,exist_ok=True)
         Path(path).write_text(value, encoding='utf-8')
     monkeypatch.setattr(app_module, 'save_ui_api_key', save)
     async def check():
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app=client.app),
             base_url='http://testserver', cookies=client.cookies.jar) as http:
-            task = asyncio.create_task(http.put('/api/ai-settings/key', json={'api_key': 'synthetic'}))
+            task = asyncio.create_task(http.put('/api/ai-settings',json=payload))
             assert await asyncio.to_thread(entered.wait, 3)
             task.cancel()
             await asyncio.sleep(.02)
@@ -244,7 +245,7 @@ def test_canceled_http_writer_retains_admission_until_worker_finishes(runtime, m
                     await task
             assert client.app.state.operations.can_start('storage_mutation')
     asyncio.run(check())
-    assert key_path.read_text(encoding='utf-8') == 'synthetic'
+    assert Path(client.app.state.config.ai.ui_api_key_file).read_text(encoding='utf-8') == 'synthetic'
 
 
 def test_pending_archive_qa_source_is_readable(runtime):

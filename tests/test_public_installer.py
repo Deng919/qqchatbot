@@ -24,7 +24,7 @@ def installer():
     payload.mkdir()
     (payload / 'QQDigestDesktop.exe').write_bytes(b'synthetic test payload')
     (payload / '_internal/qq_digest').mkdir(parents=True)
-    (payload / '_internal/qq_digest/distribution.json').write_text(json.dumps({'edition': 'deepseek-only', 'version': builder.VERSION}), encoding='utf-8')
+    (payload / '_internal/qq_digest/distribution.json').write_text(json.dumps({'edition': 'cockpit-only', 'version': builder.VERSION}), encoding='utf-8')
     from qq_digest.desktop_releases import write_release
     write_release(payload, builder.VERSION, 'test-backend', compatibility='archive-2026-10-06-deepseek-only')
     executable = builder.build(payload, work / 'Setup.exe', work / 'build')
@@ -46,11 +46,11 @@ def test_synthetic_install_and_password_contract(installer):
                           "$a = [IO.Directory]::GetAccessControl('" + str(data).replace("'", "''") + "'); if (-not $a.AreAccessRulesProtected -or $a.Access.Count -ne 3) { exit 1 }"],
                          capture_output=True, text=True)
     assert acl.returncode == 0
-    assert config['ai']['provider_priority'] == ['compatible']
-    assert config['ai']['base_url'] == 'https://api.deepseek.com'
+    assert 'provider_priority' not in config['ai']
+    assert config['ai']['base_url'] == 'http://127.0.0.1:62406/v1'
     assert not any('bridge' in key for key in config['ai'])
     assert config['ai']['api_key_file'] == ''
-    assert config['ai']['ui_api_key_file'] == str(data / 'secrets/deepseek-api-key.txt')
+    assert config['ai']['ui_api_key_file'] == str(data / 'secrets/cockpit-api-key.txt')
     assert not Path(config['ai']['ui_api_key_file']).exists()
     assert json.loads((program / 'launcher.json').read_text())['config_path'] == str(data / 'config/config.yaml')
     assert run_install(exe, program, data) != 0
@@ -122,7 +122,7 @@ def test_builder_refuses_nonpublic_or_changed_release(installer, change):
     (payload / 'QQDigestDesktop.exe').write_bytes(b'synthetic')
     marker = payload / '_internal/qq_digest/distribution.json'
     marker.parent.mkdir(parents=True)
-    marker.write_text(json.dumps({'edition': 'deepseek-only', 'version': builder.VERSION}), encoding='utf-8')
+    marker.write_text(json.dumps({'edition': 'cockpit-only', 'version': builder.VERSION}), encoding='utf-8')
     from qq_digest.desktop_releases import write_release
     write_release(payload, builder.VERSION, 'test', compatibility='archive-2026-10-06-deepseek-only')
     if change == 'marker':
@@ -135,3 +135,14 @@ def test_builder_refuses_nonpublic_or_changed_release(installer, change):
         (payload / 'QQDigestDesktop.exe').write_bytes(b'changed')
     with pytest.raises(ValueError):
         builder.build(payload, work / (change + '-unsafe.exe'), work / (change + '-build'))
+
+def test_builder_blocks_legacy_credential_filename(tmp_path):
+    from qq_digest.desktop_releases import write_release
+    payload=tmp_path/'payload'
+    (payload/'_internal/qq_digest').mkdir(parents=True)
+    (payload/'QQDigestDesktop.exe').write_bytes(b'synthetic')
+    (payload/'_internal/qq_digest/distribution.json').write_text(json.dumps({'edition':'cockpit-only','version':builder.VERSION}),encoding='utf-8')
+    (payload/'deepseek-api-key.txt').write_text('synthetic-legacy-key',encoding='utf-8')
+    write_release(payload,builder.VERSION,'synthetic',compatibility='archive-2026-10-06-deepseek-only')
+    with pytest.raises(ValueError,match='mutable'):
+        builder.build(payload,tmp_path/'unsafe.exe',tmp_path/'build')

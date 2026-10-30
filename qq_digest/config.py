@@ -1,16 +1,14 @@
 from __future__ import annotations
 
 import os
-import re
 from pathlib import Path
-from urllib.parse import urlsplit
 from zoneinfo import ZoneInfo
 
 import yaml
 from pydantic import BaseModel, Field, model_validator
 
 from .models import GroupConfig
-from .distribution import is_public_distribution, validate_public_ai, validate_public_base_url
+from .distribution import validate_ai_base_url
 
 
 class ConfigError(ValueError):
@@ -26,97 +24,37 @@ class SummaryConfig(BaseModel):
     retry_interval_minutes: int = 15
 
 
-class AIConnectionConfig(BaseModel):
-    id: str
-    name: str
-    provider: str = "compatible"
-    base_url: str
-    model: str
-    api_key_env: str = ""
-    api_key_file: str = ""
-    ui_api_key_file: str = ""
-    json_mode: bool = True
-    supports_vision: bool = False
-
-    @model_validator(mode="after")
-    def validate_connection(self):
-        if not re.fullmatch(r"[A-Za-z0-9_-]{1,50}", self.id):
-            raise ValueError("AI 连接 id 只能包含字母、数字、下划线和短横线")
-        if not self.name.strip() or len(self.name) > 100:
-            raise ValueError("AI 连接名称不能为空且最多 100 个字符")
-        if self.provider != "compatible":
-            raise ValueError("多 AI 连接目前只支持 OpenAI 兼容接口")
-        parsed = urlsplit(self.base_url.strip())
-        port = parsed.port
-        if (parsed.scheme not in {"http", "https"} or not parsed.hostname
-                or parsed.username or parsed.password or '?' in self.base_url or '#' in self.base_url
-                or any(char.isspace() or ord(char)<32 or char=='\\' for char in self.base_url)
-                or len(self.base_url)>2000 or port == 0):
-            raise ValueError("AI 接口地址需为 HTTP(S) 地址，不含账号、密码、查询参数或片段")
-        if not self.model.strip() or len(self.model) > 200:
-            raise ValueError("AI 模型名称不能为空且最多 200 个字符")
-        if self.ui_api_key_file and not Path(self.ui_api_key_file).is_absolute():
-            raise ValueError("AI 连接密钥文件必须是绝对路径")
-        if self.api_key_file and not Path(self.api_key_file).is_absolute():
-            raise ValueError("AI 连接密钥文件必须是绝对路径")
-        return self
-
-
 class AIConfig(BaseModel):
-    base_url: str
-    model: str
-    api_key_env: str
+    # Legacy routing/provider fields are deliberately ignored when loading old YAML.
+    base_url: str = "http://127.0.0.1:62406/v1"
+    model: str = "gpt-6.1-sol"
+    api_key_env: str = "COCKPIT_API_KEY"
     api_key_file: str = ""
     ui_api_key_file: str = ""
     json_mode: bool = False
-    provider_priority: list[str] = Field(
-        default_factory=lambda: ["chatgpt_bridge", "compatible"]
-    )
-    bridge_wrapper_path: str = (
-        r"D:\CodexTools\gpttoimage-session\chat-current-account.ps1"
-    )
-    bridge_account_directory: str = r"D:\CodexTools\codexID"
-    bridge_model: str = ""
-    bridge_timeout_seconds: float = 180
-    bridge_queue_timeout_seconds: int = 60
     timeout_seconds: float = 120
     max_context_chars: int = 60000
     max_retries: int = 3
     retry_base_seconds: float = 2.0
-    connections: list[AIConnectionConfig] = Field(default_factory=list)
-    purpose_connections: dict[str, str] = Field(default_factory=dict)
+
+    @model_validator(mode="before")
+    @classmethod
+    def migrate_legacy_endpoint(cls, value):
+        # The old auto sentinel must never discover another account or provider.
+        if isinstance(value, dict) and isinstance(value.get('base_url'), str):
+            url = value['base_url'].strip()
+            return {**value, 'base_url': 'http://127.0.0.1:62406/v1' if url in {'', 'auto'} else url}
+        return value
 
     @model_validator(mode="after")
-    def validate_connections(self):
+    def validate_connection(self):
+        from .distribution import validate_ai_base_url
+        validate_ai_base_url(self.base_url)
         if not self.model.strip() or len(self.model) > 200:
             raise ValueError("AI 模型名称不能为空且最多 200 个字符")
-        ids = [item.id for item in self.connections]
-        if len(ids) != len(set(ids)):
-            raise ValueError("AI 连接 id 不能重复")
-        allowed = {"summary", "report_qa", "archive_qa", "vision", "connection_test"}
-        unknown = set(self.purpose_connections) - allowed
-        if unknown:
-            raise ValueError("AI 用途不支持: " + ", ".join(sorted(unknown)))
-        known = set(ids)
-        for purpose, connection_id in self.purpose_connections.items():
-            if connection_id not in known:
-                raise ValueError(f"AI 用途 {purpose} 指向不存在的连接")
-            if purpose == "vision" and not next(item for item in self.connections if item.id == connection_id).supports_vision:
-                raise ValueError("识图用途必须选择支持图片的连接")
+        if self.timeout_seconds < 1 or self.max_context_chars < 1:
+            raise ValueError("AI 超时和上下文长度必须为正数")
         return self
-
-    def connection_for(self, purpose: str) -> AIConnectionConfig | None:
-        connection_id = self.purpose_connections.get(purpose)
-        if not connection_id:
-            return None
-        selected = next((item for item in self.connections if item.id == connection_id), None)
-        if selected is None or (purpose=='vision' and not selected.supports_vision):
-            raise ConfigError("AI 用途连接不存在或不支持图片，请检查用途设置")
-        return selected
-
-    def provider_for(self, purpose: str) -> str:
-        selected = self.connection_for(purpose)
-        return selected.provider if selected else self.provider_priority[0]
 
 
 class SecurityConfig(BaseModel):
@@ -165,8 +103,32 @@ class QQBotConfig(BaseModel):
     retry_base_seconds: int = 60
 
 
+def retired_ai_key_files(raw: dict) -> dict[str, str]:
+    """Retain file identities for cleanup/backup only; never retain executable routing."""
+    saved = raw.get('retired_ai_key_files', {})
+    paths = [value for value in saved.values() if isinstance(value, str) and value] if isinstance(saved, dict) else []
+    ai = raw.get('ai', {})
+    connections = ai.get('connections', []) if isinstance(ai, dict) else []
+    if isinstance(connections, list):
+        for connection in connections:
+            if isinstance(connection, dict):
+                paths.extend(value for field in ('api_key_file', 'ui_api_key_file')
+                             if isinstance(value := connection.get(field), str) and value)
+    return {str(index): value for index, value in enumerate(sorted(set(paths)))}
+
+
 class Config(BaseModel):
     model_config = {"extra": "allow"}
+
+    # Migration safety metadata: only credential file paths, absent from AI/UI routing.
+    retired_ai_key_files: dict[str, str] = Field(default_factory=dict, repr=False)
+
+    @model_validator(mode="before")
+    @classmethod
+    def preserve_legacy_credentials(cls, value):
+        if isinstance(value, dict):
+            return {**value, 'retired_ai_key_files': retired_ai_key_files(value)}
+        return value
 
     data_dir: Path
     archive_path: Path
@@ -194,8 +156,8 @@ class Config(BaseModel):
             "experience": resolve(self.knowledge.experience_path),
         }
 
-    def resolve_api_key(self, connection: AIConnectionConfig | None = None) -> str:
-        source = connection or self.ai
+    def resolve_api_key(self) -> str:
+        source = self.ai
         if source.ui_api_key_file:
             from .ai.key_store import read_ui_api_key
 
@@ -204,7 +166,7 @@ class Config(BaseModel):
                     lambda: read_ui_api_key(Path(source.ui_api_key_file).expanduser())
                 )
             except (OSError, UnicodeError, ValueError) as exc:
-                label = "该 AI 连接" if connection is not None else "本地 DeepSeek"
+                label = "Cockpit"
                 raise ConfigError(f"无法读取{label} API 密钥") from exc
             if ui_key:
                 return ui_key
@@ -224,9 +186,7 @@ class Config(BaseModel):
             if not value or any(char.isspace() for char in value):
                 raise ConfigError("API 密钥文件必须包含一行非空密钥")
             return value
-        if is_public_distribution() or connection is not None:
-            raise ConfigError("请配置该 AI 连接的 API 密钥")
-        return self._discover_codex_api_key()
+        raise ConfigError("请配置 Cockpit API 密钥")
 
     @staticmethod
     def _read_key_file_with_retry(reader):
@@ -261,46 +221,10 @@ class Config(BaseModel):
             raise ConfigError("Session secret 必须至少 32 个字符且不能包含空白")
         return value
 
-    def _discover_codex_api_key(self) -> str:
-        """Auto-discover API key from D:\\CodexTools\\codexID JSON files."""
-        entry = self._discover_codex_entry()
-        return entry.get("OPENAI_API_KEY", "")
-
-    def _discover_codex_entry(self) -> dict:
-        """Find the first valid API entry from codexID directory."""
-        codex_id_dir = Path(r"D:\CodexTools\codexID")
-        if not codex_id_dir.is_dir():
-            raise ConfigError(
-                f"环境变量 {self.ai.api_key_env} 未设置，且 {codex_id_dir} 不存在"
-            )
-        import json
-        for json_file in codex_id_dir.glob("*.json"):
-            try:
-                entries = json.loads(json_file.read_text(encoding="utf-8"))
-                if isinstance(entries, dict):
-                    entries = [entries]
-                for entry in entries:
-                    if entry.get("OPENAI_API_KEY") and entry.get("api_base_url"):
-                        return entry
-            except (json.JSONDecodeError, OSError):
-                continue
-        raise ConfigError(
-            f"环境变量 {self.ai.api_key_env} 未设置，且 {codex_id_dir} 中无有效 API key"
-        )
-
-    def resolve_base_url(self, connection: AIConnectionConfig | None = None) -> str:
-        """Return configured base_url, or auto-discover from codexID."""
-        source = connection or self.ai
-        url = source.base_url.strip()
-        if connection is not None:
-            return url
-        if is_public_distribution():
-            validate_public_base_url(url)
-            return url
-        if url and url not in ("auto", "https://api.example.com/v1"):
-            return url
-        entry = self._discover_codex_entry()
-        return entry.get("api_base_url", "")
+    def resolve_base_url(self) -> str:
+        url = self.ai.base_url.strip()
+        validate_ai_base_url(url)
+        return url
 
 
 def load_config(path: Path, *, create_dirs: bool = True) -> Config:
@@ -338,11 +262,6 @@ def load_config(path: Path, *, create_dirs: bool = True) -> Config:
     except Exception as exc:
         raise ConfigError(str(exc)) from exc
 
-    if is_public_distribution():
-        validate_public_ai(config.ai.provider_priority, config.ai.base_url)
-        if config.ai.connections or config.ai.purpose_connections:
-            raise ConfigError("公开版不支持自定义 AI 连接")
-
     if not 0 <= config.summary.hour <= 23:
         raise ConfigError("summary.hour 必须在 0 到 23 之间")
     if not 0 <= config.summary.minute <= 59:
@@ -357,25 +276,8 @@ def load_config(path: Path, *, create_dirs: bool = True) -> Config:
         raise ConfigError("ai.max_retries 必须至少为 1")
     if config.ai.retry_base_seconds < 0:
         raise ConfigError("ai.retry_base_seconds 不能小于 0")
-    allowed_providers = {"chatgpt_bridge", "compatible"}
-    if not config.ai.provider_priority or any(
-        provider not in allowed_providers for provider in config.ai.provider_priority
-    ):
-        raise ConfigError(
-            "ai.provider_priority 只支持 chatgpt_bridge 和 compatible"
-        )
-    if len(config.ai.provider_priority) != len(set(config.ai.provider_priority)):
-        raise ConfigError("ai.provider_priority 存在重复")
     if config.ai.ui_api_key_file and not Path(config.ai.ui_api_key_file).is_absolute():
         raise ConfigError("ai.ui_api_key_file 必须是绝对路径")
-    if not Path(config.ai.bridge_wrapper_path).is_absolute():
-        raise ConfigError("ai.bridge_wrapper_path 必须是绝对路径")
-    if not Path(config.ai.bridge_account_directory).is_absolute():
-        raise ConfigError("ai.bridge_account_directory 必须是绝对路径")
-    if config.ai.bridge_timeout_seconds < 1:
-        raise ConfigError("ai.bridge_timeout_seconds 必须至少为 1")
-    if config.ai.bridge_queue_timeout_seconds < 1:
-        raise ConfigError("ai.bridge_queue_timeout_seconds 必须至少为 1")
     if config.qq_bot.max_retries < 1:
         raise ConfigError("qq_bot.max_retries 必须至少为 1")
     if config.qq_bot.retry_base_seconds < 1:

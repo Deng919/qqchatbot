@@ -177,57 +177,25 @@ def test_multiple_attachments_do_not_cross_groups(tmp_path):
     assert cached_messages(ar,[other])[0].text==other.text
 
 
-def test_vision_requires_configured_deepseek_key_without_account_discovery(tmp_path,monkeypatch):
-    from types import SimpleNamespace
-    monkeypatch.delenv('SYNTHETIC_DEEPSEEK_KEY',raising=False)
-    ar,msg,_=setup_message(tmp_path)
-    def forbidden():raise AssertionError('must not discover another account key')
-    cfg=SimpleNamespace(ai=SimpleNamespace(api_key_env='SYNTHETIC_DEEPSEEK_KEY',api_key_file='',timeout_seconds=120),resolve_base_url=lambda:'https://api.deepseek.com',resolve_api_key=forbidden)
-    with pytest.raises(ValueError,match='DeepSeek API'):AttachmentService(ar,cfg)._vision([],'合成')
-
-
-def test_vision_client_is_deepseek_flash_and_is_closed(tmp_path,monkeypatch):
-    from types import SimpleNamespace
-    import io
-    output=io.BytesIO();Image.new('RGB',(8,8)).save(output,format='PNG')
-    calls=[]
-    class Client:
-        def __init__(self,**kwargs):calls.append(kwargs)
-        def chat(self,messages):calls.append(messages);return {'text':'合成识别内容','truncated':False}
-        def close(self):calls.append('closed')
-    monkeypatch.setattr('qq_digest.ai.client.AIClient',Client)
-    cfg=SimpleNamespace(ai=SimpleNamespace(api_key_env='SYNTHETIC_UNUSED',api_key_file='synthetic-configured-key',timeout_seconds=120),resolve_base_url=lambda:'https://api.deepseek.com',resolve_api_key=lambda:'synthetic-test-only')
-    cfg.archive_path=tmp_path/'a.sqlite';cfg.summary=SimpleNamespace(timezone='Asia/Shanghai')
+def test_vision_uses_single_cockpit_connection_and_closes_client(tmp_path,monkeypatch):
+    from tests.test_ai_settings import make_config
+    import httpx
+    cfg=make_config(tmp_path)
+    cfg.ai.base_url='http://127.0.0.1:62406/v1'
+    cfg.ai.model='gpt-6.1-sol'
+    monkeypatch.setenv(cfg.ai.api_key_env,'synthetic-cockpit-key')
+    seen=[]
+    def post(client,path,**kwargs):
+        seen.append((str(client.base_url),kwargs['json'],client.headers['authorization']))
+        return httpx.Response(200,json={'choices':[{'message':{'content':'{"text":"合成识别结果","truncated":false}'}}]},request=httpx.Request('POST','http://127.0.0.1:62406/v1/chat/completions'))
+    monkeypatch.setattr(httpx.Client,'post',post)
     ar,_,_=setup_message(tmp_path)
-    assert AttachmentService(ar,cfg)._vision([output.getvalue()],'合成.png')==('合成识别内容',False)
-    assert calls[0]['model']=='deepseek-flash' and calls[1][0]['content'][1]['type']=='image_url' and calls[-1]=='closed'
-    cfg.resolve_base_url=lambda:'https://untrusted.example'
-    with pytest.raises(ValueError):AttachmentService(ar,cfg)._vision([output.getvalue()],'合成.png')
-    assert len(calls)==3
-
-
-@pytest.mark.parametrize('exists',[True,False])
-def test_vision_uses_ui_saved_key_and_never_discovers_an_account(tmp_path,monkeypatch,exists):
-    from types import SimpleNamespace
-    path=tmp_path/'ui-key.txt'
-    if exists:path.write_text('synthetic-ui-key-only',encoding='utf-8')
-    def forbidden():raise AssertionError('account discovery forbidden')
-    received=[]
-    class Client:
-        def __init__(self,**kwargs):received.append(kwargs['api_key'])
-        def chat(self,_):return {'text':'合成读取结果','truncated':False}
-        def close(self):pass
-    monkeypatch.setattr('qq_digest.ai.client.AIClient',Client)
-    monkeypatch.delenv('SYNTHETIC_DEEPSEEK_KEY',raising=False)
-    cfg=SimpleNamespace(ai=SimpleNamespace(api_key_env='SYNTHETIC_DEEPSEEK_KEY',api_key_file='',ui_api_key_file=str(path),timeout_seconds=120),resolve_base_url=lambda:'https://api.deepseek.com',resolve_api_key=forbidden)
-    cfg.archive_path=tmp_path/'a.sqlite';cfg.summary=SimpleNamespace(timezone='Asia/Shanghai')
-    ar,_,_=setup_message(tmp_path)
-    if exists:
-        assert AttachmentService(ar,cfg)._vision([],'合成')==('合成读取结果',False)
-        assert received==['synthetic-ui-key-only']
-    else:
-        with pytest.raises(ValueError,match='DeepSeek API'):AttachmentService(ar,cfg)._vision([],'合成')
-        assert received==[]
+    image=io.BytesIO();Image.new('RGB',(8,8)).save(image,format='PNG')
+    assert AttachmentService(ar,cfg)._vision([image.getvalue()],'合成.png')==('合成识别结果',False)
+    assert seen[0][0].rstrip('/')=='http://127.0.0.1:62406/v1'
+    assert seen[0][1]['model']=='gpt-6.1-sol'
+    assert seen[0][1]['messages'][0]['content'][1]['type']=='image_url'
+    assert seen[0][2]=='Bearer synthetic-cockpit-key'
 
 
 @pytest.mark.parametrize('scan',[False,True])

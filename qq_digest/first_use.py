@@ -8,7 +8,6 @@ import os
 from pathlib import Path
 import tempfile
 from threading import RLock
-from urllib.parse import urlsplit
 from uuid import uuid4
 from zoneinfo import ZoneInfo
 
@@ -16,8 +15,8 @@ import yaml
 
 from .archive import Archive
 from .collector.ntqq import NTQQCollector
-from .config import load_config
-from .distribution import is_public_distribution, validate_public_ai
+from .config import AIConfig, load_config, retired_ai_key_files
+from .distribution import is_public_distribution, validate_ai_base_url
 from .features import FeatureService, FeatureConflict
 
 
@@ -77,6 +76,9 @@ class ConfigFileStore:
             raw = yaml.safe_load(self.path.read_text('utf-8')) or {}
             for section, values in patch.items():
                 raw.setdefault(section, {}).update(values)
+                if section == 'ai':
+                    raw['retired_ai_key_files'] = retired_ai_key_files(raw)
+                    raw['ai'] = AIConfig.model_validate(raw['ai']).model_dump()
             raw['first_use'] = state
             content = yaml.safe_dump(raw, allow_unicode=True, sort_keys=False).encode('utf-8')
             temporary = None
@@ -94,6 +96,7 @@ class ConfigFileStore:
                 # Existing schedulers/routes capture this Config object.
                 for section in patch:
                     setattr(self.config, section, getattr(validated, section))
+                self.config.retired_ai_key_files = validated.retired_ai_key_files
                 self.config.first_use = deepcopy(state)
                 return content
             finally:
@@ -155,11 +158,10 @@ class FirstUseService:
             'ntqq': cfg.ntqq.model_dump(),
             'ai': {'base_url': cfg.ai.base_url, 'model': cfg.ai.model,
 
-                'provider': cfg.ai.provider_priority[0],
-                'key_configured': bool(cfg.ai.ui_api_key_file and Path(cfg.ai.ui_api_key_file).is_file()),
-                **({} if is_public_distribution() else {
-                    'bridge_model': cfg.ai.bridge_model,
-                    'bridge_available': Path(cfg.ai.bridge_wrapper_path).is_file()})},
+                'key_configured': bool((cfg.ai.ui_api_key_file and Path(cfg.ai.ui_api_key_file).is_file())
+                    or os.environ.get(cfg.ai.api_key_env)
+                    or (cfg.ai.api_key_file and (Path(cfg.ai.api_key_file) if Path(cfg.ai.api_key_file).is_absolute()
+                        else cfg.data_dir / cfg.ai.api_key_file).is_file()))},
             'schedule': {'auto_collection': features['values']['auto_collection'] and cfg.collection.enabled,
                 'auto_daily': features['values']['auto_daily'], 'interval_minutes': cfg.collection.interval_minutes,
                 'hour': cfg.summary.hour, 'minute': cfg.summary.minute, 'timezone': cfg.summary.timezone},
@@ -253,19 +255,13 @@ class FirstUseService:
             state['step'] = 4
         return self._save(self.store.revision, state)
 
-    def set_ai(self, revision, provider, base_url, model, api_key=''):
+    def set_ai(self, revision, base_url, model, api_key='', json_mode=None):
         self.store.check(revision)
-        if is_public_distribution():
-            validate_public_ai([provider], base_url)
-        if provider == 'compatible':
-            parsed = urlsplit(base_url)
-            if parsed.scheme not in ('http', 'https') or not parsed.hostname or parsed.username or parsed.password or parsed.query or parsed.fragment:
-                raise ValueError('接口地址需为 HTTP(S) 地址，不含账号、密码、查询参数或片段')
-        patch = {'provider_priority': [provider], 'base_url': base_url.strip(),
-                 'model': model.strip() if provider == 'compatible' else self.config.ai.model}
-        if provider == 'chatgpt_bridge': patch['bridge_model'] = model.strip()
-        if not patch['model']:
-            raise ValueError('请填写模型名称')
+        from .config import AIConfig
+        patch = {'base_url': base_url.strip(), 'model': model.strip()}
+        validate_ai_base_url(patch['base_url'])
+        AIConfig.model_validate({**self.config.ai.model_dump(), **patch})
+        if json_mode is not None: patch['json_mode'] = json_mode
         key_path = None
         try:
             if api_key:
@@ -277,7 +273,8 @@ class FirstUseService:
             state.update(active=True, completed=False, ai_done=True, ai_ready=False, schedule_done=False, step=4)
             return self._save(revision, state, {'ai': patch})
         except BaseException:
-            if key_path: key_path.unlink(missing_ok=True)
+            if key_path and self.config.ai.ui_api_key_file != str(key_path):
+                key_path.unlink(missing_ok=True)
             raise
 
     def test_ai(self, revision):

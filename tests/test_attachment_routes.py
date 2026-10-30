@@ -27,7 +27,7 @@ def test_group_read_switches_validation_scope_and_routes(web_client):
     assert client.post('/api/groups/123/attachments/read',json={}).status_code==409
     assert client.get('/api/groups/999/attachments').status_code==404
     page=client.get('/groups').text
-    assert '读取图片' in page and '读取文件' in page and 'DeepSeek' in page
+    assert '读取图片' in page and '读取文件' in page and 'Cockpit' in page
 
 
 def test_reading_and_policy_changes_participate_in_operation_lock(web_client):

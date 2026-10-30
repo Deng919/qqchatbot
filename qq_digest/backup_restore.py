@@ -41,6 +41,10 @@ def _config_path_fields(raw: dict):
         settings = raw.get(section)
         if isinstance(settings, dict):
             yield settings, key
+    retired = raw.get('retired_ai_key_files')
+    if isinstance(retired, dict):
+        for key in retired:
+            yield retired, key
     ai = raw.get("ai")
     connections = ai.get("connections") if isinstance(ai, dict) else None
     if isinstance(connections, list):

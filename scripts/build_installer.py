@@ -16,13 +16,13 @@ def build(payload: Path, output: Path, cache: Path):
         raise ValueError('Missing desktop executable')
     marker = json.loads((payload / '_internal/qq_digest/distribution.json').read_text(encoding='utf-8'))
     manifest = json.loads((payload / 'release.json').read_text(encoding='utf-8'))
-    if marker != {'edition': 'deepseek-only', 'version': VERSION} or manifest.get('product') != 'qq-digest-desktop' or manifest.get('version') != VERSION or manifest.get('compatibility') != 'archive-2026-10-06-deepseek-only':
-        raise ValueError('Only a matching public DeepSeek release can be packaged')
+    if marker != {'edition': 'cockpit-only', 'version': VERSION} or manifest.get('product') != 'qq-digest-desktop' or manifest.get('version') != VERSION or manifest.get('compatibility') != 'archive-2026-10-06-deepseek-only':
+        raise ValueError('Only a matching public Cockpit release can be packaged')
     files = sorted(p for p in payload.rglob('*') if p.is_file())
     for p in payload.rglob('*'):
         if p.is_symlink() or p.is_junction():
             raise ValueError('Payload links are forbidden')
-    forbidden = {'launcher.json', 'config.yaml', 'session-secret.txt', 'deepseek-api-key.txt'}
+    forbidden = {'launcher.json', 'config.yaml', 'session-secret.txt', 'cockpit-api-key.txt', 'deepseek-api-key.txt'}
     if any(p.name.lower() in forbidden for p in files):
         raise ValueError('Payload contains mutable configuration or credentials')
     actual = {p.relative_to(payload).as_posix(): {'sha256': hashlib.sha256(p.read_bytes()).hexdigest(), 'size_bytes': p.stat().st_size} for p in files if p.name != 'release.json'}

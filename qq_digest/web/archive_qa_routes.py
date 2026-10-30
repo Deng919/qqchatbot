@@ -11,10 +11,8 @@ from pydantic import BaseModel, Field, model_validator
 
 from ..archive_qa import ArchiveQAService
 from ..group_selection import normalize_group_selection
-from ..ai.client import AIClient, AIError, AILimitExceeded
-from ..ai_usage import usage_for
+from ..ai.client import AIError, AILimitExceeded
 from ..config import ConfigError
-from ..distribution import is_public_distribution, validate_public_ai
 from ..operations import OperationBusy
 
 
@@ -54,7 +52,7 @@ def add_archive_qa_routes(app, *, archive, config, templates, require_login, ope
         except OperationBusy as exc:raise HTTPException(409,str(exc)) from exc
         except AILimitExceeded as exc:raise HTTPException(429,str(exc)) from exc
         except (AIError,ConfigError,OSError) as exc:
-            raise HTTPException(503,'问答暂不可用，请检查 DeepSeek API Key 和网络后重试') from exc
+            raise HTTPException(503,'问答暂不可用，请检查 Cockpit API Key 和网络后重试') from exc
         except ValueError as exc:raise HTTPException(409,str(exc)) from exc
         except OverflowError as exc:raise HTTPException(422,'日期超出有效范围') from exc
 
@@ -80,14 +78,8 @@ def add_archive_qa_routes(app, *, archive, config, templates, require_login, ope
             def chat(self,messages):
                 cfg=request.app.state.config
                 if cfg is None:raise ConfigError('AI 配置不可用')
-                selected = getattr(cfg.ai, 'connection_for', lambda _purpose: None)('archive_qa')
-                if selected is not None:
-                    from ..ai.factory import build_ai_client
-                    self.client=build_ai_client(cfg, purpose='archive_qa')
-                else:
-                    self.client=AIClient(base_url=cfg.resolve_base_url(),api_key=cfg.resolve_api_key(),model=cfg.ai.model,
-                        json_mode=True,timeout_seconds=cfg.ai.timeout_seconds,max_retries=2,
-                        usage_service=usage_for(cfg),purpose='archive_qa')
+                from ..ai.factory import build_ai_client
+                self.client=build_ai_client(cfg, purpose='archive_qa')
                 return self.client.chat(messages)
             def close(self):
                 if self.client:self.client.close()

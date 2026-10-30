@@ -85,7 +85,7 @@ def test_settings_categories_and_group_details(web_client):
     for label in ('AI 连接','外观','自动运行','功能开关','存储与导出','备份与恢复','运行记录'):
         assert label in page
     assert 'id="automatic-form"' in page and 'id="features-form"' in page
-    assert 'id="deepseek-key-form"' in page
+    assert 'id="cockpit-form"' in page
     groups = client.get('/groups').text
     assert 'id="group-detail"' in groups
     assert '添加群聊' in groups and '高级设置' in groups

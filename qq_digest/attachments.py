@@ -15,7 +15,6 @@ from PIL import Image,ImageOps
 
 from .attachment_readers import FILE_TYPES,MAX_CHARS,read_document
 from .ai.client import AILimitExceeded
-from .ai_usage import usage_for
 
 VERSION=1
 MAX_BYTES=16*1024*1024
@@ -88,24 +87,9 @@ class AttachmentService:
         blocks.extend(image_block(data) for data in images)
         if self.vision:output=self.vision(blocks)
         else:
-            if self.config is None:raise ValueError('请配置 DeepSeek API')
-            selected = getattr(self.config.ai, 'connection_for', lambda _purpose: None)('vision')
-            if selected is not None or getattr(self.config.ai,'provider_priority',[])[:1]==['chatgpt_bridge']:
-                from .ai.factory import build_ai_client
-                client=build_ai_client(self.config, purpose='vision')
-            else:
-                from .ai.client import AIClient
-                from .distribution import validate_public_base_url
-                base=self.config.resolve_base_url();validate_public_base_url(base)
-                from .ai.key_store import read_ui_api_key
-                ui_path=getattr(self.config.ai,'ui_api_key_file','')
-                key=read_ui_api_key(Path(ui_path).expanduser()) if ui_path else None
-                key=key or os.environ.get(self.config.ai.api_key_env)
-                if not key and self.config.ai.api_key_file:key=self.config.resolve_api_key()
-                if not key:raise ValueError('请配置 DeepSeek API 密钥')
-                client=AIClient(base_url=base,api_key=key,model='deepseek-flash',json_mode=True,
-                    timeout_seconds=self.config.ai.timeout_seconds,max_retries=2,
-                    usage_service=usage_for(self.config),purpose='vision')
+            if self.config is None:raise ValueError('请配置 Cockpit API')
+            from .ai.factory import build_ai_client
+            client=build_ai_client(self.config, purpose='vision')
             try:output=client.chat([{'role':'user','content':blocks}])
             finally:client.close()
         if not isinstance(output,dict) or not isinstance(output.get('text'),str) or not output['text'].strip():

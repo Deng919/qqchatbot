@@ -11,23 +11,16 @@ def is_public_distribution() -> bool:
     return bool(getattr(sys, "_qq_digest_public_build", False)) or MARKER_PATH.is_file()
 
 
-def validate_public_base_url(base_url: str) -> None:
+def validate_ai_base_url(base_url: str) -> None:
     from .config import ConfigError
     try:
         parsed = urlsplit(base_url.strip())
-        valid = (parsed.scheme == "https" and parsed.hostname == "api.deepseek.com"
-                 and parsed.port in (None, 443) and not parsed.username and not parsed.password
-                 and not parsed.query and not parsed.fragment
-                 and parsed.path in ("", "/", "/v1", "/v1/")
-                 and "?" not in base_url and "#" not in base_url)
+        valid = (parsed.scheme in {"http", "https"} and parsed.hostname
+                 and parsed.port != 0 and not parsed.username and not parsed.password
+                 and "?" not in base_url and "#" not in base_url
+                 and len(base_url) <= 2000
+                 and not any(char.isspace() or ord(char) < 32 or char == "\\" for char in base_url))
     except ValueError:
         valid = False
     if not valid:
-        raise ConfigError("公开版仅支持官方 DeepSeek HTTPS 接口 https://api.deepseek.com")
-
-
-def validate_public_ai(providers, base_url: str) -> None:
-    from .config import ConfigError
-    if list(providers) != ["compatible"]:
-        raise ConfigError("公开版仅支持 DeepSeek API")
-    validate_public_base_url(base_url)
+        raise ConfigError("Cockpit 接口需为 HTTP(S) 地址，不含账号、密码、查询参数或片段")

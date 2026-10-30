@@ -17,31 +17,24 @@ async function pageFor(browser,kind,handler=()=>undefined){
   const request=route.request(),path=new URL(request.url()).pathname;
   if(request.isNavigationRequest())return route.fulfill({contentType:'text/html',body:html[kind]});
   if(await handler(path,request,route)===true)return;
-  const data=path==='/api/groups'?{groups}:path==='/api/features'?features:path==='/api/ai-usage'?usage():path==='/api/ai-settings/connections'?{available:true,revision:'a'.repeat(64),connections:[],purpose_connections:{}}:path==='/api/desktop-settings'?{storage_path:'D:/fixture/data',export_path:'D:/fixture/export',backup_path:'D:/fixture/backup',packaged:false}:path==='/api/storage'?{inventory:{total_bytes:0,categories:[],paths:{}},policy:{revision:0,enabled:true,backup_days:30,backup_keep:3,cache_days:7}}:path==='/api/history-inspection'?{page:1,total:0,page_size:20,source_available:true,running:false,settings:{enabled:false,lookback_days:7,interval_hours:24},groups:[]}:{};
+  const data=path==='/api/groups'?{groups}:path==='/api/features'?features:path==='/api/ai-usage'?usage():path==='/api/ai-settings'?{available:true,revision:'a'.repeat(64),base_url:'http://127.0.0.1:62406/v1',model:'gpt-6.1-sol',json_mode:false,key_configured:true}:path==='/api/desktop-settings'?{storage_path:'D:/fixture/data',export_path:'D:/fixture/export',backup_path:'D:/fixture/backup',packaged:false}:path==='/api/storage'?{inventory:{total_bytes:0,categories:[],paths:{}},policy:{revision:0,enabled:true,backup_days:30,backup_keep:3,cache_days:7}}:path==='/api/history-inspection'?{page:1,total:0,page_size:20,source_available:true,running:false,settings:{enabled:false,lookback_days:7,interval_hours:24},groups:[]}:{};
   await route.fulfill({json:data});
  });
  await page.goto('http://interaction.test/'+kind);return page;
 }
 async function dirtyAIRegistration(browser){
- const page=await pageFor(browser,'settings');
- await page.locator('#multi-ai-name').fill('draft');
- assert.equal(await page.evaluate(()=>document.dispatchEvent(new Event('qq-digest-check-unsaved',{cancelable:true}))),false,'AI connection draft must participate in shared leave protection');
+ const page=await pageFor(browser,'settings');await page.locator('#cockpit-model').fill('draft');
+ assert.equal(await page.evaluate(()=>document.dispatchEvent(new Event('qq-digest-check-unsaved',{cancelable:true}))),false);
  await page.close();
 }
 async function revertedConnectionDraft(browser){
  const page=await pageFor(browser,'settings');
- await page.locator('#multi-ai-name').fill('draft');await page.locator('#multi-ai-name').fill('');
- assert.equal(await page.evaluate(()=>document.dispatchEvent(new Event('qq-digest-check-unsaved',{cancelable:true}))),true,'reverted new connection must be clean');
- await page.locator('#multi-ai-key').fill('synthetic-key');await page.locator('#multi-ai-key').fill('');
- assert.equal(await page.evaluate(()=>document.dispatchEvent(new Event('qq-digest-check-unsaved',{cancelable:true}))),true,'cleared secret must match its empty baseline');await page.close();
+ await page.locator('#cockpit-model').fill('draft');await page.locator('#cockpit-model').fill('gpt-6.1-sol');
+ assert.equal(await page.evaluate(()=>document.dispatchEvent(new Event('qq-digest-check-unsaved',{cancelable:true}))),true);
+ await page.locator('#cockpit-key').fill('synthetic-key');await page.locator('#cockpit-key').fill('');
+ assert.equal(await page.evaluate(()=>document.dispatchEvent(new Event('qq-digest-check-unsaved',{cancelable:true}))),true);await page.close();
 }
-async function revertedPurposeDraft(browser){
- const page=await pageFor(browser,'settings',async(path,request,route)=>{if(path==='/api/ai-settings/connections'){await route.fulfill({json:{available:true,revision:'a'.repeat(64),connections:[{id:'other',name:'Other',base_url:'https://example.com',model:'test',supports_vision:true}],purpose_connections:{}}});return true;}});
- await page.locator('#ai-purpose-summary').selectOption('other');await page.locator('#ai-purpose-summary').selectOption('');
- assert.equal(await page.evaluate(()=>document.dispatchEvent(new Event('qq-digest-check-unsaved',{cancelable:true}))),true,'reverted purpose selection must be clean');
- await page.locator('.multi-ai-row').getByRole('button',{name:'编辑',exact:true}).click();await page.locator('#multi-ai-name').fill('Edited');await page.locator('#multi-ai-name').fill('Other');
- assert.equal(await page.evaluate(()=>document.dispatchEvent(new Event('qq-digest-check-unsaved',{cancelable:true}))),true,'reverted existing connection must match its rendered baseline');await page.close();
-}
+
 async function revertedUsageLimit(browser){
  const page=await pageFor(browser,'settings');await page.locator('#ai-usage-limit').fill('20');await page.locator('#ai-usage-limit').fill('10');
  assert.equal(await page.evaluate(()=>document.dispatchEvent(new Event('qq-digest-check-unsaved',{cancelable:true}))),true,'reverted usage limit must be clean');await page.close();
@@ -119,15 +112,16 @@ async function featureSaveFeedbackTracksDraft(browser){
  await page.locator('[data-settings-section=features]').click();fail=true;await page.locator('#feature-tasks').uncheck();await page.locator('#features-save').click();await page.waitForFunction(()=>!document.getElementById('features-save').disabled);
  await page.locator('#feature-tasks').check();assert.match(await page.locator('#features-result').innerText(),/Synthetic save failure/,'editing or reverting must not erase save failure details');await page.close();
 }
-async function deepSeekTestRequiresSavedKey(browser){
+async function cockpitTestRequiresSavedKey(browser){
  const requests=[];let finish;
  const page=await pageFor(browser,'settings',async(path,request,route)=>{if(path==='/api/ai-settings/test'){requests.push(request.postDataJSON());await new Promise(resolve=>finish=resolve);await route.fulfill({json:{ok:true}});return true;}});
- await page.locator('#deepseek-api-key').fill('synthetic-draft-key');assert.equal(await page.locator('#deepseek-test-btn').isDisabled(),true,'an unsaved key cannot be tested as though it were saved');
- assert.match(await page.locator('#deepseek-test-hint').innerText(),/先.*保存/);
- await page.evaluate(()=>testDeepSeekConnection());assert.equal(requests.length,0,'direct invocation cannot bypass the save-first guard');
- await page.locator('#deepseek-api-key').fill('');assert.equal(await page.locator('#deepseek-test-btn').isEnabled(),true);
- await page.locator('#deepseek-test-btn').click();await page.waitForFunction(()=>document.getElementById('deepseek-test-btn').disabled);assert.deepEqual(requests,[{}],'test only reads saved settings and never submits a draft secret');
- await page.locator('#deepseek-api-key').fill('newer-draft');finish();await page.waitForFunction(()=>!deepSeekTesting);assert.equal(await page.locator('#deepseek-test-btn').isDisabled(),true,'completion must keep testing disabled while a newer draft exists');await page.close();
+ await page.locator('#cockpit-key').fill('synthetic-draft-key');assert.equal(await page.locator('#cockpit-test').isDisabled(),true);
+ await page.evaluate(()=>testCockpit());assert.equal(requests.length,0);
+ await page.locator('#cockpit-key').fill('');assert.equal(await page.locator('#cockpit-test').isEnabled(),true);
+ await page.locator('#cockpit-test').click();await page.waitForFunction(()=>cockpitBusy);
+ assert.deepEqual(requests,[{expected_revision:'a'.repeat(64)}]);
+ assert.equal(await page.locator('#cockpit-key').isDisabled(),true);
+ finish();await page.waitForFunction(()=>!cockpitBusy);assert.equal(await page.locator('#cockpit-test').isEnabled(),true);await page.close();
 }
 async function emptyKeywordGroupBrowsing(browser){
  const reads=[];
@@ -139,13 +133,13 @@ async function emptyKeywordGroupBrowsing(browser){
  await page.reload();await page.waitForFunction(()=>document.getElementById('search-count').textContent==='共 0 条归档消息');assert.equal(reads.length,2,'group-only browsing is restored after reload');
  await page.locator('#search-group').evaluate(select=>GroupSelector.setSelected(select,null));await page.locator('#search-form button[type=submit]').click();assert.equal(reads.length,2,'clearing explicit groups cannot silently widen a saved group browse');assert.equal(await page.locator('#find-validation').isVisible(),true);await page.close();
 }
-async function deepSeekSaveFreezesKey(browser){
+async function cockpitSaveFreezesKey(browser){
  let finish;
- const page=await pageFor(browser,'settings',async(path,request,route)=>{if(path==='/api/ai-settings/key'){await new Promise(resolve=>finish=resolve);await route.fulfill({status:503,json:{detail:'Synthetic failure'}});return true;}});
- await page.locator('#deepseek-api-key').fill('synthetic-key');await page.locator('#deepseek-save-btn').click();
- assert.equal(await page.locator('#deepseek-api-key').isDisabled(),true,'pending save must freeze the submitted key');
- finish();await page.waitForFunction(()=>!document.getElementById('deepseek-save-btn').disabled);
- assert.equal(await page.locator('#deepseek-api-key').isEnabled(),true);assert.equal(await page.locator('#deepseek-api-key').inputValue(),'synthetic-key');await page.close();
+ const page=await pageFor(browser,'settings',async(path,request,route)=>{if(path==='/api/ai-settings'&&request.method()==='PUT'){await new Promise(resolve=>finish=resolve);await route.fulfill({status:503,json:{detail:'Synthetic failure'}});return true;}});
+ await page.locator('#cockpit-key').fill('synthetic-key');await page.getByRole('button',{name:'保存连接',exact:true}).click();
+ assert.equal(await page.locator('#cockpit-key').isDisabled(),true);
+ finish();await page.waitForFunction(()=>!cockpitBusy);
+ assert.equal(await page.locator('#cockpit-key').isEnabled(),true);assert.equal(await page.locator('#cockpit-key').inputValue(),'synthetic-key');await page.close();
 }
 async function usageRefreshConflict(browser){
  let reads=0,payload,accept=false;
@@ -174,4 +168,4 @@ async function lateCategorySaveKeepsCurrentRoute(browser){
  await page.locator('[data-settings-section=features]').click();await page.locator('#feature-tasks').check();await page.locator('#features-save').click();await page.locator('[data-settings-section=ai]').click();finish();await page.waitForFunction(()=>!document.getElementById('features-save').disabled);
  assert.equal(new URL(page.url()).search,'?section=ai','a background save must not rewrite the selected category URL');await page.close();
 }
-(async()=>{const browser=await chromium.launch({headless:true});let failures=0;try{for(const test of [dirtyAIRegistration,revertedConnectionDraft,revertedPurposeDraft,revertedUsageLimit,revertedUsageRate,revertedInspectionDraft,inspectionSaveKeepsNewerDraft,settingsPolicyLeaveProtection,storagePolicyLeaveProtection,inspectionLeaveProtection,groupDiscard,groupLateSave,featureSaveFeedbackTracksDraft,deepSeekTestRequiresSavedKey,emptyKeywordGroupBrowsing,deepSeekSaveFreezesKey,usageRefreshConflict,batchUncheckedValidation,lateCategorySaveKeepsCurrentRoute]){try{await test(browser);console.log('PASS '+test.name);}catch(e){failures++;console.error('FAIL '+test.name+': '+e.message);}}}finally{await browser.close();}process.exitCode=failures?1:0;})().catch(e=>{console.error(e);process.exitCode=1;});
+(async()=>{const browser=await chromium.launch({headless:true});let failures=0;try{for(const test of [dirtyAIRegistration,revertedConnectionDraft,revertedUsageLimit,revertedUsageRate,revertedInspectionDraft,inspectionSaveKeepsNewerDraft,settingsPolicyLeaveProtection,storagePolicyLeaveProtection,inspectionLeaveProtection,groupDiscard,groupLateSave,featureSaveFeedbackTracksDraft,cockpitTestRequiresSavedKey,emptyKeywordGroupBrowsing,cockpitSaveFreezesKey,usageRefreshConflict,batchUncheckedValidation,lateCategorySaveKeepsCurrentRoute]){try{await test(browser);console.log('PASS '+test.name);}catch(e){failures++;console.error('FAIL '+test.name+': '+e.message);}}}finally{await browser.close();}process.exitCode=failures?1:0;})().catch(e=>{console.error(e);process.exitCode=1;});

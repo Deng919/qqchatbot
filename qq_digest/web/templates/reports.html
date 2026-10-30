@@ -111,7 +111,7 @@
 <div id="report-qa-backdrop" class="range-summary-backdrop" hidden onclick="closeReportQA()"></div>
 <aside id="report-qa-dialog" class="report-qa-dialog" data-backdrop-id="report-qa-backdrop" hidden role="dialog" aria-modal="true" aria-labelledby="report-qa-title">
   <div class="range-panel-header"><div><h2 id="report-qa-title">询问这份报告</h2><p id="report-qa-scope"></p></div><button class="btn btn-sm" type="button" onclick="closeReportQA()" aria-label="关闭问答">关闭</button></div>
-  <p class="report-qa-privacy">相关聊天片段会发送到 DeepSeek；对话不保存。</p>
+  <p class="report-qa-privacy">相关聊天片段会发送到 Cockpit；对话不保存。</p>
   <div id="report-qa-messages" data-refresh-region="content" class="report-qa-messages" aria-live="polite"></div>
   <div id="report-qa-sources" data-refresh-region="content" class="report-qa-sources"></div>
   <form id="report-qa-form" onsubmit="askReport(event)"><label for="report-qa-question">你的问题</label><textarea class="input" id="report-qa-question" maxlength="2000" rows="3" required placeholder="例如：这次 503 错误后来解决了吗？"></textarea><button class="btn btn-primary" id="report-qa-submit" type="submit">发送问题</button></form>
@@ -439,7 +439,7 @@
     qaBusy = true; document.getElementById('report-qa-submit').disabled = true;
     api('POST', '/api/reports/' + report.kind + '/' + report.id + '/ask', {question: question, history: history, expected_version:report.current_version}).then(function(data) {
       if (requestToken !== qaRequestToken) return;
-      appendQAMessage('你', question); appendQAMessage('DeepSeek', data.answer);
+      appendQAMessage('你', question); appendQAMessage('Cockpit', data.answer);
       renderQASources(data); qaHistory.push({role: 'user', content: question}, {role: 'assistant', content: data.answer}); qaHistory = qaHistory.slice(-6); if (input.value.trim() === question) input.value = '';
     }).catch(function(error) { if (requestToken === qaRequestToken) toast('问答失败: ' + error.message, 'error'); })
       .finally(function() { if (requestToken === qaRequestToken) { qaBusy = false; document.getElementById('report-qa-submit').disabled = false; input.focus(); } });

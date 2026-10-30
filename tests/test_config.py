@@ -24,15 +24,15 @@ def base_config(tmp_path: Path) -> dict:
     }
 
 
-def test_example_uses_direct_deepseek_v41_flash():
+def test_example_uses_single_cockpit():
     path = Path(__file__).resolve().parents[1] / "config" / "config.example.yaml"
     example = yaml.safe_load(path.read_text(encoding="utf-8"))
 
-    assert example["ai"]["provider_priority"] == ["compatible"]
-    assert example["ai"]["base_url"] == "https://api.deepseek.com"
-    assert example["ai"]["model"] == "deepseek-flash"
+    assert "provider_priority" not in example["ai"]
+    assert example["ai"]["base_url"] == "http://127.0.0.1:62406/v1"
+    assert example["ai"]["model"] == "gpt-6.1-sol"
     assert example["ai"]["json_mode"] is True
-    assert example["ai"]["api_key_env"] == "DEEPSEEK_API_KEY"
+    assert example["ai"]["api_key_env"] == "COCKPIT_API_KEY"
 
 
 def test_load_config_resolves_paths_and_defaults(tmp_path):
@@ -68,8 +68,7 @@ def test_load_config_resolves_paths_and_defaults(tmp_path):
     assert config.collection.interval_minutes == 10
     assert config.collection.overlap_minutes == 60
     assert config.web.port == 8765
-    assert config.ai.provider_priority == ["chatgpt_bridge", "compatible"]
-    assert config.ai.bridge_account_directory == r"D:\CodexTools\codexID"
+    assert "provider_priority" not in config.ai.model_dump()
 
 
 def test_load_config_rejects_invalid_retry_settings(tmp_path):
@@ -89,24 +88,13 @@ def test_load_config_rejects_invalid_retry_settings(tmp_path):
         load_config(write_config(tmp_path, raw))
 
 
-def test_load_config_rejects_invalid_ai_provider_priority(tmp_path):
+def test_load_config_ignores_legacy_routing_and_wrapper_fields(tmp_path):
     raw = base_config(tmp_path)
-    raw["ai"]["provider_priority"] = ["chatgpt_bridge", "unknown"]
-
-    with pytest.raises(ConfigError, match="provider_priority"):
-        load_config(write_config(tmp_path, raw))
-
-    raw["ai"]["provider_priority"] = ["compatible", "compatible"]
-    with pytest.raises(ConfigError, match="重复"):
-        load_config(write_config(tmp_path, raw))
-
-
-def test_load_config_rejects_relative_bridge_paths(tmp_path):
-    raw = base_config(tmp_path)
-    raw["ai"]["bridge_wrapper_path"] = "relative/wrapper.ps1"
-
-    with pytest.raises(ConfigError, match="bridge_wrapper_path"):
-        load_config(write_config(tmp_path, raw))
+    raw['ai'].update(provider_priority=['unknown'], bridge_wrapper_path='relative.ps1',
+                     connections=[{'invalid': 'legacy'}], purpose_connections={'summary':'missing'})
+    cfg=load_config(write_config(tmp_path, raw))
+    assert cfg.ai.model == 'gpt-test'
+    assert not {'provider_priority','connections','purpose_connections','bridge_wrapper_path'} & set(cfg.ai.model_dump())
 
 
 def test_load_config_rejects_relative_ui_api_key_path(tmp_path):

@@ -54,17 +54,15 @@ class StorageManager:
         cfg = self.config
         paths = [cfg.archive_path, cfg.report_dir, cfg.knowledge_dir, cfg.log_dir,
                  cfg.data_dir / 'config', *cfg.resolve_knowledge_paths().values()]
+        for value in cfg.retired_ai_key_files.values():
+            path = Path(value).expanduser()
+            paths.append(path if path.is_absolute() else cfg.data_dir / path)
         if cfg.ntqq.db_dir: paths.append(Path(cfg.ntqq.db_dir))
         for section, field in (('ai','api_key_file'), ('ai','ui_api_key_file'), ('security','session_secret_file')):
             value = getattr(getattr(cfg, section), field)
             if value:
                 path = Path(value)
                 paths.append(path if path.is_absolute() else cfg.data_dir / path)
-        for connection in cfg.ai.connections:
-            for field in ('api_key_file', 'ui_api_key_file'):
-                value = getattr(connection, field)
-                if value:
-                    paths.append(Path(value))
         with closing(sqlite3.connect(f'{cfg.archive_path.as_uri()}?mode=ro', uri=True)) as db:
             for table in ('reports','manual_reports','knowledge_items'):
                 columns = {row[1] for row in db.execute(f'PRAGMA table_info({table})')}

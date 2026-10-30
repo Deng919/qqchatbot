@@ -37,10 +37,8 @@
       <div class="setup-row"><button class="btn btn-primary" type="button" id="setup-import">导入所选群</button><button class="btn" type="button" id="setup-import-next">继续</button></div>
     </section>
     <section class="card setup-card" data-setup-panel="4" hidden aria-labelledby="setup-ai-title">
-      <h2 id="setup-ai-title">AI 连接</h2>
-      <div class="field"><label for="setup-provider">使用渠道</label><select class="input" id="setup-provider">{% if not public_distribution() %}<option value="chatgpt_bridge">本机订阅桥接</option>{% endif %}<option value="compatible">{{ "DeepSeek API" if public_distribution() else "兼容 API" }}</option></select></div>
-      {% if not public_distribution() %}<p class="header-meta" id="setup-bridge-note"></p>{% endif %}
-      <div id="setup-api-options"><div class="field"><label for="setup-url">接口地址</label><input class="input" id="setup-url" type="url" spellcheck="false" maxlength="1024" placeholder="https://api.deepseek.com" {% if public_distribution() %}readonly{% endif %}></div>
+      <h2 id="setup-ai-title">Cockpit AI 连接</h2>
+      <div id="setup-api-options"><div class="field"><label for="setup-url">接口地址</label><input class="input" id="setup-url" type="url" spellcheck="false" maxlength="1024" placeholder="http://127.0.0.1:62406/v1"></div>
         <div class="field"><label for="setup-key">API Key</label><input class="input" id="setup-key" type="password" autocomplete="new-password" maxlength="4096" placeholder="留空保留已有密钥"><span class="header-meta" id="setup-key-status"></span><small class="header-meta">保存到本机文件，备份包含密钥。</small></div></div>
       <div class="field"><label for="setup-model">模型</label><input class="input" id="setup-model" type="text" maxlength="200" spellcheck="false"></div>
       <p class="header-meta">连接测试只发送测试文本。生成摘要会发送所选聊天内容。</p>
