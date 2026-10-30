@@ -67,10 +67,29 @@
     var x=box.left-header.left,y=box.top-header.top+record.header.scrollTop;
     if(!pillReady||immediate){pillX.set(x);pillY.set(y);}else{renderPill();pillX.to(x);pillY.to(y);}pillReady=true;
   }
+  function sidebarGroups(previous,record,animate){
+    var old=previous&&previous.header.querySelector('.inbox-sidebar-groups'),incoming=record.header.querySelector('.inbox-sidebar-groups:not([data-desktop-ghost])');
+    var state=old?{opacity:getComputedStyle(old).opacity,transform:getComputedStyle(old).transform,box:old.getBoundingClientRect(),scroll:old.querySelector('div[id="inbox-group-list"], [data-desktop-group-list]')}:null;
+    if(state&&state.scroll)state.scroll=state.scroll.scrollTop;
+    var ghost=old&&!incoming?old.cloneNode(true):null;
+    pages.forEach(function(item){if(item.groupAnimation){item.groupAnimation.cancel();item.groupAnimation=null;}if(item.header)item.header.querySelectorAll('[data-desktop-ghost]').forEach(function(node){node.remove();});});
+    if(!animate||reduced.matches||innerWidth<=900)return;
+    var node=incoming;
+    if(ghost){
+      ghost.setAttribute('data-desktop-ghost','');ghost.setAttribute('aria-hidden','true');ghost.inert=true;
+      ghost.querySelectorAll('[id]').forEach(function(child){if(child.id==='inbox-group-list')child.setAttribute('data-desktop-group-list','');child.removeAttribute('id');});
+      var header=record.header.getBoundingClientRect(),shift=new DOMMatrix(state.transform);Object.assign(ghost.style,{position:'absolute',margin:'0',minHeight:'0',left:(state.box.left-header.left-shift.m41)+'px',top:(state.box.top-header.top+record.header.scrollTop-shift.m42)+'px',width:state.box.width+'px',height:state.box.height+'px',pointerEvents:'none'});
+      record.header.appendChild(ghost);var list=ghost.querySelector('[data-desktop-group-list]');if(list)list.scrollTop=state.scroll||0;node=ghost;
+    }
+    if(!node)return;
+    var start=state?{opacity:state.opacity,transform:state.transform}:{opacity:0,transform:'translateY(8px)'},end={opacity:ghost?0:1,transform:ghost?'translateY(-8px)':'none'};
+    var animation=node.animate([start,end],{duration:280,easing:'cubic-bezier(.16,1,.3,1)',fill:'both'});record.groupAnimation=animation;
+    animation.onfinish=function(){if(ghost)ghost.remove();animation.cancel();if(record.groupAnimation===animation)record.groupAnimation=null;};
+  }
   function activate(record,animate){
     var previous=active;if(previous===record){notice.hidden=true;updateButtons();return;}
     var direction=previous&&order.indexOf(path(record.url))<order.indexOf(path(previous.url))?-1:1;
-    var moving=record.visible;
+    var moving=record.visible;sidebarGroups(previous,record,animate);
     pages.forEach(function(item){item.frame.inert=item!==record;item.frame.setAttribute('aria-hidden',String(item!==record));item.frame.style.pointerEvents=item===record?'auto':'none';if(item.win)item.win.document.documentElement.toggleAttribute('data-desktop-inactive',item!==record);});
     active=record;record.visible=true;record.frame.style.visibility='visible';record.frame.style.zIndex='2';
     if(!moving)record.motion.set(animate?direction:0);
@@ -187,7 +206,7 @@
   window.addEventListener('beforeunload',function(event){
     if(pages.some(function(record){return record.ready&&record.win.workspaceHasUnsaved&&record.win.workspaceHasUnsaved();})){event.preventDefault();event.returnValue='';}
   });
-  reduced.addEventListener('change',function(){if(reduced.matches){pages.forEach(function(record){record.motion.set(record===active?0:1);if(record!==active){record.visible=false;record.frame.style.visibility='hidden';}});if(active)indicator(active,true);}});
+  reduced.addEventListener('change',function(){if(reduced.matches){pages.forEach(function(record){if(record.groupAnimation){record.groupAnimation.finish();record.groupAnimation=null;}record.motion.set(record===active?0:1);if(record!==active){record.visible=false;record.frame.style.visibility='hidden';}});if(active)indicator(active,true);}});
   navigate(local(location.hash.slice(1))||'/reports',{replace:true});
 })();
 </script>
