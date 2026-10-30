@@ -195,7 +195,7 @@ class SecondhandService:
             text=unit['text'];title=item.get('title');evidence=item.get('evidence')
             if not isinstance(title,str) or not 2<=len(title.strip())<=160 or title.strip() in {'商品','物品','二手','已出','出了','求购'}:raise ValueError('缺少明确物品名称')
             if not isinstance(evidence,str) or not evidence.strip() or evidence not in text:raise ValueError('商品缺少原文证据')
-            terms=re.findall(r'[a-zA-Z0-9]{3,}|[\u4e00-\u9fff]{2,}',title)
+            terms=re.findall(r'[a-zA-Z0-9]{3,}|[a-zA-Z]{2}|[\u4e00-\u9fff]{2,}',title)
             if not any(term.casefold() in evidence.casefold() for term in terms):raise ValueError('物品名称无法核对原文')
             direction=item.get('direction');status=item.get('status','unknown')
             if direction not in {'sale','want'} or status not in {'unknown','sold','fulfilled'}:raise ValueError('交易类型或状态无效')

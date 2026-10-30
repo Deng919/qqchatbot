@@ -412,3 +412,26 @@ def test_bundle_recovers_local_component_quotations(market):
     market.accept_units([unit],{'items':[dict(offer(unit,'',title=title),condition='',description=title,evidence=title) for title in ['狼人杀','三国杀']]})
     items=market.list_items(date_from='2026-10-13',date_to='2026-10-19')['items']
     assert len(items)==1 and items[0]['bundle_mode']=='bundle'
+
+@pytest.mark.parametrize(('text','title'),[
+    ('求购CD机，预算100元','CD机'),
+    ('收个cd机','CD机'),
+    ('求购CD机，预算100元','cd机'),
+    ('收个cd机','cd机'),
+])
+def test_two_letter_mixed_script_name_is_checked_case_insensitively(market,text,title):
+    unit=ingest(market,[message(text=text)])[0]
+    row=dict(offer(unit,'',title=title),direction='want')
+    market.accept_units([unit],{'items':[row]})
+    stored=market.db.execute('SELECT title,direction,price,evidence FROM market_posts').fetchone()
+    assert stored['title']==title and stored['direction']=='want'
+    assert stored['price'] is None and stored['evidence']==text
+
+
+@pytest.mark.parametrize('title',['10','99','PC机'])
+def test_short_numeric_or_unquoted_two_letter_title_is_rejected(market,title):
+    unit=ingest(market,[message(text='求购CD机，预算99元，也见过10元报价')])[0]
+    row=dict(offer(unit,'',title=title),direction='want')
+    with pytest.raises(ValueError,match='物品名称无法核对原文'):
+        market.accept_units([unit],{'items':[row]})
+    assert market.db.execute('SELECT COUNT(*) FROM market_posts').fetchone()[0]==0
