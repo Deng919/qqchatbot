@@ -48,6 +48,9 @@
 </div>
 
 <style>
+  .group-stats-table { min-width:0;table-layout:fixed; }
+  .group-stats-table :is(th,td) { overflow-wrap:anywhere; }
+  .group-stats-table th:first-child { width:42%; }
   .metric-link { display: block; color: inherit; text-decoration: none; transition: background 150ms ease; }
   .metric-link:hover { background: var(--primary-soft); }
   .metric-link:focus-visible { outline: 2px solid var(--primary); outline-offset: 3px; }

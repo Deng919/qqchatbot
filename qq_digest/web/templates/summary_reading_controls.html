@@ -23,8 +23,8 @@
   </div>
   <div class="summary-feed-tools" id="summary-feed-tools">
     <div class="field"><label for="summary-read-filter">要点范围</label><select id="summary-read-filter" onchange="summaryFilterPoints()"><option value="all">全部要点</option><option value="unread">未读要点</option><option value="new">上次打开后新增</option></select></div>
+    <label class="inbox-page-search" for="inbox-page-query"><span>⌕</span><input id="inbox-page-query" type="search" placeholder="筛选本页群聊" oninput="inboxFilterPage(this.value)" autocomplete="off"></label>
   </div>
-  <label class="inbox-page-search" for="inbox-page-query"><span>⌕</span><input id="inbox-page-query" type="search" placeholder="筛选本页群聊" oninput="inboxFilterPage(this.value)" autocomplete="off"></label>
 </section>
 <section id="summary-run-result" data-refresh-region="content" class="summary-result" role="status" hidden><p id="summary-run-message"></p>
   <div id="summary-generation-progress" class="generation-progress" hidden>

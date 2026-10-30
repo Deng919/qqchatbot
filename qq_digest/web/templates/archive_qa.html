@@ -9,7 +9,7 @@
 <div class="qa-workspace">
 <form id="archive-qa-form" class="card" data-timezone="{{ qa_timezone }}" onsubmit="archiveQAPreview(event)">
   <label for="qa-question">想了解什么？</label><textarea class="input" id="qa-question" required minlength="2" maxlength="2000" rows="3" placeholder="例如：接口配置最后决定用哪个方案？"></textarea>
-  <div class="qa-fields"><div class="field"><label for="qa-group">来源群</label><select id="qa-group" data-group-selector="filter"><option value="">全部群</option></select></div><div class="field"><label for="qa-from">开始日期</label><input class="input" id="qa-from" type="date" value="{{ qa_date_from }}" required></div><div class="field"><label for="qa-to">结束日期</label><input class="input" id="qa-to" type="date" value="{{ qa_date_to }}" required></div></div>
+  <div class="qa-fields"><div class="field"><label for="qa-group">来源群</label><select id="qa-group" data-group-selector="filter" data-group-floating><option value="">全部群</option></select></div><div class="field"><label for="qa-from">开始日期</label><input class="input" id="qa-from" type="date" value="{{ qa_date_from }}" required></div><div class="field"><label for="qa-to">结束日期</label><input class="input" id="qa-to" type="date" value="{{ qa_date_to }}" required></div></div>
   <details class="qa-keywords"><summary>指定检索关键词</summary><label for="qa-query">关键词</label><input class="input" id="qa-query" maxlength="100" placeholder="留空时根据问题查找"></details>
   <button class="btn btn-primary" id="qa-preview-button" type="submit">查找相关消息</button>
   <p class="muted">只查询归档文字和已有附件识别缓存；查找消息不会下载附件、补采或调用 AI。</p>

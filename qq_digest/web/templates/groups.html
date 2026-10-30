@@ -18,7 +18,7 @@
   <p class="header-meta">最近 30 天活跃的群</p>
   <button class="btn" id="discover-btn" onclick="discoverGroups()">扫描本地群聊</button>
   <p id="discover-status" role="status"></p>
-  <div class="group-batch-toolbar"><div class="field"><label for="discover-batch-select">选择待添加群</label><select id="discover-batch-select" data-group-selector="required"><option value="">请先扫描群聊</option></select></div><button class="btn btn-primary" type="button" onclick="addSelectedDiscoveredGroups()">添加所选群</button></div>
+  <div class="group-batch-toolbar"><div class="field"><label for="discover-batch-select">选择待添加群</label><select id="discover-batch-select" data-group-selector="required" data-group-floating><option value="">请先扫描群聊</option></select></div><button class="btn btn-primary" type="button" onclick="addSelectedDiscoveredGroups()">添加所选群</button></div>
   <div class="table-wrap">
     <table class="table">
       <thead><tr><th>群号</th><th>群名</th><th>近 30 天消息</th><th>最近消息</th><th>操作</th></tr></thead>

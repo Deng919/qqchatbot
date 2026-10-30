@@ -1,6 +1,6 @@
 {% include "group_batch_feedback.html" %}
 <section class="card" aria-label="批量群操作" style="padding:16px;margin-bottom:20px">
-  <div class="group-batch-toolbar"><div class="field"><label for="group-batch-select">选择群聊</label><select id="group-batch-select" data-group-selector="required"><option value="">选择群聊</option></select></div><button class="btn" type="button" onclick="openBatchGroupUpdate()">更新所选群消息</button><button class="btn" type="button" onclick="openBatchGroupSettings()">批量设置</button><button class="btn" type="button" onclick="readBatchGroupAttachments()">读取所选群附件</button></div>
+  <div class="group-batch-toolbar"><div class="field"><label for="group-batch-select">选择群聊</label><select id="group-batch-select" data-group-selector="required" data-group-floating><option value="">选择群聊</option></select></div><button class="btn" type="button" onclick="openBatchGroupUpdate()">更新所选群消息</button><button class="btn" type="button" onclick="openBatchGroupSettings()">批量设置</button><button class="btn" type="button" onclick="readBatchGroupAttachments()">读取所选群附件</button></div>
   <div id="group-batch-feedback" role="status" hidden></div>
 </section>
 <dialog id="group-batch-settings-dialog" aria-labelledby="group-batch-settings-title"><h2 id="group-batch-settings-title">批量设置</h2><p id="group-batch-settings-count" class="header-meta"></p>

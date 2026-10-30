@@ -16,7 +16,7 @@
       <button class="find-kind" type="button" data-kind="all" aria-pressed="false" onclick="setFindKind('all')">全部内容</button>
     </div><input id="search-kind" type="hidden" value="message"><span id="find-filter-hint">最近七天 · 全部群</span></div>
     <details id="find-filters" class="find-filters"><summary>筛选条件</summary>
-      <div class="find-filter-fields"><div class="field"><label for="search-group">来源群</label><select id="search-group" data-group-selector="filter"><option value="">全部群</option></select></div>
+      <div class="find-filter-fields"><div class="field"><label for="search-group">来源群</label><select id="search-group" data-group-selector="filter" data-group-floating><option value="">全部群</option></select></div>
       <div class="field"><label for="search-from">开始日期</label><input class="input" id="search-from" type="date"></div><div class="field"><label for="search-to">结束日期</label><input class="input" id="search-to" type="date"></div></div>
       <div id="find-message-filters" class="find-message-filters"><div class="field"><label for="search-sender">发送人 QQ 号</label><input class="input" id="search-sender" type="text" inputmode="numeric" pattern="[0-9]+" maxlength="19" placeholder="不限发送人"></div>
       <div class="field"><label for="search-message-type">消息类型</label><select id="search-message-type"><option value="">全部类型</option><option value="text">文字</option><option value="link">链接</option><option value="file">文件</option><option value="reply">回复</option><option value="forward">转发</option><option value="system">系统</option><option value="unknown">未知</option></select></div></div>
