@@ -19,7 +19,7 @@
     }
     function visibleNotes(entry){
       var list=entry.body.querySelector('.summary-group-points');if(!list)return [];var box=list.getBoundingClientRect();
-      return Array.from(list.children).filter(function(note){var rect=note.getBoundingClientRect();return rect.bottom>box.top&&rect.top<box.bottom;}).slice(0,6);
+      return Array.from(list.children).filter(function(note){var rect=note.getBoundingClientRect();return rect.bottom>box.top&&rect.top<box.bottom;});
     }
     function snapshots(entry){return visibleNotes(entry).map(function(note){var flight=flights.find(function(item){return item.source===note;});return {note:note,box:(flight?flight.node:note).getBoundingClientRect()};});}
     function fly(note,box,keyframes,options,hide){
