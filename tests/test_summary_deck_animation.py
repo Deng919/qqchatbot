@@ -33,6 +33,12 @@ def test_every_visible_note_animates_on_open_and_close(width):
             errors = []
             page.on('pageerror', lambda error: errors.append(str(error)))
             page.set_content(fixture)
+            radii = page.evaluate('''() => ({
+                stack:getComputedStyle(document.querySelector('.summary-group-stack')).borderTopLeftRadius,
+                cover:getComputedStyle(document.querySelector('.summary-group-cover')).borderTopLeftRadius,
+                row:getComputedStyle(document.querySelector('.summary-group-points .inbox-row')).borderTopLeftRadius
+            })''')
+            assert radii == {'stack': '20px', 'cover': '20px', 'row': '14px'}, radii
             page.locator('summary').click()
             state = page.evaluate('''() => {
                 var list=document.querySelector('.summary-deck-drawer .summary-group-points'),box=list.getBoundingClientRect();
