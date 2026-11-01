@@ -94,7 +94,11 @@
     pages.forEach(function(item){item.frame.inert=item!==record;item.frame.setAttribute('aria-hidden',String(item!==record));item.frame.style.pointerEvents=item===record?'auto':'none';if(item.win)item.win.document.documentElement.toggleAttribute('data-desktop-inactive',item!==record);});
     active=record;record.visible=true;record.frame.style.visibility='visible';record.frame.style.zIndex='2';
     if(!moving)record.motion.set(animate?direction:0);
-    if(previous){previous.frame.style.zIndex='1';previous.motion.to(-direction,function(){if(previous!==active){previous.visible=false;previous.frame.style.visibility='hidden';}});}
+    if(previous){
+      previous.frame.style.zIndex='1';
+      if(animate)previous.motion.to(-direction,function(){if(previous!==active){previous.visible=false;previous.frame.style.visibility='hidden';}});
+      else { previous.motion.set(-direction); previous.visible=false; previous.frame.style.visibility='hidden'; }
+    }
     record.motion.to(0);document.title=record.win.document.title;syncTheme(record);notice.hidden=true;updateButtons();indicator(record);
   }
   function syncTheme(record){if(record===active&&record.main){var style=record.win.getComputedStyle(record.main);document.body.style.background=style.getPropertyValue('--bg').trim()||style.backgroundColor;container.style.background='transparent';}}
@@ -112,7 +116,7 @@
     try{await record.loaded;if(version!==requested)return false;
       if(options.visit){restoring=true;try{applyState(record,options.visit);}finally{restoring=false;}}
       var changed=active!==record,queryChanged=false;restoring=true;
-      try{activate(record,!!active);
+      try{activate(record,options.animate!==false&&!!active);
         var query=new URL(url,location.origin).searchParams;
         if(options.reuse&&path(url)==='/settings'&&(query.has('section')||query.has('feature')||query.get('saved')==='features')){
           var section=query.has('feature')||query.get('saved')==='features'?'features':query.get('section');
@@ -166,9 +170,9 @@
     win.document.addEventListener('click',function(event){
       if(event.defaultPrevented||event.button!==0||event.ctrlKey||event.metaKey||event.shiftKey||event.altKey)return;
       var link=event.target.closest&&event.target.closest('a[href]');if(!link||link.hasAttribute('download')||(link.target&&link.target!=='_self'))return;
-      var url=local(link.href);if(!url)return;var destination=new URL(url,location.origin);
+      var url=local(link.href);if(!url)return;var destination=new URL(url,location.origin),sectionNavigation=!!link.closest('.section-nav');
       if(destination.pathname===win.location.pathname&&destination.search===win.location.search&&destination.hash)return;
-      event.preventDefault();navigate(url,{reuse:!!link.closest('.global-header')});
+      event.preventDefault();navigate(url,{reuse:!!link.closest('.global-header'),animate:!sectionNavigation});
     });
     win.document.addEventListener('submit',function(event){
       // Preserve native form methods when deliberately leaving the authenticated workspace.
