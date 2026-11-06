@@ -2,6 +2,8 @@
 
 本地 QQ 群消息采集、每日摘要、收藏与 Markdown 资料整理工具。
 
+开发接手先读 [项目记忆](MEMORY.md) 与 [工作约定](AGENTS.md)。每次较大更新或重要修复完成后，同步维护记忆中的当前状态、关键决定和验证结果。
+
 ## Windows 试用版
 
 普通用户从 [GitHub Releases](https://github.com/Deng919/qqchatbot/releases) 下载 Windows x64 安装包，无需安装 Python。安装时设置自己的登录密码，启动后按「首次设置」选择 QQ 账号、导入群聊，再填写自己的 Cockpit API Key。
