@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import os
 import sys
+import json
 from functools import wraps
 from inspect import signature
 from datetime import datetime
@@ -236,6 +237,24 @@ def discover_groups(
             f"  {g['group_id']:>12d}  {g['name'][:30]:<30s}  "
             f"消息数:{g['message_count_30d']:<6d}  最近:{latest}"
         ))
+
+
+@app.command("export-mycortex")
+def export_mycortex(
+    config_path: Path = typer.Option(Path("config/config.yaml")),
+    out: Path = typer.Option(..., "--out", help="新的 MyCortex bundle 文件；不会覆盖已有文件"),
+    candidate_id: list[int] = typer.Option([], "--candidate-id", help="只导出指定候选；可重复"),
+) -> None:
+    """导出已确认且已入库的个人相关候选，供 MyCortex 导入。"""
+    from .mycortex_export import write_bundle
+
+    config = load_config(config_path)
+    archive = Archive.open(config.archive_path)
+    try:
+        result = write_bundle(archive, out, candidate_ids=candidate_id or None)
+    finally:
+        archive.close()
+    typer.echo(json.dumps(result, ensure_ascii=False))
 
 
 @app.command("sync")

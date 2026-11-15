@@ -23,6 +23,7 @@
 - 将 Markdown 和 JSON 摘要写入 `reports/`。
 - 历史摘要支持摘要仪表盘、按群阅读和管理报告；切换方式、刷新或展开群卡片时保留历史日期范围。
 - 将资源与经验先放入候选审核，确认后写入 `knowledge/resources.md` 或 `knowledge/experiences.md`。
+- 可用 `qq-digest export-mycortex` 显式导出已确认且已入库的候选，保留 QQ 来源和上下文供 MyCortex 幂等导入；普通群聊不会自动复制到 MyCortex。
 - Web UI 提供运行总览、群组配置、手动采集、摘要查看和候选审核。
 - Web 服务内置独立的周期采集和每日摘要调度，也提供 CLI 和手动执行入口。
 - 候选支持按状态、群、类型、日期和关键词筛选，并可查看历史状态与详情。
