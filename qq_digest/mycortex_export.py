@@ -27,7 +27,6 @@ def _body(candidate, group_name: str, context: dict) -> str:
         f"# {candidate.title}",
         "",
         f"QQ Digest 候选 ID：{candidate.candidate_id}",
-        f"QQ Digest 候选版本：{candidate.revision}",
         f"候选类型：{candidate.candidate_type}",
         f"群：{group_name}（{candidate.group_id}）",
         f"关联消息 ID：{message_ids}",
