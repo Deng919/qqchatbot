@@ -56,11 +56,13 @@ from .knowledge_routes import add_knowledge_routes
 from .reminder_routes import add_reminder_routes
 from .bookmark_routes import add_bookmark_routes
 from .background_tasks import background_lifespan
+from .mycortex_routes import add_mycortex_routes, configured as mycortex_configured
 from ..report_selection import selected_report_groups, selected_report_keys
 
 templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"),
                            context_processors=[lambda request: {'features': getattr(request.state, 'features', {}),
                                'storage_handoff': getattr(request.state, 'storage_handoff', {}),
+                               'mycortex_configured': mycortex_configured(getattr(request.app.state, 'config', None)),
                                'setup_paused': setup_in_progress(getattr(request.app.state, 'config', None))}])
 templates.env.globals["public_distribution"] = is_public_distribution
 
@@ -460,6 +462,7 @@ def create_app(
                         require_login=require_login, operations=operations)
     add_bookmark_routes(app, archive=archive, config=config, templates=templates,
                         require_login=require_login, operations=operations)
+    add_mycortex_routes(app, require_login=require_login, operations=operations)
     knowledge_library = add_knowledge_routes(app, archive=archive, knowledge=knowledge,
         config=config, templates=templates, require_login=require_login, operations=operations)
     add_summary_generation_routes(app, archive=archive, config=config, require_login=require_login,

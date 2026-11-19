@@ -7,7 +7,7 @@ from contextvars import ContextVar
 
 OPERATION_KINDS = (
     "daily", "refresh", "collect", "sync", "manual_summary", "group_mutation", "history_inspection", "knowledge_mutation",
-    "backup", "storage_mutation", "topic_mutation", "reminder_mutation", "bookmark_mutation", "setup_mutation", "version_mutation", "archive_qa"
+    "backup", "storage_mutation", "topic_mutation", "reminder_mutation", "bookmark_mutation", "setup_mutation", "version_mutation", "archive_qa", "mycortex"
 )
 CONFLICTS = {kind: frozenset(OPERATION_KINDS) for kind in OPERATION_KINDS}
 # Local preference writes do not alter summary inputs or report files.

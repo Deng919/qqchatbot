@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 from contextlib import asynccontextmanager
 from datetime import datetime
@@ -13,6 +14,32 @@ from ..reminder_scheduler import reminder_loop
 from .history_inspection import history_inspection_loop
 from .operations import OperationBusy
 from .worker_threads import guarded_to_thread
+from .mycortex_routes import configured as mycortex_configured
+
+
+async def mycortex_automatic_loop(app, operations):
+    from ..archive import Archive
+    from ..mycortex import MyCortexDelivery
+
+    def run(config):
+        archive = Archive.open(config.archive_path)
+        try:
+            MyCortexDelivery(archive, config).process_automatic()
+        finally:
+            archive.close()
+
+    while True:
+        await asyncio.sleep(60)
+        config = app.state.config
+        if not mycortex_configured(config) or setup_in_progress(config):
+            continue
+        try:
+            with operations.claim('mycortex'):
+                await guarded_to_thread(run, config)
+        except OperationBusy:
+            continue
+        except Exception:
+            logging.getLogger('qq_digest.scheduler').warning('MyCortex 自动保存处理暂时失败')
 
 
 async def daily_scheduler_loop(
@@ -217,6 +244,7 @@ def background_lifespan(
             enabled=lambda: feature_service.enabled('reminders'),
             timezone_name=config.summary.timezone if config else 'Asia/Shanghai',
             sink_getter=lambda: getattr(app.state, 'reminder_sink', None)))
+        mycortex_task = asyncio.create_task(mycortex_automatic_loop(app, operations))
 
         yield
 
@@ -232,6 +260,7 @@ def background_lifespan(
                 sync_scheduler_state["task"],
                 inspection_task,
                 reminder_task,
+                mycortex_task,
             )
             if task is not None
         ]

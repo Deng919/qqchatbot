@@ -380,6 +380,7 @@
       } else {
         var button = document.createElement('button'); button.type = 'button'; button.className = 'btn btn-sm'; button.textContent = '关联的消息';
         button.addEventListener('click', function() { openReportRelated(item.source_ids); }); actions.appendChild(button);
+        appendMyCortexAction(actions, data.group_id, item.source_ids);
       }
       card.appendChild(actions); host.appendChild(card);
     });

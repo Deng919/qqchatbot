@@ -417,3 +417,29 @@ def initialize_archive_schema(connection: sqlite3.Connection) -> None:
     )
     from .secondhand_schema import initialize
     initialize(connection)
+    connection.executescript('''
+        CREATE TABLE IF NOT EXISTS mycortex_receipts (
+            target TEXT NOT NULL,
+            request_id TEXT NOT NULL,
+            group_id INTEGER NOT NULL REFERENCES groups(group_id) ON DELETE CASCADE,
+            source_fingerprint TEXT NOT NULL,
+            receipt TEXT NOT NULL,
+            PRIMARY KEY (target, request_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_mycortex_receipts_group ON mycortex_receipts(group_id);
+        CREATE TABLE IF NOT EXISTS mycortex_auto_groups (
+            target TEXT NOT NULL,
+            group_id INTEGER NOT NULL REFERENCES groups(group_id) ON DELETE CASCADE,
+            enabled_at TEXT NOT NULL,
+            PRIMARY KEY (target, group_id)
+        );
+        CREATE TABLE IF NOT EXISTS mycortex_auto_attempts (
+            target TEXT NOT NULL,
+            candidate_id INTEGER NOT NULL REFERENCES candidates(candidate_id) ON DELETE CASCADE,
+            status TEXT NOT NULL,
+            attempts INTEGER NOT NULL,
+            updated_at TEXT NOT NULL,
+            retry_at TEXT,
+            PRIMARY KEY (target, candidate_id)
+        );
+    ''')

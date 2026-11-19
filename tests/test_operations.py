@@ -21,6 +21,7 @@ from qq_digest.web.operations import OperationBusy, OperationCoordinator
         ("backup", "setup_mutation"),
         ("version_mutation", "collect"),
         ("setup_mutation", "version_mutation"),
+        ("mycortex", "group_mutation"),
     ],
 )
 def test_conflicting_operations_are_rejected(first, second):
@@ -54,6 +55,7 @@ def test_claim_releases_state_after_exception():
         "setup_mutation_running": False,
         "version_mutation_running": False,
         "archive_qa_running": False,
+        "mycortex_running": False,
     }
 
 

@@ -1,0 +1,70 @@
+<script>
+const mycortexConfigured = {{ (mycortex_configured | default(false)) | tojson }};
+
+function appendMyCortexAction(host, groupId, messageIds) {
+  if (!mycortexConfigured || !groupId || !messageIds || !messageIds.length || messageIds.length > 40) return;
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'btn btn-sm';
+  button.textContent = '保存到 MyCortex';
+  button.onclick = async function () {
+    button.disabled = true;
+    button.textContent = '正在提炼…';
+    try {
+      const receipt = await api('POST', '/api/mycortex/v1/submissions', {
+        group_id: Number(groupId), message_ids: messageIds.map(String)
+      });
+      button.textContent = receipt.status === 'saved' ? '已保存到 MyCortex' : '没有可归档知识';
+      toast(button.textContent);
+    } catch (error) {
+      button.disabled = false;
+      button.textContent = '重试保存到 MyCortex';
+      toast(error.message, 'error');
+    }
+  };
+  host.appendChild(button);
+}
+
+function showMyCortexGroup(groupId, groupEnabled) {
+  const host = document.getElementById('group-mycortex');
+  if (!mycortexConfigured || !host) return;
+  const url = '/api/mycortex/v1/groups/' + groupId + '/auto';
+  const control = host.querySelector('input');
+  const status = host.querySelector('[role="status"]');
+  const token = {};
+  host._mycortexRequest = token;
+  const current = () => host._mycortexRequest === token;
+  const statusLabels = {saved: '已保存', skipped: '跳过', retry: '等待重试', failed: '保存失败'};
+  host.hidden = false;
+  control.checked = false;
+  control.disabled = true;
+  status.textContent = '正在读取自动保存设置…';
+
+  function render(data) {
+    if (!current()) return;
+    control.checked = data.enabled;
+    control.disabled = !groupEnabled && !data.enabled;
+    status.textContent = data.last_status
+      ? '最近结果：' + (statusLabels[data.last_status] || '') + ' · ' + new Date(data.last_at).toLocaleString('zh-CN')
+      : '';
+  }
+
+  control.onchange = async function () {
+    const enabled = control.checked;
+    control.disabled = true;
+    status.textContent = '正在保存设置…';
+    try {
+      render(await api('PUT', url, {enabled}));
+    } catch (error) {
+      if (current()) {
+        control.checked = !enabled;
+        control.disabled = false;
+        status.textContent = error.message;
+      }
+    }
+  };
+  api('GET', url).then(render).catch(error => {
+    if (current()) status.textContent = error.message;
+  });
+}
+</script>

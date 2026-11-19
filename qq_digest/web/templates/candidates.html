@@ -105,6 +105,7 @@
         ? '<button class="btn btn-danger" type="button" onclick="undoCandidate()">撤销入库</button>'
         : (c.status === 'pending' || c.status === 'later' ? '<button class="btn" data-candidate-id="'+c.candidate_id+'" type="button" onclick="editCandidate()">编辑候选</button>'+candidateActionButton(c.candidate_id,'confirm','入库','btn-primary') : '');
       if(c.candidate_type==='resource')appendBookmarkAction(document.getElementById('candidate-detail-actions'),{kind:'resource',candidate_id:Number(c.candidate_id)});
+      if (!c.missing_source_count) appendMyCortexAction(document.getElementById('candidate-detail-actions'), c.group_id, c.message_ids);
       renderCandidateContext(c);
       document.getElementById('candidate-detail').hidden = false;
       document.getElementById('candidate-detail-backdrop').hidden = false;
@@ -163,7 +164,7 @@
   .candidate-actions form { margin: 0; }
   .candidate-reason { margin: 9px 0; color: var(--text-soft); }
   .candidate-detail { position: fixed; right: 18px; top: 70px; bottom: 18px; z-index: 40; width: min(540px, calc(100vw - 36px)); padding: 18px; overflow: auto; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: 0 24px 64px rgb(18 25 21 / .24); }
-  .candidate-detail-actions, .candidate-edit-actions { display: flex; gap: 8px; margin: 15px 0; }
+  .candidate-detail-actions, .candidate-edit-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 15px 0; }
   .candidate-edit-form { display: grid; gap: 12px; margin: 14px 0 20px; }
   .candidate-edit-form[hidden] { display: none; }
   .detail-row { display: grid; grid-template-columns: 90px minmax(0, 1fr); gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--border); overflow-wrap: anywhere; }

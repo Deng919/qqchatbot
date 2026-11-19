@@ -1,6 +1,6 @@
 # chatbot / QQ Digest 项目记忆
 
-最后更新：2026-11-16。用于开发交接；开始任务先读本文，较大更新后按 [AGENTS.md](AGENTS.md) 同步维护。
+最后更新：2026-11-19。用于开发交接；开始任务先读本文，较大更新后按 [AGENTS.md](AGENTS.md) 同步维护。
 
 ## 定位与边界
 
@@ -34,7 +34,9 @@
 
 - 现状依据：README、源码、`docs/superpowers/plans/2026-10-30-cockpit-only.md` 和Git历史。Cockpit迁移记录中有全项目1875 passed/4 skipped、后续边界修复58 passed及二手专项167 passed；这是历史记录，本轮仅新增文档，未重跑这些测试。
 - 最近已提交UI修改：`7707708` 小标题切换动画；`aeae357` 卡片圆角；`497e960` 多行展开动画。进一步修改时以实际分支源码为准。
-- MyCortex 接入第一步已实现：QQ Digest 通过显式 `export-mycortex` 只导出 confirmed 且实际写入知识库的候选，输出 `mycortex.qqdigest` v1 bundle；每条保留候选正文、筛选理由、群/消息 ID、`qqdigest://` 来源和最多 40 条原消息上下文。MyCortex 端使用稳定候选 request key 幂等导入。QQ 聊天机器人中的“记住这条”和自然语言查询尚未接通。相邻聊天0.6.0已改为AI理解用途并正常回应，实际归档和转发执行仍需业务模块。
+- 2026-11-19已实现 QQ Digest → MyCortex 的统一消息提交。登录后的 `POST /api/mycortex/v1/submissions` 用群和原消息 ID 提交，入口覆盖摘要要点、完整摘要、候选详情、收藏、原消息上下文及资料。群详情通过 `GET/PUT /api/mycortex/v1/groups/{group_id}/auto` 管理自动保存，默认关闭。自动只处理开启后生成且随摘要发布的 AI 候选，所引原消息也须在开启后发送。每轮提交受现有操作锁保护，失败退避至多三次。单群看板后续可复用此接口；QQ 机器人归档指令仍待接入。
+- 两条路径共用 `qq_digest/mycortex.py`。Cockpit 提炼后校验引文与消息 ID，MyCortex 以仅提交权限接收知识、短引文和 `qqdigest://` 来源。目标库与连接分别隔离授权及回执，重试复用提交号和已提炼的内容。旧 `export-mycortex` 仍可导出 confirmed 且已入库的候选上下文，补齐 `organization` 后才能用于当前 MyCortex 导入流程。
+- 2026-11-19本轮验证：MyCortex 提交、旧导出、操作锁、归档迁移、配置、后台任务及 AI 用量共 107 项通过。独立 Chromium 在 1280px 和 390px 验证手动保存、重试和群开关持久化。使用真实 Cockpit 和真实 MyCortex MCP 将合成群消息通过自动流程写入隔离库，并验证手动复用回执；通过只读数据库确认结论、短引文和去重。测试存放于 `D:\Cache\QQDigestMyCortex-20261119`。本机 `config/config.yaml` 已指向现有 MyCortex 库，源码 Web 已启动；本轮未向该库提交真实消息，也未为真实群开启自动保存。
 - 相邻聊天0.6.0历史验证：完整仓库113 passed（旧唤醒/分流/模式用例已替换），真实Cockpit配合模拟中转验证4条合成输入，构建及后台部署通过。来源为相邻仓库 `docs/verification.md`，未向真实QQ发送测试消息。
 - 情感记忆本轮验证来源：相邻仓库0.7.0完整141项通过、真实Cockpit合成消息提取/纠正与本地查看/清除通过，构建部署通过。未扫描历史私有消息，也未向真实QQ发测试消息；本chatbot仓库仅同步交接记忆，未运行其业务测试。
 - 相邻聊天0.7.1验证：情感专项29项通过，真实Cockpit合成关系表达中称呼只出现一次，构建和后台部署通过；本chatbot仓库仅同步交接记忆，未运行其业务测试。

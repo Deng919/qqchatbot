@@ -58,6 +58,9 @@
     else actions.appendChild(summaryNode('span','header-meta',item.status==='legacy'?'旧报告未记录逐条来源':'这条要点未提供有效来源'));
     actions.appendChild(summaryButton('完整摘要',function(){viewReport(item.report_kind||'daily',Number(item.report_id));}));
     appendBookmarkAction(actions,{kind:'report',report_kind:item.report_kind||'daily',report_id:Number(item.report_id),point_key:item.key});
+    if (item.status === 'cited' && typeof appendMyCortexAction === 'function') {
+      appendMyCortexAction(actions, item.group_id, item.source_ids);
+    }
     function saveRead(nextRead){
       var revision=inboxReadRevision;read.disabled=true;
       function failed(e){

@@ -23,7 +23,7 @@
 - 将 Markdown 和 JSON 摘要写入 `reports/`。
 - 历史摘要支持摘要仪表盘、按群阅读和管理报告；切换方式、刷新或展开群卡片时保留历史日期范围。
 - 将资源与经验先放入候选审核，确认后写入 `knowledge/resources.md` 或 `knowledge/experiences.md`。
-- 可用 `qq-digest export-mycortex` 显式导出已确认且已入库的候选，保留 QQ 来源和上下文供 MyCortex 幂等导入；普通群聊不会自动复制到 MyCortex。
+- MyCortex 支持手动保存和按群自动保存。两种方式都通过 Cockpit 提炼知识，并保留必要引文和 QQ 来源。
 - Web UI 提供运行总览、群组配置、手动采集、摘要查看和候选审核。
 - Web 服务内置独立的周期采集和每日摘要调度，也提供 CLI 和手动执行入口。
 - 候选支持按状态、群、类型、日期和关键词筛选，并可查看历史状态与详情。
@@ -113,6 +113,19 @@ knowledge:
 收藏原消息后，可以在详情中选择「整理成资料」，补充标题、分类和说明，保存原文与来源。已有知识条目在「整理的资料」继续可读，并保留 Markdown 文件；旧 `/knowledge` 链接保留筛选和条目定位，转入收藏内的资料视图。资料页无需再次收藏同一条目。
 
 收藏快照在来源消失或摘要改写后仍可读，重复收藏不改变阅读状态。「功能开关」中的「收藏原文」仅控制快照保存，关闭后仍可浏览整理的资料。备份继续包含已有数据。
+
+## 保存到 MyCortex
+
+在运行中的 QQ Digest 所用配置里填写 `mycortex.core_dir`、`mycortex.store_dir` 和 `mycortex.node_path` 后重启。分别指向已安装依赖的 MyCortex `core`、已初始化的本机知识库目录和 Node 可执行文件，均使用绝对路径。可选的 `connection_id` 默认为 `qq-digest`。QQ Digest 以仅提交权限启动本机 MyCortex MCP。
+
+- 手动保存：在有原消息依据的摘要要点、待确认知识详情、收藏原消息、原消息上下文或整理好的资料中点击「保存到 MyCortex」。同一库和连接下，相同的一组原消息重复提交会复用回执。
+- 自动保存：在「群聊」打开目标群详情，开启「自动保存到 MyCortex」。只处理开启后产生、随摘要发布且原消息也在开启后发送的候选。默认关闭，开启后页面可查看最近结果。
+
+两条路径共用同一流程，先由 Cockpit 提炼，再核对逐字引文。MyCortex 留存知识结论、引文和 QQ 来源。没有可归档知识时跳过，附件文件留在 QQ Digest。
+
+统一接口 `POST /api/mycortex/v1/submissions` 接收 `{"group_id":12345,"message_ids":["msg-101","msg-103"]}`。自动设置使用 `GET` 或 `PUT /api/mycortex/v1/groups/{group_id}/auto`，开启时提交 `{"enabled":true}`。接口需登录。
+
+`qq-digest export-mycortex` 仍可显式导出已入库的候选和来源上下文。这份离线数据需要先补充提炼结果，才能交给现行 MyCortex 导入器。
 
 话题跟踪和待办已从应用移除，相关入口、接口及待办到期提醒不可用；旧数据库中的历史记录仍保留，普通摘要中的讨论主题和明确安排可正常阅读。
 

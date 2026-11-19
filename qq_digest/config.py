@@ -117,6 +117,26 @@ def retired_ai_key_files(raw: dict) -> dict[str, str]:
     return {str(index): value for index, value in enumerate(sorted(set(paths)))}
 
 
+class MyCortexConfig(BaseModel):
+    model_config = {'extra': 'forbid'}
+
+    core_dir: Path | None = None
+    store_dir: Path | None = None
+    node_path: Path | None = None
+    connection_id: str = Field(default='qq-digest', pattern=r'^[a-zA-Z0-9._-]{1,80}$')
+
+    @model_validator(mode='after')
+    def validate_paths(self):
+        paths = (self.core_dir, self.store_dir, self.node_path)
+        if any(paths) and not all(path is not None and path.is_absolute() for path in paths):
+            raise ValueError('MyCortex 的 core_dir、store_dir、node_path 必须全部填写绝对路径')
+        return self
+
+    @property
+    def configured(self) -> bool:
+        return self.store_dir is not None
+
+
 class Config(BaseModel):
     model_config = {"extra": "allow"}
 
@@ -144,6 +164,7 @@ class Config(BaseModel):
     ai: AIConfig
     ntqq: NTQQConfig = Field(default_factory=NTQQConfig)
     qq_bot: QQBotConfig = Field(default_factory=QQBotConfig)
+    mycortex: MyCortexConfig = Field(default_factory=MyCortexConfig)
     groups: list[GroupConfig] = Field(default_factory=list)
 
     def resolve_knowledge_paths(self) -> dict[str, Path]:

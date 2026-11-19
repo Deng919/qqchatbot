@@ -27,6 +27,13 @@ knowledge:
   resource_path: knowledge/resources.md
   experience_path: knowledge/experiences.md
 
+# 使用本机 MyCortex 时填写这三个绝对路径。自动保存需另外按群开启。
+# mycortex:
+#   core_dir: "D:/path/to/MyCortex/core"
+#   store_dir: "D:/path/to/MyCortex/library"
+#   node_path: "D:/path/to/node.exe"
+#   connection_id: qq-digest
+
 ai:
   # 所有 AI 功能共用本机 Cockpit API。
   base_url: http://127.0.0.1:62406/v1

@@ -143,7 +143,7 @@ class UsageService:
     def reserve(self,provider,model,purpose,timeout_seconds):
         provider=provider_key(provider)
         if not isinstance(model,str) or len(model)>200 or not model.strip():raise ValueError('模型名称无效')
-        if purpose not in ('summary','report_qa','archive_qa','vision','connection_test'):raise ValueError('调用用途无效')
+        if purpose not in ('summary','report_qa','archive_qa','vision','connection_test','mycortex'):raise ValueError('调用用途无效')
         with self._db() as db:
             db.execute('BEGIN IMMEDIATE');settings=self._settings(db)
             now=self._time()
