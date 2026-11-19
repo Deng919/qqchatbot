@@ -36,6 +36,7 @@ TEMPLATES = (
     "knowledge.html", "knowledge_script.html", "knowledge_save.html",
     "reminders.html", "reminders_script.html",
     "bookmarks.html", "bookmarks_script.html", "bookmark_actions.html", "action_icons.html",
+    "mycortex_actions.html",
     "first_use.html", "first_use_script.html",
     "desktop_updates.html", "desktop_updates_script.html",
     "archive_qa.html", "archive_qa_script.html", "archive_qa_style.html",

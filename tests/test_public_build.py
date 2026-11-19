@@ -35,6 +35,12 @@ def test_public_command_excludes_bridge_and_bundles_profile(tmp_path):
     assert any('distribution.json;qq_digest' in value for value in command)
 
 
+def test_desktop_build_bundles_mycortex_actions(tmp_path):
+    command = build_desktop.build_command(tmp_path)
+    template = build_desktop.PROJECT / 'qq_digest' / 'web' / 'templates' / 'mycortex_actions.html'
+    assert f'{template};qq_digest/web/templates' in command
+
+
 def test_public_finalize_does_not_copy_launcher_or_register_owner(tmp_path, monkeypatch):
     release = tmp_path / 'payload'
     release.mkdir()
