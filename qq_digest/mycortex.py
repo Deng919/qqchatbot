@@ -178,9 +178,11 @@ class MyCortexDelivery:
         if stored is None:
             self._record(group_id, request_id, fingerprint, {'status': 'prepared', 'organization': organization})
 
+        source_row=self.db.execute('SELECT platform FROM group_sources WHERE group_id=?',(group_id,)).fetchone()
+        source_label='微信' if source_row and source_row[0]=='wechat' else 'QQ'
         result = self.transport(self.config.mycortex, {
-            'action': 'submit', 'requestId': request_id, 'kind': 'text', 'title': 'QQ 群聊知识',
-            'sourceUri': source_uri, 'author': 'QQ 群聊' if multiple_sources else primary['author'][:256],
+            'action': 'submit', 'requestId': request_id, 'kind': 'text', 'title': source_label+' 群聊知识',
+            'sourceUri': source_uri, 'author': source_label+' 群聊' if multiple_sources else primary['author'][:256],
             'observedAt': primary['observedAt'],
             'body': '\n\n'.join(dict.fromkeys(entry['quote'] for entry in organization['entries'])),
             'organization': {'topics': organization['topics'], 'entries': [

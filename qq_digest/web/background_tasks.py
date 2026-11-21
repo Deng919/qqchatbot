@@ -163,7 +163,7 @@ async def message_sync_loop(config, operations, feature_service, sync_scheduler_
                 config.collection.enabled
                 and not setup_in_progress(config)
                 and feature_service.enabled('auto_collection')
-                and config.ntqq.enabled
+                and (config.ntqq.enabled or config.wechat_sources)
                 and operations.can_start("sync")
             ):
                 from ..sync import run_message_sync

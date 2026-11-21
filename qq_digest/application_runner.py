@@ -42,12 +42,22 @@ def _daily_pipeline_class():
 def build_collector(config: Config) -> Collector:
     """Build the collector selected by the configured message source."""
     if config.ntqq.enabled and config.ntqq.db_dir:
-        return NTQQCollector(
+        primary = NTQQCollector(
             db_dir=config.ntqq.db_dir,
             qq_number=config.ntqq.qq_number,
             timezone_name=config.ntqq.timezone,
         )
-    return FixtureCollector()
+    else:
+        primary = FixtureCollector()
+    if not getattr(config,'wechat_sources',()):
+        return primary
+    from .collector.wechat import CombinedCollector,bind_wechat_sources
+    ar=Archive.open(config.archive_path)
+    try:
+        errors=bind_wechat_sources(ar,getattr(config,'wechat_sources',()),strict=False)
+        bindings={row['group_id']:row['account_binding'] for row in ar.connection.execute('SELECT group_id,account_binding FROM group_sources')}
+    finally:ar.close()
+    return CombinedCollector(primary if config.ntqq.enabled and config.ntqq.db_dir else None,getattr(config,'wechat_sources',()),bindings,errors)
 
 
 def build_bot_config(config: Config) -> BotConfig | None:
@@ -105,6 +115,7 @@ def run_daily_task(
     try:
         ai_client = ai_factory.build_ai_client(config)
 
+        refresh_error=None
         if refresh and config.ntqq.enabled and config.ntqq.db_dir:
             logger.info("定时任务: 刷新 NTQQ 数据库...")
             refresh_result = database_refresh.refresh_database(
@@ -114,7 +125,9 @@ def run_daily_task(
                 cache_owner=config.data_dir,
             )
             logger.info("定时任务刷新: %s", refresh_result.message)
-            if not refresh_result.success:
+            if not refresh_result.success and getattr(config,'wechat_sources',()):
+                refresh_error=f'数据库刷新失败: {refresh_result.message}'
+            elif not refresh_result.success:
                 error = f"数据库刷新失败: {refresh_result.message}"
                 _record_preflight_failure(
                     config,
@@ -125,10 +138,12 @@ def run_daily_task(
                 return {"success": False, "status": "failed", "error": error}
 
         worker_archive = Archive.open(config.archive_path)
+        collector=build_collector(config)
+        if refresh_error: collector.primary_error=refresh_error
         pipeline = _daily_pipeline_class()(
             archive=worker_archive,
             attachment_config=config,
-            collector=build_collector(config),
+            collector=collector,
             ai_client=ai_client,
             report_dir=config.report_dir,
             max_context_chars=config.ai.max_context_chars,

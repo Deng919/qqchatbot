@@ -193,19 +193,25 @@ class HistoryInspectionService:
 
 
 def run_history_inspection(*, config: Config, refresh: bool = False, now=None, collector=None, group_ids=None) -> dict:
-    if not config.ntqq.enabled or not config.ntqq.db_dir:
+    if not (config.ntqq.enabled and config.ntqq.db_dir) and not getattr(config,'wechat_sources',()):
         raise ValueError("请先启用 NTQQ 并配置源数据库目录")
     archive = Archive.open(config.archive_path)
     try:
         def prepare():
-            if refresh:
+            if refresh and config.ntqq.enabled and (not group_ids or any(gid>0 for gid in group_ids)):
                 from .refresh import refresh_database
                 result = refresh_database(qq_number=config.ntqq.qq_number, output_dir=config.ntqq.db_dir,
                                           snapshot_root=config.work_dir / "snapshots", cache_owner=config.data_dir)
                 if not result.success:
-                    raise RuntimeError(f"数据库刷新失败：{result.message}")
+                    if getattr(config,'wechat_sources',()):
+                        active.primary_error=f'数据库刷新失败：{result.message}'
+                    else:
+                        raise RuntimeError(f'数据库刷新失败：{result.message}')
         active = collector or NTQQCollector(db_dir=config.ntqq.db_dir,
             qq_number=config.ntqq.qq_number, timezone_name=config.ntqq.timezone)
+        if collector is None and getattr(config,'wechat_sources',()):
+            from .application_runner import build_collector
+            active=build_collector(config)
         return HistoryInspectionService(archive, timezone_name=config.summary.timezone).run(active, now=now, prepare=prepare, group_ids=group_ids)
     finally:
         archive.close()

@@ -51,7 +51,8 @@ def collect_batch(*, config, group_ids, start: datetime, end: datetime,
     try:
         ids = require_existing_groups(archive, group_ids)
         results = []
-        if refresh:
+        refresh_error=None
+        if refresh and any(gid>0 for gid in ids):
             try:
                 if prepare:
                     prepare()
@@ -63,17 +64,23 @@ def collect_batch(*, config, group_ids, start: datetime, end: datetime,
                         raise RuntimeError(f'数据库刷新失败：{refreshed.message}')
             except Exception as exc:
                 error = ' '.join(str(exc).split())[:1000] or type(exc).__name__
-                for gid in ids:
+                if getattr(config,'wechat_sources',()):
+                    refresh_error=error
+                for gid in ([] if refresh_error else ids):
                     if not dry_run:
                         archive.mark_sync_failure(group_id=gid, status='manual_collect_failed', error=error)
                     results.append({'group_id':gid, 'status':'failed', 'error':error,
                                     'total':0, 'inserted':0, 'skipped':0, 'not_executed':True})
-                return {'results':results, 'totals':batch_totals(results)}
+                if not refresh_error: return {'results':results, 'totals':batch_totals(results)}
         active = collector or NTQQCollector(db_dir=config.ntqq.db_dir,
             qq_number=config.ntqq.qq_number, timezone_name=config.ntqq.timezone)
+        if collector is None and getattr(config,'wechat_sources',()):
+            from .application_runner import build_collector
+            active=build_collector(config)
         attachment_messages = []
         for gid in ids:
             try:
+                if gid>0 and refresh_error: raise RuntimeError(refresh_error)
                 source = list(active.collect(gid, start, end))
                 unique = {}
                 for message in source:

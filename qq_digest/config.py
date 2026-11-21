@@ -88,6 +88,20 @@ class NTQQConfig(BaseModel):
     timezone: str = "Asia/Shanghai"
 
 
+class WeChatSource(BaseModel):
+    source_key: str = Field(pattern=r'^[a-zA-Z0-9_-]{1,80}$')
+    group_id: int = Field(lt=0, ge=-(2**53-1))
+    native_group_id: str = Field(pattern=r'^.+@chatroom$')
+    name: str = Field(min_length=1,max_length=200)
+    archive_path: Path
+
+    @model_validator(mode='after')
+    def absolute_path(self):
+        if not self.archive_path.is_absolute():
+            raise ValueError('微信归档路径必须为绝对路径')
+        return self
+
+
 
 
 
@@ -163,9 +177,20 @@ class Config(BaseModel):
     summary: SummaryConfig = Field(default_factory=SummaryConfig)
     ai: AIConfig
     ntqq: NTQQConfig = Field(default_factory=NTQQConfig)
+    wechat_sources: list[WeChatSource] = Field(default_factory=list)
     qq_bot: QQBotConfig = Field(default_factory=QQBotConfig)
     mycortex: MyCortexConfig = Field(default_factory=MyCortexConfig)
     groups: list[GroupConfig] = Field(default_factory=list)
+
+    @model_validator(mode='after')
+    def unique_wechat_sources(self):
+        for field in ('source_key','group_id'):
+            values=[getattr(source,field) for source in self.wechat_sources]
+            if len(values)!=len(set(values)):
+                raise ValueError('微信来源键和内部群ID必须唯一')
+        if any(g.group_id<0 for g in self.groups):
+            raise ValueError('普通QQ配置群号必须为正数；负数内部ID保留给外部来源')
+        return self
 
     def resolve_knowledge_paths(self) -> dict[str, Path]:
         def resolve(value: str) -> Path:

@@ -15,7 +15,7 @@ from .operations import OperationBusy
 
 
 class PreviewPayload(BaseModel):
-    group_ids: list[Annotated[int, Field(strict=True, gt=0, le=2**63-1)]] = Field(min_length=1, max_length=100)
+    group_ids: list[Annotated[int, Field(strict=True, ge=-(2**63), le=2**63-1)]] = Field(min_length=1, max_length=100)
     start_date: date
     end_date: date
 

@@ -16,13 +16,13 @@ from ..operations import OperationBusy
 from .worker_threads import guarded_to_thread
 
 
-GroupId = Annotated[int, Path(ge=1, lt=2**63)]
+GroupId = Annotated[int, Path(ge=-(2**63), lt=2**63)]
 MessageId = Annotated[str, StringConstraints(min_length=1, max_length=512, strict=True)]
 
 
 class MessageSubmission(BaseModel):
     model_config = ConfigDict(extra='forbid', strict=True)
-    group_id: int = Field(ge=1, lt=2**63)
+    group_id: int = Field(ge=-(2**63), lt=2**63)
     message_ids: list[MessageId] = Field(min_length=1, max_length=MAX_MESSAGES)
 
 

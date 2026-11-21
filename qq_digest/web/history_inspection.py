@@ -50,7 +50,7 @@ def add_history_inspection_routes(app, *, archive, config, operations, require_l
         result = service(request).snapshot(page=page, page_size=page_size,group_ids=ids)
         result["running"] = operations.is_active("history_inspection")
         cfg = current_config(request)
-        result["source_available"] = bool(cfg and cfg.ntqq.enabled and cfg.ntqq.db_dir)
+        result["source_available"] = bool(cfg and ((cfg.ntqq.enabled and cfg.ntqq.db_dir) or cfg.wechat_sources))
         return result
 
     @app.put("/api/history-inspection/settings")
@@ -66,7 +66,7 @@ def add_history_inspection_routes(app, *, archive, config, operations, require_l
     async def post_inspection(request: Request, payload: InspectionRunRequest):
         require_login(request)
         cfg = current_config(request)
-        if not cfg or not cfg.ntqq.enabled or not cfg.ntqq.db_dir:
+        if not cfg or not ((cfg.ntqq.enabled and cfg.ntqq.db_dir) or cfg.wechat_sources):
             raise HTTPException(status_code=400, detail="请先启用 NTQQ 并配置源数据库目录")
         try:
             with operations.claim("history_inspection"):
@@ -84,7 +84,7 @@ def add_history_inspection_routes(app, *, archive, config, operations, require_l
 
 
 async def run_scheduled_inspection(config, operations, *, enabled=lambda: True) -> bool:
-    if not enabled() or not config or not config.ntqq.enabled or not config.ntqq.db_dir:
+    if not enabled() or not config or not ((config.ntqq.enabled and config.ntqq.db_dir) or getattr(config,'wechat_sources',())):
         return False
     def worker():
         try:

@@ -281,6 +281,9 @@ def create_app(
     config_path: Path | None = None,
     desktop_login: bool = False,
 ):
+    if config is not None and config.wechat_sources:
+        from ..collector.wechat import bind_wechat_sources
+        bind_wechat_sources(archive,config.wechat_sources,strict=False)
     # Daily scheduler state
     scheduler_state = {
         "last_run_date": "",
@@ -575,7 +578,7 @@ def create_app(
         kind = row["job_type"]
         if kind not in {"daily_digest", "message_sync"}:
             raise HTTPException(status_code=400, detail="此任务暂无直接重试方式")
-        if kind == "message_sync" and not cfg.ntqq.enabled:
+        if kind == "message_sync" and not cfg.ntqq.enabled and not cfg.wechat_sources:
             raise HTTPException(status_code=503, detail="NTQQ 采集未启用")
         run_at = None
         if kind == "daily_digest":
@@ -873,6 +876,7 @@ def create_app(
             latest = stats["latest_message_at"]
             result.append({
                 "group_id": g.group_id,
+                "platform": "wechat" if ar.connection.execute('SELECT 1 FROM group_sources WHERE group_id=?',(g.group_id,)).fetchone() else "qq",
                 "name": g.name,
                 "enabled": g.enabled,
                 "daily_summary": g.daily_summary,
@@ -914,13 +918,16 @@ def create_app(
     async def api_discover_groups(request: Request):
         require_login(request)
         cfg = _config(request)
-        if not cfg or not cfg.ntqq.enabled or not cfg.ntqq.db_dir:
+        if not cfg or (not (cfg.ntqq.enabled and cfg.ntqq.db_dir) and not cfg.wechat_sources):
             raise HTTPException(status_code=400, detail="NTQQ 未启用")
         collector = NTQQCollector(
             db_dir=cfg.ntqq.db_dir,
             qq_number=cfg.ntqq.qq_number,
             timezone_name=cfg.ntqq.timezone,
         )
+        if cfg.wechat_sources:
+            from ..application_runner import build_collector
+            collector=build_collector(cfg)
         try:
             groups = await guarded_to_thread(collector.discover_groups)
         except Exception as exc:
@@ -1102,7 +1109,7 @@ def create_app(
             raise HTTPException(status_code=400, detail="开始日期不能晚于结束日期")
         if dry_run and (end.date() - start.date()).days > 90:
             raise HTTPException(status_code=400, detail="单次缺口检查最多支持 91 天")
-        if not cfg or not cfg.ntqq.enabled:
+        if not cfg or (not cfg.ntqq.enabled and not cfg.wechat_sources):
             raise HTTPException(status_code=400, detail="NTQQ 未启用")
         if not isinstance(gid, int) or isinstance(gid, bool) or not any(
             group.group_id == gid for group in _archive(request).all_groups()
@@ -1110,7 +1117,7 @@ def create_app(
             raise HTTPException(status_code=404, detail="群组不存在")
 
         def collect_in_worker():
-            if refresh_requested:
+            if refresh_requested and gid>0:
                 from ..refresh import refresh_database
 
                 refreshed = refresh_database(
@@ -1126,6 +1133,9 @@ def create_app(
                 qq_number=cfg.ntqq.qq_number,
                 timezone_name=cfg.ntqq.timezone,
             )
+            if cfg.wechat_sources:
+                from ..application_runner import build_collector
+                collector=build_collector(cfg)
             msgs = list(collector.collect(gid, start, end))
             worker_archive = Archive.open(cfg.archive_path)
             try:
@@ -1220,7 +1230,7 @@ def create_app(
             "last_result": scheduler_state["last_result"],
             "next_check": "within 60s",
             "collection": {
-                "enabled": bool(cfg and not setup_in_progress(cfg) and cfg.collection.enabled and cfg.ntqq.enabled and feature_service.enabled('auto_collection')),
+                "enabled": bool(cfg and not setup_in_progress(cfg) and cfg.collection.enabled and (cfg.ntqq.enabled or cfg.wechat_sources) and feature_service.enabled('auto_collection')),
                 "interval_minutes": cfg.collection.interval_minutes if cfg else 0,
                 "running": sync_scheduler_state["running"],
                 "last_run_at": sync_scheduler_state["last_run_at"],

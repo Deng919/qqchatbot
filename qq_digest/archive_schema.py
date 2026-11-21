@@ -49,6 +49,13 @@ def initialize_archive_schema(connection: sqlite3.Connection) -> None:
                 CREATE TABLE IF NOT EXISTS seeded_groups (
                     group_id INTEGER PRIMARY KEY
                 );
+                CREATE TABLE IF NOT EXISTS group_sources (
+                    group_id INTEGER PRIMARY KEY,
+                    platform TEXT NOT NULL CHECK(platform='wechat'),
+                    source_key TEXT NOT NULL UNIQUE,
+                    native_group_id TEXT NOT NULL,
+                    account_binding TEXT NOT NULL
+                );
                 CREATE TABLE IF NOT EXISTS messages (
                     msg_id TEXT NOT NULL,
                     group_id INTEGER NOT NULL,

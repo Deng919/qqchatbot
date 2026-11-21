@@ -39,10 +39,11 @@ def run_message_sync(
     result = MessageSyncResult(success=False)
     group_outcomes: dict[int, str] = {}
     try:
-        if not config.ntqq.enabled or not config.ntqq.db_dir:
+        if not (config.ntqq.enabled and config.ntqq.db_dir) and not getattr(config,'wechat_sources',()):
             raise RuntimeError("NTQQ 未启用")
 
-        if refresh:
+        refresh_error=None
+        if refresh and config.ntqq.enabled and config.ntqq.db_dir and group_id>=0:
             from .refresh import refresh_database
 
             refresh_result = refresh_database(
@@ -52,13 +53,18 @@ def run_message_sync(
                 cache_owner=config.data_dir,
             )
             if not refresh_result.success:
-                raise RuntimeError(f"数据库刷新失败: {refresh_result.message}")
+                if not getattr(config,'wechat_sources',()):
+                    raise RuntimeError(f"数据库刷新失败: {refresh_result.message}")
+                refresh_error=f"数据库刷新失败: {refresh_result.message}"
 
         active_collector = collector or NTQQCollector(
             db_dir=config.ntqq.db_dir,
             qq_number=config.ntqq.qq_number,
             timezone_name=config.ntqq.timezone,
         )
+        if collector is None and getattr(config,'wechat_sources',()):
+            from .application_runner import build_collector
+            active_collector=build_collector(config)
         groups = archive.enabled_groups()
         if group_id:
             groups = [group for group in groups if group.group_id == group_id]
@@ -70,13 +76,15 @@ def run_message_sync(
                 "SELECT last_timestamp FROM sync_state WHERE group_id=?",
                 (group.group_id,),
             ).fetchone()
-            if state and state["last_timestamp"]:
+            # Re-read the bounded WeChat window: upstream may backfill old messages.
+            if group.group_id > 0 and state and state["last_timestamp"]:
                 last_sync = datetime.fromisoformat(state["last_timestamp"]).astimezone(timezone)
                 start = min(last_sync, current) - overlap
             else:
                 start = current - timedelta(days=group.collection_window_days)
 
             try:
+                if group.group_id>0 and refresh_error:raise RuntimeError(refresh_error)
                 messages = list(active_collector.collect(group.group_id, start, current))
                 ingest = archive.ingest(messages)
                 from .attachments import AttachmentService

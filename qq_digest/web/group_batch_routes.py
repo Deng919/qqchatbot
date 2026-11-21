@@ -113,7 +113,7 @@ def add_group_batch_routes(app, *, archive, config, require_login, operations):
             with operations.claim('collect'):
                 ar = archive(request); ids = preflight(ar,payload.group_ids)
                 cfg = config(request)
-                if not cfg or not cfg.ntqq.enabled or not cfg.ntqq.db_dir:
+                if not cfg or not ((cfg.ntqq.enabled and cfg.ntqq.db_dir) or cfg.wechat_sources):
                     raise HTTPException(400,'请先启用 NTQQ 并配置源数据库目录')
                 tz = ZoneInfo(cfg.summary.timezone)
                 start = datetime.combine(date.fromisoformat(payload.start),time.min,tz)

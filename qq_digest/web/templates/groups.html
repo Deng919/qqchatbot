@@ -86,7 +86,7 @@ var discoveredBatchGroups=[];
     }
     node.innerHTML = groups.map(function(group) {
       var id=Number(group.group_id),reports='/reports?'+new URLSearchParams({group_id:id,view:'groups',date_from:'',date_to:''}).toString();
-      return '<tr><td data-label="群聊"><button class="group-name" onclick="openGroupDetail('+id+')">'+escapeHtml(group.name)+'</button><div class="header-meta">'+id+' · '+formatNumber(group.message_count)+' 条已保存</div></td>'
+      return '<tr><td data-label="群聊"><button class="group-name" onclick="openGroupDetail('+id+')">'+escapeHtml(group.name)+'</button><div class="header-meta">'+(group.platform==='wechat'?'微信':'QQ · '+id)+' · '+formatNumber(group.message_count)+' 条已保存</div></td>'
         + '<td data-label="关注">'+toggleControl(id,'enabled',group.enabled,group.name)+'</td><td data-label="消息更新状态">'+syncCell(group)+'</td>'
         + '<td data-label="摘要"><a class="btn btn-sm" href="'+escapeHtml(reports)+'">最近摘要</a></td>'
         + '<td data-label="操作"><div class="actions"><a class="btn btn-sm" href="'+escapeHtml(updateUrl(group))+'">更新消息</a><button class="btn btn-sm" onclick="openGroupDetail('+id+')">详情</button></div></td></tr>';
